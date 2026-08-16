@@ -11,10 +11,9 @@ import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
   RenderState,
-  getLayerSize,
-  renderFrame
+  getLayerSize
 } from '../renderer/render2d';
-import { getPlaybackTime, startRenderLoop } from '../renderer/loop';
+import { getActiveRendererName, getPlaybackTime, renderExportFrame, startRenderLoop } from '../renderer/loop';
 
 function getExportTimestamp(): string {
   const now = new Date();
@@ -77,7 +76,7 @@ export default function CanvasWorkspace() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     return startRenderLoop(canvas, (fps) => {
-      if (fpsRef.current) fpsRef.current.textContent = `${fps} fps`;
+      if (fpsRef.current) fpsRef.current.textContent = `${fps} fps · ${getActiveRendererName()}`;
     });
   }, []);
 
@@ -359,7 +358,7 @@ export default function CanvasWorkspace() {
   const handleExportHighRes = () => {
     try {
       const canvas = document.createElement('canvas');
-      renderFrame(canvas, getPlaybackTime(), snapshotRenderState(), CANVAS_WIDTH, CANVAS_HEIGHT);
+      renderExportFrame(canvas, getPlaybackTime(), snapshotRenderState(), CANVAS_WIDTH, CANVAS_HEIGHT);
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.download = `slapchop-art-${getExportTimestamp()}.png`;
@@ -396,7 +395,7 @@ export default function CanvasWorkspace() {
       }
 
       const frameTime = frame * (1 / fps);
-      renderFrame(offscreenCanvas, frameTime, doc, resW, resH);
+      renderExportFrame(offscreenCanvas, frameTime, doc, resW, resH);
 
       const blob = await new Promise<Blob | null>((resolve) => {
         offscreenCanvas.toBlob((b) => resolve(b), mimeType, 0.92);
@@ -477,7 +476,7 @@ export default function CanvasWorkspace() {
       const elapsed = (performance.now() - startTime) / 1000;
       setVideoTime(elapsed);
 
-      renderFrame(offscreenCanvas, elapsed, doc, resW, resH);
+      renderExportFrame(offscreenCanvas, elapsed, doc, resW, resH);
 
       if (elapsed >= exportDuration || !isRecordingVideoRef.current) {
         clearInterval(interval);

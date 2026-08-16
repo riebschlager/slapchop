@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GifData, GifFrameData } from '../types';
-import { getGifFrameAtTime } from './gifUtils';
+import { getGifFrameAtTime, getGifFrameIndexAtTime } from './gifUtils';
 
 // getGifFrameAtTime only reads frame timing and returns the stored image,
 // so a tagged placeholder object stands in for the ImageBitmap in node.
@@ -62,5 +62,21 @@ describe('getGifFrameAtTime', () => {
     expect(getGifFrameAtTime(makeGifData([]), 0.5)).toBeNull();
     const zero = makeGifData([0]);
     expect(getGifFrameAtTime(zero, 0.5)).toBeNull();
+  });
+});
+
+describe('getGifFrameIndexAtTime', () => {
+  const gif = makeGifData([100, 100, 200, 100]); // 500ms total
+
+  it('agrees with getGifFrameAtTime across the loop', () => {
+    for (const t of [0, 0.05, 0.1, 0.15, 0.25, 0.399, 0.4, 0.45, 0.5, 0.65, 5.05]) {
+      const idx = getGifFrameIndexAtTime(gif, t);
+      expect(gif.frames[idx].image).toBe(getGifFrameAtTime(gif, t));
+    }
+  });
+
+  it('returns -1 for empty or zero-duration gifs', () => {
+    expect(getGifFrameIndexAtTime(makeGifData([]), 0.5)).toBe(-1);
+    expect(getGifFrameIndexAtTime(makeGifData([0]), 0.5)).toBe(-1);
   });
 });

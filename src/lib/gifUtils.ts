@@ -178,11 +178,11 @@ async function parseWithGifuct(arrayBuffer: ArrayBuffer): Promise<GifData | null
 }
 
 /**
- * Gets the image for a GIF frame at a specific timestamp t (in seconds).
+ * Gets the frame index of a GIF at a specific timestamp t (in seconds).
  * Uses O(log N) binary search for smooth 60fps animation performance.
  */
-export function getGifFrameAtTime(gifData: GifData, tInSeconds: number, speed: number = 1): CanvasImageSource | null {
-  if (!gifData || !gifData.frames.length || gifData.totalDurationMs <= 0) return null;
+export function getGifFrameIndexAtTime(gifData: GifData, tInSeconds: number, speed: number = 1): number {
+  if (!gifData || !gifData.frames.length || gifData.totalDurationMs <= 0) return -1;
   const effectiveSpeed = typeof speed === 'number' && !isNaN(speed) ? speed : 1;
   const timeMs = Math.abs(tInSeconds * effectiveSpeed * 1000) % gifData.totalDurationMs;
 
@@ -194,7 +194,7 @@ export function getGifFrameAtTime(gifData: GifData, tInSeconds: number, speed: n
     const mid = (low + high) >> 1;
     const f = frames[mid];
     if (timeMs >= f.startTimeMs && timeMs < f.endTimeMs) {
-      return f.image;
+      return mid;
     } else if (timeMs < f.startTimeMs) {
       high = mid - 1;
     } else {
@@ -202,5 +202,13 @@ export function getGifFrameAtTime(gifData: GifData, tInSeconds: number, speed: n
     }
   }
 
-  return frames[0].image;
+  return 0;
+}
+
+/**
+ * Gets the image for a GIF frame at a specific timestamp t (in seconds).
+ */
+export function getGifFrameAtTime(gifData: GifData, tInSeconds: number, speed: number = 1): CanvasImageSource | null {
+  const idx = getGifFrameIndexAtTime(gifData, tInSeconds, speed);
+  return idx < 0 ? null : gifData.frames[idx].image;
 }

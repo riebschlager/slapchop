@@ -25,3 +25,10 @@ Then open http://localhost:3000. No API keys or environment variables required.
 
 - **Symmetry canvas** — drop images/GIFs as layers; each layer has position/rotation/scale, mirror/quad/radial symmetry, blend mode, opacity, and sine/noise motion modulators.
 - **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture with animatable scale, rotation, and offset.
+
+## Rendering
+
+Rendering runs on the GPU via PixiJS v8 (WebGPU, with automatic WebGL fallback). The
+Canvas 2D renderer is kept as a fallback and as a reference implementation — append
+`?renderer=2d` to the URL to force it. Exports always use the same renderer as the
+live canvas.

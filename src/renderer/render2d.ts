@@ -121,6 +121,9 @@ function renderPolygon(
       const pattern = getPattern(ctx, polygon.id, frameSource);
       if (pattern) {
         const matrix = new DOMMatrix();
+        // Design-space pattern transform, mapped to output pixels so the
+        // texture stays resolution-independent at any export size.
+        matrix.scaleSelf(scaleX, scaleY);
         matrix.translateSelf(offsetX, offsetY);
         matrix.scaleSelf(Math.max(0.01, scaleVal), Math.max(0.01, scaleVal));
         matrix.rotateSelf(rotationVal);

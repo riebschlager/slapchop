@@ -240,3 +240,8 @@ export const redo = () => useStore.temporal.getState().redo();
 export const pauseHistory = () => useStore.temporal.getState().pause();
 export const resumeHistory = () => useStore.temporal.getState().resume();
 export const clearHistory = () => useStore.temporal.getState().clear();
+
+// Exposed for headless smoke tests and console debugging only.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  Object.assign(window as object, { __store: useStore, __undo: undo, __redo: redo });
+}
