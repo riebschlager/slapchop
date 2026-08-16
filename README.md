@@ -32,3 +32,16 @@ Rendering runs on the GPU via PixiJS v8 (WebGPU, with automatic WebGL fallback).
 Canvas 2D renderer is kept as a fallback and as a reference implementation — append
 `?renderer=2d` to the URL to force it. Exports always use the same renderer as the
 live canvas.
+
+## Exports
+
+Animation exports are frame-exact and deterministic: every frame is rendered at its
+exact timestamp and encoded with WebCodecs, so exports run faster than real time and
+never drop frames.
+
+- **MP4 (H.264)** — the default; plays in QuickTime and uploads anywhere
+- **WebM (VP9)**
+- **Animated GIF** — quantized and encoded off-thread via gifenc
+- **Frame sequence ZIP** — PNG or JPEG frames, compressed off-thread
+
+Browsers without WebCodecs fall back to real-time MediaRecorder WebM capture.

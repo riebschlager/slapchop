@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PolygonPoint } from '../types';
 import { cn } from '../lib/utils';
-import { Download, Video, X, Loader2, PenTool } from 'lucide-react';
-import JSZip from 'jszip';
+import { Download, Video, X, Loader2, PenTool, Film, Repeat } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { getPolygonCentroid, isPointInPolygon } from '../lib/polygonUtils';
 import { getInstances } from '../lib/motion';
@@ -14,6 +13,9 @@ import {
   getLayerSize
 } from '../renderer/render2d';
 import { getActiveRendererName, getPlaybackTime, renderExportFrame, startRenderLoop } from '../renderer/loop';
+import { exportVideo, supportsWebCodecs, VideoFormat } from '../lib/videoExport';
+import { exportZipSequence } from '../lib/zipExport';
+import { exportGif } from '../lib/gifExport';
 
 function getExportTimestamp(): string {
   const now = new Date();
@@ -53,22 +55,16 @@ export default function CanvasWorkspace() {
 
   // Export settings state
   const [showExportModal, setShowExportModal] = useState(false);
-  const [exportType, setExportType] = useState<'zip' | 'webm'>('zip');
+  const [exportType, setExportType] = useState<'mp4' | 'webm' | 'gif' | 'zip'>('mp4');
   const [exportResolution, setExportResolution] = useState<'full' | 'hd' | 'compact'>('hd');
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
   const [exportDuration, setExportDuration] = useState<number>(3);
   const [exportFps, setExportFps] = useState<number>(30);
 
-  // Active export progress state
-  const [isExportingZip, setIsExportingZip] = useState(false);
-  const [exportProgress, setExportProgress] = useState<{ current: number; total: number; status: 'rendering' | 'zipping' }>({ current: 0, total: 0, status: 'rendering' });
-  const [zipPercent, setZipPercent] = useState(0);
-
-  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
-  const [videoTime, setVideoTime] = useState(0);
+  // Active export progress state (null when no export is running)
+  const [exportJob, setExportJob] = useState<{ label: string; percent: number } | null>(null);
 
   const isCancelExportRef = useRef(false);
-  const isRecordingVideoRef = useRef(false);
 
   // The render loop lives outside React: it reads the store imperatively and
   // repaints the canvas every frame without triggering any component renders.
@@ -369,120 +365,109 @@ export default function CanvasWorkspace() {
     }
   };
 
-  const startZipSequenceExport = async () => {
-    setIsExportingZip(true);
-    isCancelExportRef.current = false;
-    setZipPercent(0);
-
-    const doc = snapshotRenderState();
-    const [resW, resH] = exportResolution === 'full' ? [1080, 1920]
-                       : exportResolution === 'hd' ? [720, 1280]
-                       : [540, 960];
-
-    const fps = exportFps;
-    const totalFrames = Math.round(fps * exportDuration);
-    setExportProgress({ current: 0, total: totalFrames, status: 'rendering' });
-
-    const zip = new JSZip();
-    const offscreenCanvas = document.createElement('canvas');
-    const ext = exportFormat === 'jpeg' ? 'jpg' : 'png';
-    const mimeType = exportFormat === 'jpeg' ? 'image/jpeg' : 'image/png';
-
-    for (let frame = 0; frame < totalFrames; frame++) {
-      if (isCancelExportRef.current) {
-        setIsExportingZip(false);
-        return;
-      }
-
-      const frameTime = frame * (1 / fps);
-      renderExportFrame(offscreenCanvas, frameTime, doc, resW, resH);
-
-      const blob = await new Promise<Blob | null>((resolve) => {
-        offscreenCanvas.toBlob((b) => resolve(b), mimeType, 0.92);
-      });
-
-      if (blob) {
-        const filename = `frame_${String(frame + 1).padStart(5, '0')}.${ext}`;
-        zip.file(filename, blob);
-      }
-
-      setExportProgress({ current: frame + 1, total: totalFrames, status: 'rendering' });
-      await new Promise((r) => setTimeout(r, 10));
-    }
-
-    if (isCancelExportRef.current) {
-      setIsExportingZip(false);
-      return;
-    }
-
-    setExportProgress({ current: totalFrames, total: totalFrames, status: 'zipping' });
-
-    try {
-      const zipContent = await zip.generateAsync({ type: 'blob' }, (metadata) => {
-        setZipPercent(Math.round(metadata.percent));
-      });
-
-      saveAs(zipContent, `slapchop-sequence-${getExportTimestamp()}-${exportResolution}-${exportDuration}s.zip`);
-      setShowExportModal(false);
-    } catch (e) {
-      console.error('ZIP Generation error:', e);
-    } finally {
-      setIsExportingZip(false);
-    }
+  const finishExport = (blob: Blob, filename: string) => {
+    saveAs(blob, filename);
+    setShowExportModal(false);
   };
 
-  const startWebMVideoExport = async () => {
-    setIsRecordingVideo(true);
-    isRecordingVideoRef.current = true;
-    setVideoTime(0);
+  // Real-time MediaRecorder capture, kept only for browsers without WebCodecs.
+  const recordVideoFallback = (doc: RenderState, resW: number, resH: number) =>
+    new Promise<void>((resolve) => {
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = resW;
+      offscreenCanvas.height = resH;
 
+      const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+      let selectedMimeType = 'video/webm';
+      for (const type of mimeTypes) {
+        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
+          selectedMimeType = type;
+          break;
+        }
+      }
+
+      const stream = offscreenCanvas.captureStream(exportFps);
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
+
+      const chunks: Blob[] = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        if (!isCancelExportRef.current) {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          finishExport(blob, `slapchop-video-${getExportTimestamp()}-${exportDuration}s.webm`);
+        }
+        resolve();
+      };
+
+      mediaRecorder.start();
+
+      const startTime = performance.now();
+      const interval = setInterval(() => {
+        const elapsed = (performance.now() - startTime) / 1000;
+        setExportJob({
+          label: `Recording in real time (WebCodecs unavailable)… ${elapsed.toFixed(1)}s / ${exportDuration}s`,
+          percent: Math.min(100, (elapsed / exportDuration) * 100)
+        });
+
+        renderExportFrame(offscreenCanvas, elapsed, doc, resW, resH);
+
+        if (elapsed >= exportDuration || isCancelExportRef.current) {
+          clearInterval(interval);
+          if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        }
+      }, 1000 / exportFps);
+    });
+
+  const startExport = async () => {
+    isCancelExportRef.current = false;
     const doc = snapshotRenderState();
     const [resW, resH] = exportResolution === 'full' ? [1080, 1920]
                        : exportResolution === 'hd' ? [720, 1280]
                        : [540, 960];
+    const ts = getExportTimestamp();
 
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = resW;
-    offscreenCanvas.height = resH;
+    const common = {
+      width: resW,
+      height: resH,
+      fps: exportFps,
+      duration: exportDuration,
+      renderFrame: (canvas: HTMLCanvasElement, t: number) =>
+        renderExportFrame(canvas, t, doc, resW, resH),
+      isCancelled: () => isCancelExportRef.current
+    };
+    const frameProgress = (verb: string) => (done: number, total: number) =>
+      setExportJob({ label: `${verb} frame ${done}/${total}…`, percent: (done / total) * 100 });
 
-    const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-    let selectedMimeType = 'video/webm';
-    for (const type of mimeTypes) {
-      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
-        selectedMimeType = type;
-        break;
+    setExportJob({ label: 'Preparing export…', percent: 0 });
+    try {
+      if (exportType === 'zip') {
+        const blob = await exportZipSequence({
+          ...common,
+          imageFormat: exportFormat,
+          onProgress: frameProgress('Rendering'),
+          onZipProgress: (percent) => setExportJob({ label: 'Compressing ZIP…', percent })
+        });
+        if (blob) finishExport(blob, `slapchop-sequence-${ts}-${exportResolution}-${exportDuration}s.zip`);
+      } else if (exportType === 'gif') {
+        const blob = await exportGif({ ...common, onProgress: frameProgress('Encoding GIF') });
+        if (blob) finishExport(blob, `slapchop-anim-${ts}-${exportDuration}s.gif`);
+      } else if (supportsWebCodecs()) {
+        const blob = await exportVideo(exportType as VideoFormat, {
+          ...common,
+          onProgress: frameProgress('Encoding')
+        });
+        if (blob) finishExport(blob, `slapchop-video-${ts}-${exportDuration}s.${exportType}`);
+      } else {
+        await recordVideoFallback(doc, resW, resH);
       }
+    } catch (e) {
+      console.error('Export failed:', e);
+    } finally {
+      setExportJob(null);
     }
-
-    const stream = offscreenCanvas.captureStream(exportFps);
-    const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
-
-    const chunks: Blob[] = [];
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
-      saveAs(blob, `slapchop-video-${getExportTimestamp()}-${exportDuration}s.webm`);
-      setIsRecordingVideo(false);
-      setShowExportModal(false);
-    };
-
-    mediaRecorder.start();
-
-    const startTime = performance.now();
-    const interval = setInterval(() => {
-      const elapsed = (performance.now() - startTime) / 1000;
-      setVideoTime(elapsed);
-
-      renderExportFrame(offscreenCanvas, elapsed, doc, resW, resH);
-
-      if (elapsed >= exportDuration || !isRecordingVideoRef.current) {
-        clearInterval(interval);
-        if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-      }
-    }, 1000 / exportFps);
   };
 
   return (
@@ -691,8 +676,7 @@ export default function CanvasWorkspace() {
           <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 text-gray-100 shadow-2xl relative">
             <button
               onClick={() => {
-                if (isExportingZip) isCancelExportRef.current = true;
-                if (isRecordingVideo) isRecordingVideoRef.current = false;
+                isCancelExportRef.current = true;
                 setShowExportModal(false);
               }}
               className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800 transition-colors"
@@ -707,27 +691,30 @@ export default function CanvasWorkspace() {
               <div>
                 <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Export Format</label>
                 <div className="grid grid-cols-2 gap-2 p-1 bg-gray-950 rounded-lg border border-gray-800">
-                  <button
-                    onClick={() => setExportType('zip')}
-                    className={cn(
-                      "py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-2",
-                      exportType === 'zip' ? "bg-indigo-600 text-white shadow" : "text-gray-400 hover:text-white"
-                    )}
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Frame Sequence (ZIP)
-                  </button>
-                  <button
-                    onClick={() => setExportType('webm')}
-                    className={cn(
-                      "py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-2",
-                      exportType === 'webm' ? "bg-indigo-600 text-white shadow" : "text-gray-400 hover:text-white"
-                    )}
-                  >
-                    <Video className="w-3.5 h-3.5" />
-                    WebM Video
-                  </button>
+                  {([
+                    { id: 'mp4', label: 'MP4 (H.264)', Icon: Film },
+                    { id: 'webm', label: 'WebM (VP9)', Icon: Video },
+                    { id: 'gif', label: 'Animated GIF', Icon: Repeat },
+                    { id: 'zip', label: 'Frames (ZIP)', Icon: Download }
+                  ] as const).map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      onClick={() => setExportType(id)}
+                      className={cn(
+                        "py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-2",
+                        exportType === id ? "bg-indigo-600 text-white shadow" : "text-gray-400 hover:text-white"
+                      )}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {label}
+                    </button>
+                  ))}
                 </div>
+                {(exportType === 'mp4' || exportType === 'webm') && !supportsWebCodecs() && (
+                  <p className="text-[10px] text-amber-400/90 mt-1.5">
+                    WebCodecs is unavailable in this browser — video will be recorded in real time as WebM.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -813,34 +800,16 @@ export default function CanvasWorkspace() {
               )}
 
               {/* Exporting Progress bar */}
-              {isExportingZip && (
+              {exportJob && (
                 <div className="p-3 bg-gray-950 rounded-lg border border-gray-800 space-y-2">
                   <div className="flex justify-between text-xs text-gray-300">
-                    <span>{exportProgress.status === 'rendering' ? `Rendering Frame ${exportProgress.current}/${exportProgress.total}...` : 'Compressing ZIP file...'}</span>
-                    <span>{exportProgress.status === 'rendering' ? `${Math.round((exportProgress.current / exportProgress.total) * 100)}%` : `${zipPercent}%`}</span>
+                    <span>{exportJob.label}</span>
+                    <span>{Math.round(exportJob.percent)}%</span>
                   </div>
                   <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-indigo-500 transition-all duration-150"
-                      style={{ width: `${exportProgress.status === 'rendering' ? (exportProgress.current / exportProgress.total) * 100 : zipPercent}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {isRecordingVideo && (
-                <div className="p-3 bg-gray-950 rounded-lg border border-gray-800 space-y-2">
-                  <div className="flex justify-between text-xs text-gray-300">
-                    <span className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                      Recording WebM Video...
-                    </span>
-                    <span>{videoTime.toFixed(1)}s / {exportDuration}s</span>
-                  </div>
-                  <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-red-500 transition-all duration-150"
-                      style={{ width: `${Math.min(100, (videoTime / exportDuration) * 100)}%` }}
+                      style={{ width: `${exportJob.percent}%` }}
                     />
                   </div>
                 </div>
@@ -848,20 +817,20 @@ export default function CanvasWorkspace() {
 
               <div className="pt-3 border-t border-gray-800 flex justify-end gap-2">
                 <button
-                  onClick={() => setShowExportModal(false)}
+                  onClick={() => {
+                    isCancelExportRef.current = true;
+                    setShowExportModal(false);
+                  }}
                   className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-medium transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    if (exportType === 'zip') startZipSequenceExport();
-                    else startWebMVideoExport();
-                  }}
-                  disabled={isExportingZip || isRecordingVideo}
+                  onClick={startExport}
+                  disabled={exportJob !== null}
                   className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold rounded-lg text-xs shadow-lg shadow-indigo-600/20 transition-all"
                 >
-                  {(isExportingZip || isRecordingVideo) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {exportJob !== null && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Start Export
                 </button>
               </div>
