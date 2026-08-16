@@ -1,5 +1,4 @@
 import { PolygonPoint, PolygonLayer, BlendMode } from '../types';
-import { v4 as uuidv4 } from 'uuid';
 
 export function createPresetPolygonPoints(type: 'triangle' | 'rectangle' | 'star' | 'hexagon', radius: number = 180): PolygonPoint[] {
   if (type === 'triangle') {
@@ -56,7 +55,7 @@ export function createNewPolygonLayer(
   options?: Partial<PolygonLayer>
 ): PolygonLayer {
   return {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     name: name,
     points: points,
     textureScale: 1.0,

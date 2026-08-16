@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import { Layer, PolygonLayer, PolygonPoint, AppMode } from './types';
 import Sidebar from './components/Sidebar';
 import CanvasWorkspace from './components/CanvasWorkspace';
@@ -37,7 +36,7 @@ export default function App() {
     const gifData = await parseGifFile(file);
 
     const newLayer: Layer = {
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       name: file.name,
       src: url,
       gifData: gifData || undefined,
@@ -80,7 +79,7 @@ export default function App() {
     if (!layer) return;
     const clone: Layer = {
       ...layer,
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       name: `${layer.name} (Copy)`,
       x: layer.x + 40,
       y: layer.y + 40
@@ -200,7 +199,7 @@ export default function App() {
     if (!poly) return;
     const clone: PolygonLayer = {
       ...poly,
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       name: `${poly.name} (Copy)`,
       points: poly.points.map(pt => ({ x: pt.x + 30, y: pt.y + 30 }))
     };

@@ -1,8 +1,0 @@
-{
-  "name": "Prism Canvas",
-  "description": "A generative art canvas allowing users to overlay images and GIFs with complex nested symmetry, blending, and high-resolution export.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

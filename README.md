@@ -1,20 +1,27 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# slapchop
 
-# Run and deploy your AI Studio app
+A generative art canvas for layering images and animated GIFs with symmetry, blend modes, and motion modulation — plus a polygon tiler that fills arbitrary shapes with repeating (animated) textures. Renders to a 1080×1920 canvas and exports still images, frame sequences, and video.
 
-This contains everything you need to run your app locally.
+## Run locally
 
-View your app in AI Studio: https://ai.studio/apps/6dc91d27-b87a-40b4-92b0-b75e69f62c95
+```sh
+npm install
+npm run dev
+```
 
-## Run Locally
+Then open http://localhost:3000. No API keys or environment variables required.
 
-**Prerequisites:**  Node.js
+## Scripts
 
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the Vite dev server on port 3000 |
+| `npm run build` | Production build to `dist/` |
+| `npm run typecheck` | TypeScript type check |
+| `npm run lint` | ESLint over `src/` |
+| `npm test` | Run the Vitest unit tests |
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Modes
+
+- **Symmetry canvas** — drop images/GIFs as layers; each layer has position/rotation/scale, mirror/quad/radial symmetry, blend mode, opacity, and sine/noise motion modulators.
+- **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture with animatable scale, rotation, and offset.
