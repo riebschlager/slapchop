@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { GifData, GifFrameData } from '../types';
 import { getGifFrameAtTime } from './gifUtils';
 
-// getGifFrameAtTime only reads frame timing and returns the stored canvas,
-// so a tagged placeholder object stands in for HTMLCanvasElement in node.
+// getGifFrameAtTime only reads frame timing and returns the stored image,
+// so a tagged placeholder object stands in for the ImageBitmap in node.
 function makeGifData(delaysMs: number[]): GifData {
   let t = 0;
   const frames: GifFrameData[] = delaysMs.map((delayMs, i) => {
     const frame = {
-      canvas: { frameIndex: i } as unknown as HTMLCanvasElement,
+      image: { frameIndex: i } as unknown as ImageBitmap,
       delayMs,
       startTimeMs: t,
       endTimeMs: t + delayMs
@@ -20,8 +20,8 @@ function makeGifData(delaysMs: number[]): GifData {
 }
 
 function frameIndexAt(gif: GifData, tSeconds: number, speed?: number): number | null {
-  const canvas = getGifFrameAtTime(gif, tSeconds, speed);
-  return canvas ? (canvas as unknown as { frameIndex: number }).frameIndex : null;
+  const image = getGifFrameAtTime(gif, tSeconds, speed);
+  return image ? (image as unknown as { frameIndex: number }).frameIndex : null;
 }
 
 describe('getGifFrameAtTime', () => {

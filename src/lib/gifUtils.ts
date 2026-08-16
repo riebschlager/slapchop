@@ -11,20 +11,20 @@ export async function parseGifFile(file: File): Promise<GifData | null> {
     const uint8Array = new Uint8Array(arrayBuffer);
 
     // Primary: omggif with full canvas image buffer
-    let gifData = parseWithOmggif(uint8Array);
+    let gifData = await parseWithOmggif(uint8Array);
     if (!gifData) {
       // Fallback: gifuct-js
-      gifData = parseWithGifuct(arrayBuffer);
+      gifData = await parseWithGifuct(arrayBuffer);
     }
 
     return gifData;
   } catch (err) {
-    console.warn("Could not parse GIF file:", err);
+    console.warn('Could not parse GIF file:', err);
     return null;
   }
 }
 
-function parseWithOmggif(uint8Array: Uint8Array): GifData | null {
+async function parseWithOmggif(uint8Array: Uint8Array): Promise<GifData | null> {
   try {
     const reader = new GifReader(uint8Array as unknown as Buffer);
     const numFrames = reader.numFrames();
@@ -63,17 +63,11 @@ function parseWithOmggif(uint8Array: Uint8Array): GifData | null {
       reader.decodeAndBlitFrameRGBA(i, fullImageData.data as unknown as Uint8ClampedArray);
       workCtx.putImageData(fullImageData, 0, 0);
 
-      // Snapshot this rendered frame
-      const frameCanvas = document.createElement('canvas');
-      frameCanvas.width = width;
-      frameCanvas.height = height;
-      const frameCtx = frameCanvas.getContext('2d');
-      if (frameCtx) {
-        frameCtx.drawImage(workCanvas, 0, 0);
-      }
+      // Snapshot this rendered frame as a GPU-friendly ImageBitmap
+      const bitmap = await createImageBitmap(workCanvas);
 
       frames.push({
-        canvas: frameCanvas,
+        image: bitmap,
         delayMs,
         startTimeMs: currentTimeMs,
         endTimeMs: currentTimeMs + delayMs
@@ -99,12 +93,12 @@ function parseWithOmggif(uint8Array: Uint8Array): GifData | null {
       height
     };
   } catch (err) {
-    console.warn("omggif parse error:", err);
+    console.warn('omggif parse error:', err);
     return null;
   }
 }
 
-function parseWithGifuct(arrayBuffer: ArrayBuffer): GifData | null {
+async function parseWithGifuct(arrayBuffer: ArrayBuffer): Promise<GifData | null> {
   try {
     const gif = parseGIF(arrayBuffer);
     const rawFrames = decompressFrames(gif, true);
@@ -152,16 +146,10 @@ function parseWithGifuct(arrayBuffer: ArrayBuffer): GifData | null {
         workCtx.drawImage(patchCanvas, pLeft, pTop);
       }
 
-      const frameCanvas = document.createElement('canvas');
-      frameCanvas.width = width;
-      frameCanvas.height = height;
-      const frameCtx = frameCanvas.getContext('2d');
-      if (frameCtx) {
-        frameCtx.drawImage(workCanvas, 0, 0);
-      }
+      const bitmap = await createImageBitmap(workCanvas);
 
       frames.push({
-        canvas: frameCanvas,
+        image: bitmap,
         delayMs,
         startTimeMs: currentTimeMs,
         endTimeMs: currentTimeMs + delayMs
@@ -184,20 +172,20 @@ function parseWithGifuct(arrayBuffer: ArrayBuffer): GifData | null {
       height
     };
   } catch (err) {
-    console.warn("gifuct parse error:", err);
+    console.warn('gifuct parse error:', err);
     return null;
   }
 }
 
 /**
- * Gets the canvas element corresponding to a GIF frame at a specific timestamp t (in seconds).
+ * Gets the image for a GIF frame at a specific timestamp t (in seconds).
  * Uses O(log N) binary search for smooth 60fps animation performance.
  */
-export function getGifFrameAtTime(gifData: GifData, tInSeconds: number, speed: number = 1): HTMLCanvasElement | null {
+export function getGifFrameAtTime(gifData: GifData, tInSeconds: number, speed: number = 1): CanvasImageSource | null {
   if (!gifData || !gifData.frames.length || gifData.totalDurationMs <= 0) return null;
   const effectiveSpeed = typeof speed === 'number' && !isNaN(speed) ? speed : 1;
   const timeMs = Math.abs(tInSeconds * effectiveSpeed * 1000) % gifData.totalDurationMs;
-  
+
   const frames = gifData.frames;
   let low = 0;
   let high = frames.length - 1;
@@ -206,7 +194,7 @@ export function getGifFrameAtTime(gifData: GifData, tInSeconds: number, speed: n
     const mid = (low + high) >> 1;
     const f = frames[mid];
     if (timeMs >= f.startTimeMs && timeMs < f.endTimeMs) {
-      return f.canvas;
+      return f.image;
     } else if (timeMs < f.startTimeMs) {
       high = mid - 1;
     } else {
@@ -214,5 +202,5 @@ export function getGifFrameAtTime(gifData: GifData, tInSeconds: number, speed: n
     }
   }
 
-  return frames[0].canvas;
+  return frames[0].image;
 }

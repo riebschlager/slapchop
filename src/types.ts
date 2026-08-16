@@ -46,7 +46,7 @@ export interface MotionConfig {
 }
 
 export interface GifFrameData {
-  canvas: HTMLCanvasElement;
+  image: CanvasImageSource;
   delayMs: number;
   startTimeMs: number;
   endTimeMs: number;

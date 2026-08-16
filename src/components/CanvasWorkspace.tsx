@@ -1,102 +1,56 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Layer, PolygonLayer, PolygonPoint, MotionConfig, GifData, AppMode } from '../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { PolygonPoint } from '../types';
 import { cn } from '../lib/utils';
 import { Download, Video, X, Loader2, PenTool } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { getGifFrameAtTime } from '../lib/gifUtils';
 import { getPolygonCentroid, isPointInPolygon } from '../lib/polygonUtils';
+import { getInstances } from '../lib/motion';
+import { getDocumentSnapshot, pauseHistory, resumeHistory, useStore } from '../store';
+import {
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  RenderState,
+  getLayerSize,
+  renderFrame
+} from '../renderer/render2d';
+import { getPlaybackTime, startRenderLoop } from '../renderer/loop';
 
 function getExportTimestamp(): string {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 }
 
-const BLEND_MAP: Record<string, GlobalCompositeOperation> = {
-  'normal': 'source-over',
-  'multiply': 'multiply',
-  'screen': 'screen',
-  'overlay': 'overlay',
-  'darken': 'darken',
-  'lighten': 'lighten',
-  'color-dodge': 'color-dodge',
-  'color-burn': 'color-burn',
-  'difference': 'difference',
-  'exclusion': 'exclusion',
-  'hue': 'hue',
-  'saturation': 'saturation',
-  'color': 'color',
-  'luminosity': 'luminosity'
-};
+export default function CanvasWorkspace() {
+  const appMode = useStore(s => s.appMode);
+  const layers = useStore(s => s.layers);
+  const polygonLayers = useStore(s => s.polygonLayers);
+  const selectedLayerId = useStore(s => s.selectedLayerId);
+  const selectedPolygonId = useStore(s => s.selectedPolygonId);
+  const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
+  const canvasBg = useStore(s => s.canvasBg);
 
-const imageCache = new Map<string, HTMLImageElement>();
-function getCachedImage(src?: string): HTMLImageElement | null {
-  if (!src) return null;
-  let img = imageCache.get(src);
-  if (!img) {
-    img = new Image();
-    img.src = src;
-    imageCache.set(src, img);
-  }
-  return img.complete && img.naturalWidth > 0 ? img : null;
-}
+  const onSelectLayer = useStore(s => s.selectLayer);
+  const onUpdateLayer = useStore(s => s.updateLayer);
+  const onAddLayer = useStore(s => s.addLayerFromFile);
+  const onSelectPolygon = useStore(s => s.selectPolygon);
+  const onUpdatePolygon = useStore(s => s.updatePolygon);
+  const onFinishDrawingPolygon = useStore(s => s.finishDrawingPolygon);
+  const onToggleDrawPolygon = useStore(s => s.toggleDrawPolygon);
 
-interface Props {
-  appMode: AppMode;
-  layers: Layer[];
-  selectedLayerId: string | null;
-  onSelectLayer: (id: string | null) => void;
-  onUpdateLayer: (id: string, updates: Partial<Layer>) => void;
-  onAddLayer: (file: File, x: number, y: number) => void;
-
-  polygonLayers: PolygonLayer[];
-  selectedPolygonId: string | null;
-  onSelectPolygon: (id: string | null) => void;
-  onUpdatePolygon: (id: string, updates: Partial<PolygonLayer>) => void;
-
-  isDrawingPolygon: boolean;
-  onFinishDrawingPolygon: (points: PolygonPoint[]) => void;
-  onCancelDrawingPolygon: () => void;
-
-  canvasBg: string;
-}
-
-export default function CanvasWorkspace({
-  appMode,
-  layers,
-  selectedLayerId,
-  onSelectLayer,
-  onUpdateLayer,
-  onAddLayer,
-  polygonLayers,
-  selectedPolygonId,
-  onSelectPolygon,
-  onUpdatePolygon,
-  isDrawingPolygon,
-  onFinishDrawingPolygon,
-  onCancelDrawingPolygon,
-  canvasBg
-}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fpsRef = useRef<HTMLSpanElement>(null);
+  const symOverlayRef = useRef<HTMLDivElement>(null);
 
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [scale, setScale] = useState(1);
-  const [time, setTime] = useState(0);
 
   // Drawing mode points state
   const [drawingPoints, setDrawingPoints] = useState<PolygonPoint[]>([]);
   const [mouseCanvasPos, setMouseCanvasPos] = useState<PolygonPoint | null>(null);
-
-  // Dragging vertex state
-  const [draggedVertexIndex, setDraggedVertexIndex] = useState<number | null>(null);
 
   // Export settings state
   const [showExportModal, setShowExportModal] = useState(false);
@@ -117,19 +71,14 @@ export default function CanvasWorkspace({
   const isCancelExportRef = useRef(false);
   const isRecordingVideoRef = useRef(false);
 
-  // Native canvas resolution
-  const CANVAS_WIDTH = 1080;
-  const CANVAS_HEIGHT = 1920;
-
+  // The render loop lives outside React: it reads the store imperatively and
+  // repaints the canvas every frame without triggering any component renders.
   useEffect(() => {
-    let animationFrameId: number;
-    const startTime = performance.now();
-    const loop = (t: number) => {
-      setTime((t - startTime) / 1000);
-      animationFrameId = requestAnimationFrame(loop);
-    };
-    animationFrameId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animationFrameId);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    return startRenderLoop(canvas, (fps) => {
+      if (fpsRef.current) fpsRef.current.textContent = `${fps} fps`;
+    });
   }, []);
 
   useEffect(() => {
@@ -154,92 +103,55 @@ export default function CanvasWorkspace({
     }
   }, [isDrawingPolygon]);
 
-  const applyMotion = (baseValue: number, config: MotionConfig | undefined, t: number): number => {
-    if (!config || config.type === 'none') return baseValue;
-    if (config.type === 'sine') {
-      return baseValue + Math.sin(t * config.speed * Math.PI * 2 + config.phase) * config.amplitude;
-    }
-    if (config.type === 'noise') {
-      const noise = Math.sin(t * config.speed * 1.5 + config.phase) 
-                  * Math.sin(t * config.speed * 0.8 + config.phase * 1.3)
-                  * Math.cos(t * config.speed * 2.2 - config.phase);
-      return baseValue + noise * config.amplitude;
-    }
-    return baseValue;
-  };
+  const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
+  const selectedLayer = layers.find(l => l.id === selectedLayerId);
 
-  const getModulatedLayer = (layer: Layer, t: number): Layer => {
-    return {
-      ...layer,
-      x: applyMotion(layer.x, layer.motionX, t),
-      y: applyMotion(layer.y, layer.motionY, t),
-      rotation: applyMotion(layer.rotation, layer.motionRotation, t),
-      scaleX: Math.sign(layer.scaleX || 1) * applyMotion(Math.abs(layer.scaleX), layer.motionScale, t),
-      scaleY: Math.sign(layer.scaleY || 1) * applyMotion(Math.abs(layer.scaleY), layer.motionScale, t),
-    };
-  };
-
-  const getInstances = (layer: Layer, t: number) => {
-    const modulatedLayer = getModulatedLayer(layer, t);
-    switch (modulatedLayer.symmetry) {
-      case 'none':
-        return [{ ...modulatedLayer, isPrimary: true }];
-      case 'mirror-x':
-        return [
-          { ...modulatedLayer, isPrimary: true },
-          { ...modulatedLayer, x: -modulatedLayer.x, rotation: -modulatedLayer.rotation, scaleX: -modulatedLayer.scaleX, isPrimary: false }
-        ];
-      case 'mirror-y':
-        return [
-          { ...modulatedLayer, isPrimary: true },
-          { ...modulatedLayer, y: -modulatedLayer.y, rotation: -modulatedLayer.rotation, scaleY: -modulatedLayer.scaleY, isPrimary: false }
-        ];
-      case 'quad':
-        return [
-          { ...modulatedLayer, isPrimary: true },
-          { ...modulatedLayer, x: -modulatedLayer.x, rotation: -modulatedLayer.rotation, scaleX: -modulatedLayer.scaleX, isPrimary: false },
-          { ...modulatedLayer, y: -modulatedLayer.y, rotation: -modulatedLayer.rotation, scaleY: -modulatedLayer.scaleY, isPrimary: false },
-          { ...modulatedLayer, x: -modulatedLayer.x, y: -modulatedLayer.y, rotation: modulatedLayer.rotation, scaleX: -modulatedLayer.scaleX, scaleY: -modulatedLayer.scaleY, isPrimary: false }
-        ];
-      case 'radial': {
-        const instances = [];
-        const N = Math.max(2, modulatedLayer.radialSegments || 6);
-        for (let i = 0; i < N; i++) {
-          const angle = i * (2 * Math.PI / N);
-          const deg = i * (360 / N);
-          const nx = modulatedLayer.x * Math.cos(angle) - modulatedLayer.y * Math.sin(angle);
-          const ny = modulatedLayer.x * Math.sin(angle) + modulatedLayer.y * Math.cos(angle);
-          instances.push({
-            ...modulatedLayer,
-            x: nx,
-            y: ny,
-            rotation: modulatedLayer.rotation + deg,
-            isPrimary: i === 0
-          });
+  // Selection overlay for symmetry layers follows motion-modulated instances.
+  // Positions are written straight to the DOM each frame — React only
+  // re-renders when the selection or instance count changes.
+  useEffect(() => {
+    if (appMode !== 'symmetry' || !selectedLayer || selectedLayer.hidden) return;
+    let raf = 0;
+    const tick = () => {
+      const el = symOverlayRef.current;
+      if (el) {
+        const t = getPlaybackTime();
+        const { w, h } = getLayerSize(selectedLayer);
+        const instances = getInstances(selectedLayer, t);
+        for (let i = 0; i < el.children.length; i++) {
+          const box = el.children[i] as HTMLElement;
+          const inst = instances[i];
+          if (!inst) break;
+          box.style.left = `${(CANVAS_WIDTH / 2 + inst.x) * scale}px`;
+          box.style.top = `${(CANVAS_HEIGHT / 2 + inst.y) * scale}px`;
+          box.style.width = `${w * Math.abs(inst.scaleX) * scale}px`;
+          box.style.height = `${h * Math.abs(inst.scaleY) * scale}px`;
+          box.style.transform = `translate(-50%, -50%) rotate(${inst.rotation}deg)`;
         }
-        return instances;
       }
-      default:
-        return [{ ...modulatedLayer, isPrimary: true }];
-    }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [appMode, selectedLayer, scale]);
+
+  // Convert mouse event to canvas relative space coordinates
+  const getCanvasCoords = (e: React.MouseEvent | MouseEvent): PolygonPoint | null => {
+    if (!containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+
+    const x = (e.clientX - rect.left - cx) / scale;
+    const y = (e.clientY - rect.top - cy) / scale;
+    return { x, y };
   };
 
-  const hitTestLayer = (layer: Layer, coords: PolygonPoint): boolean => {
-    if (layer.hidden) return false;
-    const instances = getInstances(layer, time);
-
-    let w = 200;
-    let h = 200;
-    if (layer.gifData) {
-      w = layer.gifData.width || 200;
-      h = layer.gifData.height || 200;
-    } else if (layer.src) {
-      const img = getCachedImage(layer.src);
-      if (img) {
-        w = img.naturalWidth || 200;
-        h = img.naturalHeight || 200;
-      }
-    }
+  const hitTestLayer = (layerId: string, coords: PolygonPoint): boolean => {
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer || layer.hidden) return false;
+    const instances = getInstances(layer, getPlaybackTime());
+    const { w, h } = getLayerSize(layer);
 
     for (const inst of instances) {
       const dx = coords.x - inst.x;
@@ -256,178 +168,59 @@ export default function CanvasWorkspace({
         return true;
       }
     }
-
     return false;
   };
 
-  const renderPolygonToCtx = (
-    ctx: CanvasRenderingContext2D,
-    polygon: PolygonLayer,
-    t: number,
-    width: number,
-    height: number
-  ) => {
-    if (!polygon.points || polygon.points.length < 3) return;
+  // Shared drag wiring: each drag is a single undo step. History capture is
+  // paused right after the first tracked change and resumed on mouse-up.
+  const beginDrag = (onMove: (e: MouseEvent) => void, onEnd?: () => void) => {
+    let firstMove = true;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      onMove(moveEvent);
+      if (firstMove) {
+        pauseHistory();
+        firstMove = false;
+      }
+    };
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      if (!firstMove) resumeHistory();
+      onEnd?.();
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
 
-    const scaleVal = applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t);
-    const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
-    const offsetX = applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
-    const offsetY = applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
+  const startPolygonDrag = (polygonId: string, startCoords: PolygonPoint) => {
+    const poly = useStore.getState().polygonLayers.find(p => p.id === polygonId);
+    if (!poly) return;
+    const initialPoints = [...poly.points];
 
-    const scaleX = width / CANVAS_WIDTH;
-    const scaleY = height / CANVAS_HEIGHT;
-
-    ctx.save();
-
-    // Create path for polygon
-    ctx.beginPath();
-    polygon.points.forEach((pt, i) => {
-      const px = (width / 2) + pt.x * scaleX;
-      const py = (height / 2) + pt.y * scaleY;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+    beginDrag((moveEvent) => {
+      const currentCoords = getCanvasCoords(moveEvent);
+      if (!currentCoords) return;
+      const dx = currentCoords.x - startCoords.x;
+      const dy = currentCoords.y - startCoords.y;
+      onUpdatePolygon(polygonId, {
+        points: initialPoints.map(pt => ({ x: pt.x + dx, y: pt.y + dy }))
+      });
     });
-    ctx.closePath();
-
-    ctx.globalAlpha = Math.max(0, Math.min(1, polygon.opacity));
-    ctx.globalCompositeOperation = BLEND_MAP[polygon.blendMode] || 'source-over';
-
-    let frameSource: CanvasImageSource | null = null;
-    if (polygon.gifData) {
-      const frameCanvas = getGifFrameAtTime(polygon.gifData, t, polygon.gifSpeed ?? 1);
-      if (frameCanvas) frameSource = frameCanvas;
-    }
-
-    if (!frameSource && polygon.src) {
-      const imgEl = getCachedImage(polygon.src);
-      if (imgEl) {
-        frameSource = imgEl;
-      }
-    }
-
-    if (frameSource) {
-      try {
-        const pattern = ctx.createPattern(frameSource, 'repeat');
-        if (pattern) {
-          if ('setTransform' in pattern) {
-            const matrix = new DOMMatrix();
-            matrix.translateSelf(offsetX, offsetY);
-            matrix.scaleSelf(Math.max(0.01, scaleVal), Math.max(0.01, scaleVal));
-            matrix.rotateSelf(rotationVal);
-            pattern.setTransform(matrix);
-          }
-          ctx.fillStyle = pattern;
-          ctx.fill();
-        }
-      } catch (err) {
-        console.warn("Pattern fill failed:", err);
-        ctx.fillStyle = polygon.fillColor || '#6366f1';
-        ctx.fill();
-      }
-    } else {
-      ctx.fillStyle = polygon.fillColor || '#6366f1';
-      ctx.fill();
-    }
-
-    if (polygon.strokeWidth > 0 && polygon.strokeColor && polygon.strokeColor !== 'transparent') {
-      ctx.lineWidth = polygon.strokeWidth * Math.min(scaleX, scaleY);
-      ctx.strokeStyle = polygon.strokeColor;
-      ctx.lineJoin = 'round';
-      ctx.stroke();
-    }
-
-    ctx.restore();
   };
 
-  const renderToCanvas = (
-    canvas: HTMLCanvasElement,
-    t: number,
-    width: number = CANVAS_WIDTH,
-    height: number = CANVAS_HEIGHT
-  ) => {
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  const startLayerDrag = (layerId: string, startCoords: PolygonPoint) => {
+    const layer = useStore.getState().layers.find(l => l.id === layerId);
+    if (!layer) return;
+    const startX = layer.x;
+    const startY = layer.y;
 
-    // Background
-    ctx.fillStyle = canvasBg;
-    ctx.fillRect(0, 0, width, height);
-
-    if (appMode === 'symmetry') {
-      const scaleX = width / CANVAS_WIDTH;
-      const scaleY = height / CANVAS_HEIGHT;
-
-      layers.forEach((layer) => {
-        if (layer.hidden) return;
-        const instances = getInstances(layer, t);
-        instances.forEach((inst) => {
-          let drawSource: CanvasImageSource | null = null;
-          let w = 100;
-          let h = 100;
-
-          if (layer.gifData) {
-            const gifCanvas = getGifFrameAtTime(layer.gifData, t, layer.gifSpeed ?? 1);
-            if (gifCanvas) {
-              drawSource = gifCanvas;
-              w = layer.gifData.width;
-              h = layer.gifData.height;
-            }
-          }
-
-          if (!drawSource) {
-            const imgEl = getCachedImage(layer.src);
-            if (imgEl) {
-              drawSource = imgEl;
-              w = imgEl.naturalWidth || 100;
-              h = imgEl.naturalHeight || 100;
-            }
-          }
-
-          if (!drawSource) return;
-
-          ctx.save();
-          ctx.translate((width / 2) + inst.x * scaleX, (height / 2) + inst.y * scaleY);
-          ctx.rotate((inst.rotation * Math.PI) / 180);
-          ctx.scale(inst.scaleX * scaleX, inst.scaleY * scaleY);
-
-          ctx.globalAlpha = Math.max(0, Math.min(1, inst.opacity));
-          ctx.globalCompositeOperation = BLEND_MAP[inst.blendMode] || 'source-over';
-
-          try {
-            ctx.drawImage(drawSource, -w / 2, -h / 2, w, h);
-          } catch (e) {
-            console.warn("Canvas drawImage failed:", e);
-          }
-          ctx.restore();
-        });
-      });
-    } else if (appMode === 'polygon') {
-      polygonLayers.forEach((polygon) => {
-        if (polygon.hidden) return;
-        renderPolygonToCtx(ctx, polygon, t, width, height);
-      });
-    }
-  };
-
-  // Keep canvas rendered each frame
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      renderToCanvas(canvas, time, CANVAS_WIDTH, CANVAS_HEIGHT);
-    }
-  }, [time, layers, polygonLayers, appMode, canvasBg]);
-
-  // Convert mouse event to canvas relative space coordinates
-  const getCanvasCoords = (e: React.MouseEvent | MouseEvent): PolygonPoint | null => {
-    if (!containerRef.current) return null;
-    const rect = containerRef.current.getBoundingClientRect();
-    const cx = rect.width / 2;
-    const cy = rect.height / 2;
-
-    const x = (e.clientX - rect.left - cx) / scale;
-    const y = (e.clientY - rect.top - cy) / scale;
-    return { x, y };
+    beginDrag((moveEvent) => {
+      const currentCoords = getCanvasCoords(moveEvent);
+      if (!currentCoords) return;
+      const dx = currentCoords.x - startCoords.x;
+      const dy = currentCoords.y - startCoords.y;
+      onUpdateLayer(layerId, { x: startX + dx, y: startY + dy });
+    });
   };
 
   const handleContainerMouseMove = (e: React.MouseEvent) => {
@@ -440,92 +233,32 @@ export default function CanvasWorkspace({
   const handleContainerMouseDown = (e: React.MouseEvent) => {
     if (isDrawingPolygon) return;
 
-    if (appMode === 'polygon') {
-      const coords = getCanvasCoords(e);
-      if (!coords) return;
+    const coords = getCanvasCoords(e);
+    if (!coords) return;
 
+    if (appMode === 'polygon') {
       // Hit-test polygon layers from top to bottom
       for (let i = polygonLayers.length - 1; i >= 0; i--) {
         const poly = polygonLayers[i];
         if (poly.hidden) continue;
-
         if (isPointInPolygon(coords, poly.points)) {
           onSelectPolygon(poly.id);
-
-          // Initiate dragging polygon
-          const startCoords = coords;
-          const initialPoints = [...poly.points];
-
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            const currentCoords = getCanvasCoords(moveEvent);
-            if (!currentCoords) return;
-
-            const dx = currentCoords.x - startCoords.x;
-            const dy = currentCoords.y - startCoords.y;
-
-            const movedPoints = initialPoints.map(pt => ({
-              x: pt.x + dx,
-              y: pt.y + dy
-            }));
-
-            onUpdatePolygon(poly.id, { points: movedPoints });
-          };
-
-          const handleMouseUp = () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-          };
-
-          window.addEventListener('mousemove', handleMouseMove);
-          window.addEventListener('mouseup', handleMouseUp);
+          startPolygonDrag(poly.id, coords);
           return;
         }
       }
-
-      // If clicked empty canvas background, deselect current polygon
       onSelectPolygon(null);
     } else if (appMode === 'symmetry') {
-      const coords = getCanvasCoords(e);
-      if (!coords) return;
-
       // Hit-test symmetry layers from top to bottom (highest z-index first)
       for (let i = layers.length - 1; i >= 0; i--) {
         const layer = layers[i];
         if (layer.hidden) continue;
-
-        if (hitTestLayer(layer, coords)) {
+        if (hitTestLayer(layer.id, coords)) {
           onSelectLayer(layer.id);
-
-          // Initiate dragging layer on canvas
-          const startCoords = coords;
-          const startX = layer.x;
-          const startY = layer.y;
-
-          const handleMouseMove = (moveEvent: MouseEvent) => {
-            const currentCoords = getCanvasCoords(moveEvent);
-            if (!currentCoords) return;
-
-            const dx = currentCoords.x - startCoords.x;
-            const dy = currentCoords.y - startCoords.y;
-
-            onUpdateLayer(layer.id, {
-              x: startX + dx,
-              y: startY + dy
-            });
-          };
-
-          const handleMouseUp = () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-          };
-
-          window.addEventListener('mousemove', handleMouseMove);
-          window.addEventListener('mouseup', handleMouseUp);
+          startLayerDrag(layer.id, coords);
           return;
         }
       }
-
-      // If clicked background without hitting any layer
       onSelectLayer(null);
     }
   };
@@ -560,102 +293,36 @@ export default function CanvasWorkspace({
     }
   };
 
-  // Dragging vertex or whole polygon
   const handleVertexMouseDown = (e: React.MouseEvent, index: number) => {
     e.stopPropagation();
-    setDraggedVertexIndex(index);
+    const polygonId = selectedPolygonId;
+    if (!polygonId) return;
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
+    beginDrag((moveEvent) => {
       const coords = getCanvasCoords(moveEvent);
-      if (coords && selectedPolygonId) {
-        const poly = polygonLayers.find(p => p.id === selectedPolygonId);
-        if (poly) {
-          const newPoints = [...poly.points];
-          newPoints[index] = coords;
-          onUpdatePolygon(selectedPolygonId, { points: newPoints });
-        }
-      }
-    };
-
-    const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      setDraggedVertexIndex(null);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+      if (!coords) return;
+      const poly = useStore.getState().polygonLayers.find(p => p.id === polygonId);
+      if (!poly) return;
+      const newPoints = [...poly.points];
+      newPoints[index] = coords;
+      onUpdatePolygon(polygonId, { points: newPoints });
+    });
   };
 
   const handlePolygonCenterMouseDown = (e: React.MouseEvent, polygonId: string) => {
     e.stopPropagation();
     onSelectPolygon(polygonId);
-
-    const poly = polygonLayers.find(p => p.id === polygonId);
-    if (!poly) return;
-
     const startCoords = getCanvasCoords(e);
     if (!startCoords) return;
-
-    const initialPoints = [...poly.points];
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const currentCoords = getCanvasCoords(moveEvent);
-      if (!currentCoords) return;
-
-      const dx = currentCoords.x - startCoords.x;
-      const dy = currentCoords.y - startCoords.y;
-
-      const movedPoints = initialPoints.map(pt => ({
-        x: pt.x + dx,
-        y: pt.y + dy
-      }));
-
-      onUpdatePolygon(polygonId, { points: movedPoints });
-    };
-
-    const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    startPolygonDrag(polygonId, startCoords);
   };
 
   const handleLayerCenterMouseDown = (e: React.MouseEvent, layerId: string) => {
     e.stopPropagation();
     onSelectLayer(layerId);
-
-    const layer = layers.find(l => l.id === layerId);
-    if (!layer) return;
-
     const startCoords = getCanvasCoords(e);
     if (!startCoords) return;
-
-    const startX = layer.x;
-    const startY = layer.y;
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const currentCoords = getCanvasCoords(moveEvent);
-      if (!currentCoords) return;
-
-      const dx = currentCoords.x - startCoords.x;
-      const dy = currentCoords.y - startCoords.y;
-
-      onUpdateLayer(layerId, {
-        x: startX + dx,
-        y: startY + dy
-      });
-    };
-
-    const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    startLayerDrag(layerId, startCoords);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -684,17 +351,22 @@ export default function CanvasWorkspace({
     });
   };
 
+  const snapshotRenderState = (): RenderState => ({
+    appMode,
+    ...getDocumentSnapshot()
+  });
+
   const handleExportHighRes = () => {
     try {
       const canvas = document.createElement('canvas');
-      renderToCanvas(canvas, time, CANVAS_WIDTH, CANVAS_HEIGHT);
+      renderFrame(canvas, getPlaybackTime(), snapshotRenderState(), CANVAS_WIDTH, CANVAS_HEIGHT);
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.download = `prism-art-${getExportTimestamp()}.png`;
+      link.download = `slapchop-art-${getExportTimestamp()}.png`;
       link.href = dataUrl;
       link.click();
     } catch (e) {
-      console.error("High-Res export failed", e);
+      console.error('High-Res export failed', e);
     }
   };
 
@@ -703,6 +375,7 @@ export default function CanvasWorkspace({
     isCancelExportRef.current = false;
     setZipPercent(0);
 
+    const doc = snapshotRenderState();
     const [resW, resH] = exportResolution === 'full' ? [1080, 1920]
                        : exportResolution === 'hd' ? [720, 1280]
                        : [540, 960];
@@ -723,7 +396,7 @@ export default function CanvasWorkspace({
       }
 
       const frameTime = frame * (1 / fps);
-      renderToCanvas(offscreenCanvas, frameTime, resW, resH);
+      renderFrame(offscreenCanvas, frameTime, doc, resW, resH);
 
       const blob = await new Promise<Blob | null>((resolve) => {
         offscreenCanvas.toBlob((b) => resolve(b), mimeType, 0.92);
@@ -750,11 +423,10 @@ export default function CanvasWorkspace({
         setZipPercent(Math.round(metadata.percent));
       });
 
-      const timestamp = getExportTimestamp();
-      saveAs(zipContent, `prism-sequence-${timestamp}-${exportResolution}-${exportDuration}s.zip`);
+      saveAs(zipContent, `slapchop-sequence-${getExportTimestamp()}-${exportResolution}-${exportDuration}s.zip`);
       setShowExportModal(false);
     } catch (e) {
-      console.error("ZIP Generation error:", e);
+      console.error('ZIP Generation error:', e);
     } finally {
       setIsExportingZip(false);
     }
@@ -765,6 +437,7 @@ export default function CanvasWorkspace({
     isRecordingVideoRef.current = true;
     setVideoTime(0);
 
+    const doc = snapshotRenderState();
     const [resW, resH] = exportResolution === 'full' ? [1080, 1920]
                        : exportResolution === 'hd' ? [720, 1280]
                        : [540, 960];
@@ -792,8 +465,7 @@ export default function CanvasWorkspace({
 
     mediaRecorder.onstop = () => {
       const blob = new Blob(chunks, { type: 'video/webm' });
-      const timestamp = getExportTimestamp();
-      saveAs(blob, `prism-video-${timestamp}-${exportDuration}s.webm`);
+      saveAs(blob, `slapchop-video-${getExportTimestamp()}-${exportDuration}s.webm`);
       setIsRecordingVideo(false);
       setShowExportModal(false);
     };
@@ -805,7 +477,7 @@ export default function CanvasWorkspace({
       const elapsed = (performance.now() - startTime) / 1000;
       setVideoTime(elapsed);
 
-      renderToCanvas(offscreenCanvas, elapsed, resW, resH);
+      renderFrame(offscreenCanvas, elapsed, doc, resW, resH);
 
       if (elapsed >= exportDuration || !isRecordingVideoRef.current) {
         clearInterval(interval);
@@ -814,12 +486,9 @@ export default function CanvasWorkspace({
     }, 1000 / exportFps);
   };
 
-  const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
-  const selectedLayer = layers.find(l => l.id === selectedLayerId);
-
   return (
-    <div 
-      ref={wrapRef} 
+    <div
+      ref={wrapRef}
       className="flex-1 bg-gray-950 flex items-center justify-center relative overflow-hidden select-none"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -833,18 +502,21 @@ export default function CanvasWorkspace({
             {appMode === 'symmetry' ? 'Symmetry Canvas' : 'Polygon GIF Tiler'}
           </span>
           <span className="text-gray-500 font-mono">1080x1920</span>
+          {import.meta.env.DEV && (
+            <span ref={fpsRef} className="text-emerald-400 font-mono" />
+          )}
         </div>
 
         <div className="flex items-center gap-2 pointer-events-auto">
-          <button 
+          <button
             onClick={handleExportHighRes}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900/80 hover:bg-gray-800 text-gray-200 border border-gray-700/80 rounded-lg text-xs font-medium transition-colors shadow-lg backdrop-blur"
           >
             <Download className="w-3.5 h-3.5" />
             Export Image
           </button>
-          
-          <button 
+
+          <button
             onClick={() => setShowExportModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all"
           >
@@ -873,7 +545,7 @@ export default function CanvasWorkspace({
           )}
           <button
             onClick={() => {
-              onCancelDrawingPolygon();
+              onToggleDrawPolygon();
               setDrawingPoints([]);
               setMouseCanvasPos(null);
             }}
@@ -885,7 +557,7 @@ export default function CanvasWorkspace({
       )}
 
       {/* Main Interactive Canvas Box */}
-      <div 
+      <div
         ref={containerRef}
         onMouseDown={handleContainerMouseDown}
         onClick={handleContainerClick}
@@ -990,52 +662,26 @@ export default function CanvasWorkspace({
 
         {/* Symmetry Mode Layer Interactive Handle Overlay */}
         {appMode === 'symmetry' && selectedLayer && !selectedLayer.hidden && (
-          <div className="absolute inset-0 pointer-events-none">
-            {getInstances(selectedLayer, time).map((inst, idx) => {
-              let w = 200;
-              let h = 200;
-              if (selectedLayer.gifData) {
-                w = selectedLayer.gifData.width || 200;
-                h = selectedLayer.gifData.height || 200;
-              } else if (selectedLayer.src) {
-                const img = getCachedImage(selectedLayer.src);
-                if (img) {
-                  w = img.naturalWidth || 200;
-                  h = img.naturalHeight || 200;
-                }
-              }
-              const cx = (CANVAS_WIDTH / 2 + inst.x) * scale;
-              const cy = (CANVAS_HEIGHT / 2 + inst.y) * scale;
-              const boxW = w * Math.abs(inst.scaleX) * scale;
-              const boxH = h * Math.abs(inst.scaleY) * scale;
-
-              return (
-                <div
-                  key={`layer-select-outline-${inst.isPrimary ? 'primary' : 'sym'}-${idx}`}
-                  style={{
-                    left: `${cx}px`,
-                    top: `${cy}px`,
-                    width: `${boxW}px`,
-                    height: `${boxH}px`,
-                    transform: `translate(-50%, -50%) rotate(${inst.rotation}deg)`,
-                  }}
-                  className={cn(
-                    "absolute border-2 pointer-events-none rounded transition-opacity",
-                    inst.isPrimary ? "border-indigo-400 border-dashed" : "border-indigo-500/30 border-dotted"
-                  )}
-                >
-                  {inst.isPrimary && (
-                    <div
-                      onMouseDown={(e) => handleLayerCenterMouseDown(e, selectedLayer.id)}
-                      className="absolute top-1/2 left-1/2 -ml-3.5 -mt-3.5 w-7 h-7 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
-                      title="Drag to Move GIF / Layer"
-                    >
-                      <div className="w-2 h-2 rounded-full bg-white" />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div ref={symOverlayRef} className="absolute inset-0 pointer-events-none">
+            {getInstances(selectedLayer, getPlaybackTime()).map((inst, idx) => (
+              <div
+                key={`layer-select-outline-${inst.isPrimary ? 'primary' : 'sym'}-${idx}`}
+                className={cn(
+                  "absolute border-2 pointer-events-none rounded",
+                  inst.isPrimary ? "border-indigo-400 border-dashed" : "border-indigo-500/30 border-dotted"
+                )}
+              >
+                {inst.isPrimary && (
+                  <div
+                    onMouseDown={(e) => handleLayerCenterMouseDown(e, selectedLayer.id)}
+                    className="absolute top-1/2 left-1/2 -ml-3.5 -mt-3.5 w-7 h-7 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
+                    title="Drag to Move GIF / Layer"
+                  >
+                    <div className="w-2 h-2 rounded-full bg-white" />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -1044,7 +690,7 @@ export default function CanvasWorkspace({
       {showExportModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 text-gray-100 shadow-2xl relative">
-            <button 
+            <button
               onClick={() => {
                 if (isExportingZip) isCancelExportRef.current = true;
                 if (isRecordingVideo) isRecordingVideoRef.current = false;
@@ -1095,11 +741,11 @@ export default function CanvasWorkspace({
                   ].map((res) => (
                     <button
                       key={res.id}
-                      onClick={() => setExportResolution(res.id as any)}
+                      onClick={() => setExportResolution(res.id as 'full' | 'hd' | 'compact')}
                       className={cn(
                         "p-2 rounded-lg border text-left transition-colors",
-                        exportResolution === res.id 
-                          ? "bg-indigo-950/50 border-indigo-500 text-white" 
+                        exportResolution === res.id
+                          ? "bg-indigo-950/50 border-indigo-500 text-white"
                           : "bg-gray-950/50 border-gray-800 text-gray-400 hover:border-gray-700"
                       )}
                     >
@@ -1113,10 +759,10 @@ export default function CanvasWorkspace({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Duration (Sec)</label>
-                  <input 
-                    type="number" 
-                    min="1" 
-                    max="10" 
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
                     value={exportDuration}
                     onChange={(e) => setExportDuration(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
                     className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white"
@@ -1125,7 +771,7 @@ export default function CanvasWorkspace({
 
                 <div>
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">FPS</label>
-                  <select 
+                  <select
                     value={exportFps}
                     onChange={(e) => setExportFps(parseInt(e.target.value))}
                     className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white"
@@ -1142,10 +788,10 @@ export default function CanvasWorkspace({
                   <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Image File Format</label>
                   <div className="flex items-center gap-4 text-xs">
                     <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="format" 
-                        value="png" 
+                      <input
+                        type="radio"
+                        name="format"
+                        value="png"
                         checked={exportFormat === 'png'}
                         onChange={() => setExportFormat('png')}
                         className="accent-indigo-500"
@@ -1153,10 +799,10 @@ export default function CanvasWorkspace({
                       PNG (Lossless)
                     </label>
                     <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
-                      <input 
-                        type="radio" 
-                        name="format" 
-                        value="jpeg" 
+                      <input
+                        type="radio"
+                        name="format"
+                        value="jpeg"
                         checked={exportFormat === 'jpeg'}
                         onChange={() => setExportFormat('jpeg')}
                         className="accent-indigo-500"
@@ -1175,8 +821,8 @@ export default function CanvasWorkspace({
                     <span>{exportProgress.status === 'rendering' ? `${Math.round((exportProgress.current / exportProgress.total) * 100)}%` : `${zipPercent}%`}</span>
                   </div>
                   <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-indigo-500 transition-all duration-150" 
+                    <div
+                      className="h-full bg-indigo-500 transition-all duration-150"
                       style={{ width: `${exportProgress.status === 'rendering' ? (exportProgress.current / exportProgress.total) * 100 : zipPercent}%` }}
                     />
                   </div>
@@ -1193,8 +839,8 @@ export default function CanvasWorkspace({
                     <span>{videoTime.toFixed(1)}s / {exportDuration}s</span>
                   </div>
                   <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-red-500 transition-all duration-150" 
+                    <div
+                      className="h-full bg-red-500 transition-all duration-150"
                       style={{ width: `${Math.min(100, (videoTime / exportDuration) * 100)}%` }}
                     />
                   </div>

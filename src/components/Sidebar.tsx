@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Layer, PolygonLayer, SymmetryType, BlendMode, MotionConfig, MotionType, AppMode } from '../types';
-import { Trash2, Image as ImageIcon, GripVertical, Film, Sparkles, Shapes, PenTool, Eye, EyeOff, Copy, ChevronUp, ChevronDown } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Layer, PolygonLayer, SymmetryType, BlendMode, MotionConfig, MotionType } from '../types';
+import { Trash2, Image as ImageIcon, GripVertical, Film, Sparkles, Shapes, PenTool, Eye, EyeOff, Copy, ChevronUp, ChevronDown, Undo2, Redo2, Save, FolderOpen } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { redo, undo, useStore } from '../store';
+import { openProject, saveProject } from '../lib/project';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -59,39 +61,6 @@ function MotionControl({ label, config, onChange, maxAmplitude = 1000, stepAmpli
       )}
     </div>
   );
-}
-
-interface Props {
-  appMode: AppMode;
-  onModeChange: (mode: AppMode) => void;
-  // Symmetry Mode
-  layers: Layer[];
-  selectedLayerId: string | null;
-  onSelectLayer: (id: string | null) => void;
-  onUpdateLayer: (id: string, updates: Partial<Layer>) => void;
-  onDeleteLayer: (id: string) => void;
-  onDuplicateLayer?: (id: string) => void;
-  onMoveLayerUp?: (id: string) => void;
-  onMoveLayerDown?: (id: string) => void;
-  onReorderLayers: (activeId: string, overId: string) => void;
-  onAddLayer: (file: File, x: number, y: number) => void;
-  // Polygon Mode
-  polygonLayers: PolygonLayer[];
-  selectedPolygonId: string | null;
-  onSelectPolygon: (id: string | null) => void;
-  onUpdatePolygon: (id: string, updates: Partial<PolygonLayer>) => void;
-  onDeletePolygon: (id: string) => void;
-  onDuplicatePolygon?: (id: string) => void;
-  onMovePolygonUp?: (id: string) => void;
-  onMovePolygonDown?: (id: string) => void;
-  onReorderPolygons: (activeId: string, overId: string) => void;
-  onAddPresetPolygon: (type: 'triangle' | 'rectangle' | 'star' | 'hexagon') => void;
-  isDrawingPolygon: boolean;
-  onToggleDrawPolygon: () => void;
-  onUploadPolygonTexture: (file: File) => void;
-  // Canvas
-  canvasBg: string;
-  onUpdateCanvasBg: (val: string) => void;
 }
 
 const SYMMETRY_OPTIONS: { value: SymmetryType; label: string }[] = [
@@ -256,37 +225,50 @@ function SortablePolygonItem({ polygon, selectedPolygonId, onSelectPolygon, onUp
   );
 }
 
-export default function Sidebar({
-  appMode,
-  onModeChange,
-  layers,
-  selectedLayerId,
-  onSelectLayer,
-  onUpdateLayer,
-  onDeleteLayer,
-  onDuplicateLayer,
-  onMoveLayerUp,
-  onMoveLayerDown,
-  onReorderLayers,
-  onAddLayer,
-  polygonLayers,
-  selectedPolygonId,
-  onSelectPolygon,
-  onUpdatePolygon,
-  onDeletePolygon,
-  onDuplicatePolygon,
-  onMovePolygonUp,
-  onMovePolygonDown,
-  onReorderPolygons,
-  onAddPresetPolygon,
-  isDrawingPolygon,
-  onToggleDrawPolygon,
-  onUploadPolygonTexture,
-  canvasBg,
-  onUpdateCanvasBg
-}: Props) {
+export default function Sidebar() {
+  const appMode = useStore(s => s.appMode);
+  const onModeChange = useStore(s => s.setAppMode);
+  const layers = useStore(s => s.layers);
+  const selectedLayerId = useStore(s => s.selectedLayerId);
+  const onSelectLayer = useStore(s => s.selectLayer);
+  const onUpdateLayer = useStore(s => s.updateLayer);
+  const onDeleteLayer = useStore(s => s.deleteLayer);
+  const onDuplicateLayer = useStore(s => s.duplicateLayer);
+  const onMoveLayerUp = useStore(s => s.moveLayerUp);
+  const onMoveLayerDown = useStore(s => s.moveLayerDown);
+  const onReorderLayers = useStore(s => s.reorderLayers);
+  const onAddLayer = useStore(s => s.addLayerFromFile);
+  const polygonLayers = useStore(s => s.polygonLayers);
+  const selectedPolygonId = useStore(s => s.selectedPolygonId);
+  const onSelectPolygon = useStore(s => s.selectPolygon);
+  const onUpdatePolygon = useStore(s => s.updatePolygon);
+  const onDeletePolygon = useStore(s => s.deletePolygon);
+  const onDuplicatePolygon = useStore(s => s.duplicatePolygon);
+  const onMovePolygonUp = useStore(s => s.movePolygonUp);
+  const onMovePolygonDown = useStore(s => s.movePolygonDown);
+  const onReorderPolygons = useStore(s => s.reorderPolygons);
+  const onAddPresetPolygon = useStore(s => s.addPresetPolygon);
+  const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
+  const onToggleDrawPolygon = useStore(s => s.toggleDrawPolygon);
+  const onUploadPolygonTexture = useStore(s => s.uploadPolygonTexture);
+  const canvasBg = useStore(s => s.canvasBg);
+  const onUpdateCanvasBg = useStore(s => s.setCanvasBg);
+
   const [activeTab, setActiveTab] = useState<'transform' | 'style' | 'motion'>('transform');
   const [polyTab, setPolyTab] = useState<'texture' | 'style' | 'motion'>('texture');
+  const projectFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      await openProject(file);
+    } catch (err) {
+      console.error('Failed to open project:', err);
+      alert(err instanceof Error ? err.message : 'Failed to open project file.');
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -334,8 +316,33 @@ export default function Sidebar({
     <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col h-screen text-gray-200 overflow-y-auto shrink-0">
       {/* Header & Mode Switcher */}
       <div className="p-4 border-b border-gray-800">
-         <h1 className="text-xl font-bold text-white tracking-tight">Prism Canvas</h1>
-         <p className="text-xs text-gray-400 mt-0.5">Generative Motion Studio</p>
+         <div className="flex items-start justify-between">
+           <div>
+             <h1 className="text-xl font-bold text-white tracking-tight">slapchop</h1>
+             <p className="text-xs text-gray-400 mt-0.5">Generative Motion Studio</p>
+           </div>
+           <div className="flex items-center gap-0.5">
+             <button onClick={() => undo()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Undo (⌘Z)">
+               <Undo2 className="w-4 h-4" />
+             </button>
+             <button onClick={() => redo()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Redo (⇧⌘Z)">
+               <Redo2 className="w-4 h-4" />
+             </button>
+             <button onClick={() => saveProject()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Save Project (⌘S)">
+               <Save className="w-4 h-4" />
+             </button>
+             <button onClick={() => projectFileInputRef.current?.click()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Open Project">
+               <FolderOpen className="w-4 h-4" />
+             </button>
+             <input
+               ref={projectFileInputRef}
+               type="file"
+               accept=".slapchop,application/json"
+               className="hidden"
+               onChange={handleProjectFileChange}
+             />
+           </div>
+         </div>
 
          {/* Mode Switcher Buttons */}
          <div className="mt-3 grid grid-cols-2 gap-1 p-1 bg-gray-950 rounded-lg border border-gray-800">
