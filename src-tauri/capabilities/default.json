@@ -18,7 +18,7 @@
       "allow": [{ "path": "**" }, { "path": "$TEMP/**" }]
     },
     {
-      "identifier": "shell:allow-execute",
+      "identifier": "shell:allow-spawn",
       "allow": [
         {
           "name": "binaries/ffmpeg",
@@ -26,6 +26,7 @@
           "args": true
         }
       ]
-    }
+    },
+    "shell:allow-kill"
   ]
 }
