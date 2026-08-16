@@ -4,6 +4,7 @@ import { Trash2, Image as ImageIcon, GripVertical, Film, Sparkles, Shapes, PenTo
 import { cn } from '../lib/utils';
 import { redo, undo, useStore } from '../store';
 import { openProject, saveProject } from '../lib/project';
+import { isNative, openProjectViaDialog } from '../lib/native';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -331,7 +332,7 @@ export default function Sidebar() {
              <button onClick={() => saveProject()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Save Project (⌘S)">
                <Save className="w-4 h-4" />
              </button>
-             <button onClick={() => projectFileInputRef.current?.click()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Open Project">
+             <button onClick={() => isNative() ? openProjectViaDialog() : projectFileInputRef.current?.click()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Open Project (⌘O)">
                <FolderOpen className="w-4 h-4" />
              </button>
              <input

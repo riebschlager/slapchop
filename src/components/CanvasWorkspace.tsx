@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PolygonPoint } from '../types';
 import { cn } from '../lib/utils';
-import { Download, Video, X, Loader2, PenTool, Film, Repeat } from 'lucide-react';
-import { saveAs } from 'file-saver';
+import { Download, Video, X, Loader2, PenTool, Film, Repeat, Clapperboard } from 'lucide-react';
 import { getPolygonCentroid, isPointInPolygon } from '../lib/polygonUtils';
 import { getInstances } from '../lib/motion';
 import { getDocumentSnapshot, pauseHistory, resumeHistory, useStore } from '../store';
@@ -16,6 +15,8 @@ import { getActiveRendererName, getPlaybackTime, renderExportFrame, startRenderL
 import { exportVideo, supportsWebCodecs, VideoFormat } from '../lib/videoExport';
 import { exportZipSequence } from '../lib/zipExport';
 import { exportGif } from '../lib/gifExport';
+import { imageFilesFromPaths, isNative, openProjectFromPath, pickSavePath, saveBlob } from '../lib/native';
+import { exportProRes } from '../lib/proresExport';
 
 function getExportTimestamp(): string {
   const now = new Date();
@@ -48,6 +49,7 @@ export default function CanvasWorkspace() {
 
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [scale, setScale] = useState(1);
+  const scaleRef = useRef(1);
 
   // Drawing mode points state
   const [drawingPoints, setDrawingPoints] = useState<PolygonPoint[]>([]);
@@ -55,7 +57,7 @@ export default function CanvasWorkspace() {
 
   // Export settings state
   const [showExportModal, setShowExportModal] = useState(false);
-  const [exportType, setExportType] = useState<'mp4' | 'webm' | 'gif' | 'zip'>('mp4');
+  const [exportType, setExportType] = useState<'mp4' | 'webm' | 'prores' | 'gif' | 'zip'>('mp4');
   const [exportResolution, setExportResolution] = useState<'full' | 'hd' | 'compact'>('hd');
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
   const [exportDuration, setExportDuration] = useState<number>(3);
@@ -82,12 +84,70 @@ export default function CanvasWorkspace() {
         const rect = wrapRef.current.getBoundingClientRect();
         const scaleX = (rect.width - 80) / CANVAS_WIDTH;
         const scaleY = (rect.height - 80) / CANVAS_HEIGHT;
-        setScale(Math.min(scaleX, scaleY, 1));
+        const next = Math.min(scaleX, scaleY, 1);
+        scaleRef.current = next;
+        setScale(next);
       }
     };
     updateScale();
     window.addEventListener('resize', updateScale);
     return () => window.removeEventListener('resize', updateScale);
+  }, []);
+
+  // Native menu items (File > Export…) reach us via window events.
+  useEffect(() => {
+    const showExport = () => setShowExportModal(true);
+    const exportPng = () => void handleExportHighRes();
+    window.addEventListener('slapchop:show-export', showExport);
+    window.addEventListener('slapchop:export-png', exportPng);
+    return () => {
+      window.removeEventListener('slapchop:show-export', showExport);
+      window.removeEventListener('slapchop:export-png', exportPng);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleExportHighRes reads all state through the store
+  }, []);
+
+  // In the desktop app Tauri intercepts Finder drags before HTML5 sees them,
+  // and hands us real paths — which also makes folder drops possible.
+  useEffect(() => {
+    if (!isNative()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+      const stop = await getCurrentWebview().onDragDropEvent(async (event) => {
+        const payload = event.payload;
+        if (payload.type === 'enter' || payload.type === 'over') {
+          setIsDraggingOver(true);
+          return;
+        }
+        setIsDraggingOver(false);
+        if (payload.type !== 'drop') return;
+
+        const project = payload.paths.find((p) => p.toLowerCase().endsWith('.slapchop'));
+        if (project) {
+          await openProjectFromPath(project);
+          return;
+        }
+        try {
+          const files = await imageFilesFromPaths(payload.paths);
+          if (files.length === 0) return;
+          // Physical (device px) position → CSS px → canvas coords
+          const dpr = window.devicePixelRatio || 1;
+          const coords = canvasCoordsFromClient(payload.position.x / dpr, payload.position.y / dpr) ?? { x: 0, y: 0 };
+          const addLayer = useStore.getState().addLayerFromFile;
+          files.forEach((file) => addLayer(file, coords.x, coords.y));
+        } catch (e) {
+          console.error('Drop failed:', e);
+        }
+      });
+      if (disposed) stop();
+      else unlisten = stop;
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   // Reset drawing state when toggled
@@ -131,16 +191,20 @@ export default function CanvasWorkspace() {
   }, [appMode, selectedLayer, scale]);
 
   // Convert mouse event to canvas relative space coordinates
-  const getCanvasCoords = (e: React.MouseEvent | MouseEvent): PolygonPoint | null => {
+  // Closure-safe variant (reads the current scale from a ref) so listeners
+  // registered once — like the native drag-drop handler — stay correct.
+  const canvasCoordsFromClient = (clientX: number, clientY: number): PolygonPoint | null => {
     if (!containerRef.current) return null;
     const rect = containerRef.current.getBoundingClientRect();
-    const cx = rect.width / 2;
-    const cy = rect.height / 2;
-
-    const x = (e.clientX - rect.left - cx) / scale;
-    const y = (e.clientY - rect.top - cy) / scale;
-    return { x, y };
+    const s = scaleRef.current;
+    return {
+      x: (clientX - rect.left - rect.width / 2) / s,
+      y: (clientY - rect.top - rect.height / 2) / s
+    };
   };
+
+  const getCanvasCoords = (e: React.MouseEvent | MouseEvent): PolygonPoint | null =>
+    canvasCoordsFromClient(e.clientX, e.clientY);
 
   const hitTestLayer = (layerId: string, coords: PolygonPoint): boolean => {
     const layer = layers.find(l => l.id === layerId);
@@ -346,27 +410,25 @@ export default function CanvasWorkspace() {
     });
   };
 
+  // Reads through getState() so it stays correct inside long-lived listeners.
   const snapshotRenderState = (): RenderState => ({
-    appMode,
+    appMode: useStore.getState().appMode,
     ...getDocumentSnapshot()
   });
 
-  const handleExportHighRes = () => {
+  const handleExportHighRes = async () => {
     try {
       const canvas = document.createElement('canvas');
       renderExportFrame(canvas, getPlaybackTime(), snapshotRenderState(), CANVAS_WIDTH, CANVAS_HEIGHT);
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.download = `slapchop-art-${getExportTimestamp()}.png`;
-      link.href = dataUrl;
-      link.click();
+      const blob = await (await fetch(canvas.toDataURL('image/png'))).blob();
+      await saveBlob(blob, `slapchop-art-${getExportTimestamp()}.png`);
     } catch (e) {
       console.error('High-Res export failed', e);
     }
   };
 
-  const finishExport = (blob: Blob, filename: string) => {
-    saveAs(blob, filename);
+  const finishExport = async (blob: Blob, filename: string) => {
+    await saveBlob(blob, filename);
     setShowExportModal(false);
   };
 
@@ -454,6 +516,18 @@ export default function CanvasWorkspace() {
       } else if (exportType === 'gif') {
         const blob = await exportGif({ ...common, onProgress: frameProgress('Encoding GIF') });
         if (blob) finishExport(blob, `slapchop-anim-${ts}-${exportDuration}s.gif`);
+      } else if (exportType === 'prores') {
+        const savePath = await pickSavePath(`slapchop-video-${ts}-${exportDuration}s.mov`);
+        if (savePath) {
+          const ok = await exportProRes({
+            ...common,
+            savePath,
+            onProgress: frameProgress('Rendering'),
+            onEncodeProgress: (done, total) =>
+              setExportJob({ label: `Encoding ProRes ${done}/${total}…`, percent: (done / total) * 100 })
+          });
+          if (ok) setShowExportModal(false);
+        }
       } else if (supportsWebCodecs()) {
         const blob = await exportVideo(exportType as VideoFormat, {
           ...common,
@@ -694,9 +768,10 @@ export default function CanvasWorkspace() {
                   {([
                     { id: 'mp4', label: 'MP4 (H.264)', Icon: Film },
                     { id: 'webm', label: 'WebM (VP9)', Icon: Video },
+                    ...(isNative() ? [{ id: 'prores', label: 'ProRes 4444', Icon: Clapperboard }] : []),
                     { id: 'gif', label: 'Animated GIF', Icon: Repeat },
                     { id: 'zip', label: 'Frames (ZIP)', Icon: Download }
-                  ] as const).map(({ id, label, Icon }) => (
+                  ] as { id: 'mp4' | 'webm' | 'prores' | 'gif' | 'zip'; label: string; Icon: typeof Film }[]).map(({ id, label, Icon }) => (
                     <button
                       key={id}
                       onClick={() => setExportType(id)}

@@ -10,13 +10,19 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@tailwindcss/vite": "^4.1.14",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-window-state": "^2.4.1",
     "clsx": "^2.1.1",
     "file-saver": "^2.0.5",
     "gifenc": "^1.0.3",
@@ -36,6 +42,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/file-saver": "^2.0.7",
     "@types/node": "^22.14.0",
     "@types/omggif": "^1.0.5",

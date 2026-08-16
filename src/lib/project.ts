@@ -1,5 +1,5 @@
-import { saveAs } from 'file-saver';
 import { DocumentState, clearHistory, getDocumentSnapshot, useStore } from '../store';
+import { saveBlob } from './native';
 import { Layer, PolygonLayer } from '../types';
 import { parseGifFile } from './gifUtils';
 
@@ -83,7 +83,7 @@ export async function saveProject(): Promise<void> {
   };
 
   const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-  saveAs(blob, `slapchop-${timestamp()}.slapchop`);
+  await saveBlob(blob, `slapchop-${timestamp()}.slapchop`);
 }
 
 export async function openProject(file: File): Promise<void> {

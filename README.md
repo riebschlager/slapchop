@@ -11,6 +11,20 @@ npm run dev
 
 Then open http://localhost:3000. No API keys or environment variables required.
 
+## Desktop app (Tauri)
+
+The same codebase ships as a native Mac app with real file dialogs, a native menu
+bar, `.slapchop` file association (double-click opens the app), window-state
+restore, and a bundled static ffmpeg sidecar for ProRes export.
+
+```sh
+npm run tauri dev     # dev app against the Vite server
+npm run tauri build   # Slapchop.app + .dmg in src-tauri/target/release/bundle/
+```
+
+Requires Rust (`rustup`) and Xcode command line tools. The ffmpeg sidecar binary
+lives at `src-tauri/binaries/ffmpeg-aarch64-apple-darwin` (a static arm64 build).
+
 ## Scripts
 
 | Command | What it does |
@@ -41,6 +55,8 @@ never drop frames.
 
 - **MP4 (H.264)** — the default; plays in QuickTime and uploads anywhere
 - **WebM (VP9)**
+- **ProRes 4444** *(desktop app only)* — frame-exact PNGs piped through the bundled
+  ffmpeg sidecar (`prores_ks`, alpha-capable) for VJ/editing pipelines
 - **Animated GIF** — quantized and encoded off-thread via gifenc
 - **Frame sequence ZIP** — PNG or JPEG frames, compressed off-thread
 
