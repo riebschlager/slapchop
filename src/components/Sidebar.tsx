@@ -1,0 +1,1027 @@
+import React, { useState } from 'react';
+import { Layer, PolygonLayer, SymmetryType, BlendMode, MotionConfig, MotionType, AppMode } from '../types';
+import { Trash2, Image as ImageIcon, GripVertical, Film, Sparkles, Shapes, PenTool, Eye, EyeOff, Copy, ChevronUp, ChevronDown } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+function MotionControl({ label, config, onChange, maxAmplitude = 1000, stepAmplitude = 10 }: { label: string, config?: MotionConfig, onChange: (c: MotionConfig | undefined) => void, maxAmplitude?: number, stepAmplitude?: number }) {
+  const isEnabled = config && config.type !== 'none';
+  return (
+    <div className="mb-2 border border-gray-800 p-2 rounded bg-gray-800/30">
+      <div className="flex items-center justify-between">
+        <label className="text-[11px] font-semibold text-gray-300">{label}</label>
+        <select 
+          value={config?.type || 'none'}
+          onChange={(e) => {
+             const type = e.target.value as MotionType;
+             if (type === 'none') {
+               onChange(undefined);
+             } else {
+               onChange({ type, speed: config?.speed || 1, amplitude: config?.amplitude || (maxAmplitude / 10), phase: config?.phase || 0 });
+             }
+          }}
+          className="bg-gray-900 text-[10px] text-gray-300 border border-gray-700 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+          <option value="none">None</option>
+          <option value="sine">Sine</option>
+          <option value="noise">Noise</option>
+        </select>
+      </div>
+      {isEnabled && (
+        <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-800/50">
+           <div>
+             <div className="flex justify-between text-[9px] text-gray-400 mb-1">
+               <span>Spd</span><span>{config!.speed.toFixed(1)}</span>
+             </div>
+             <input type="range" min="0.1" max="10" step="0.1" value={config!.speed} 
+                onChange={e => onChange({ ...config!, speed: parseFloat(e.target.value) })}
+                className="w-full accent-indigo-500 h-1" />
+           </div>
+           <div>
+             <div className="flex justify-between text-[9px] text-gray-400 mb-1">
+               <span>Amp</span><span>{config!.amplitude.toFixed(stepAmplitude < 1 ? 1 : 0)}</span>
+             </div>
+             <input type="range" min={stepAmplitude} max={maxAmplitude} step={stepAmplitude} value={config!.amplitude} 
+                onChange={e => onChange({ ...config!, amplitude: parseFloat(e.target.value) })}
+                className="w-full accent-indigo-500 h-1" />
+           </div>
+           <div>
+             <div className="flex justify-between text-[9px] text-gray-400 mb-1">
+               <span>Phs</span><span>{config!.phase.toFixed(1)}</span>
+             </div>
+             <input type="range" min="0" max={Math.PI * 2} step="0.1" value={config!.phase} 
+                onChange={e => onChange({ ...config!, phase: parseFloat(e.target.value) })}
+                className="w-full accent-indigo-500 h-1" />
+           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface Props {
+  appMode: AppMode;
+  onModeChange: (mode: AppMode) => void;
+  // Symmetry Mode
+  layers: Layer[];
+  selectedLayerId: string | null;
+  onSelectLayer: (id: string | null) => void;
+  onUpdateLayer: (id: string, updates: Partial<Layer>) => void;
+  onDeleteLayer: (id: string) => void;
+  onDuplicateLayer?: (id: string) => void;
+  onMoveLayerUp?: (id: string) => void;
+  onMoveLayerDown?: (id: string) => void;
+  onReorderLayers: (activeId: string, overId: string) => void;
+  onAddLayer: (file: File, x: number, y: number) => void;
+  // Polygon Mode
+  polygonLayers: PolygonLayer[];
+  selectedPolygonId: string | null;
+  onSelectPolygon: (id: string | null) => void;
+  onUpdatePolygon: (id: string, updates: Partial<PolygonLayer>) => void;
+  onDeletePolygon: (id: string) => void;
+  onDuplicatePolygon?: (id: string) => void;
+  onMovePolygonUp?: (id: string) => void;
+  onMovePolygonDown?: (id: string) => void;
+  onReorderPolygons: (activeId: string, overId: string) => void;
+  onAddPresetPolygon: (type: 'triangle' | 'rectangle' | 'star' | 'hexagon') => void;
+  isDrawingPolygon: boolean;
+  onToggleDrawPolygon: () => void;
+  onUploadPolygonTexture: (file: File) => void;
+  // Canvas
+  canvasBg: string;
+  onUpdateCanvasBg: (val: string) => void;
+}
+
+const SYMMETRY_OPTIONS: { value: SymmetryType; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'mirror-x', label: 'Horizontal Mirror' },
+  { value: 'mirror-y', label: 'Vertical Mirror' },
+  { value: 'quad', label: 'Quadrant' },
+  { value: 'radial', label: 'Radial (Kaleidoscope)' },
+];
+
+const BLEND_MODES: { value: BlendMode; label: string }[] = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'screen', label: 'Screen' },
+  { value: 'multiply', label: 'Multiply' },
+  { value: 'overlay', label: 'Overlay' },
+  { value: 'difference', label: 'Difference' },
+  { value: 'exclusion', label: 'Exclusion' },
+  { value: 'color-dodge', label: 'Color Dodge' },
+];
+
+function SortableLayerItem({ layer, selectedLayerId, onSelectLayer, onUpdateLayer, onDeleteLayer, onDuplicateLayer }: { 
+  key?: string,
+  layer: Layer, 
+  selectedLayerId: string | null, 
+  onSelectLayer: (id: string) => void, 
+  onUpdateLayer?: (id: string, updates: Partial<Layer>) => void,
+  onDeleteLayer: (id: string) => void,
+  onDuplicateLayer?: (id: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: layer.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div 
+      ref={setNodeRef} style={style}
+      onClick={() => onSelectLayer(layer.id)}
+      className={cn(
+        "flex items-center gap-2 p-1.5 rounded cursor-pointer group transition-colors",
+        layer.hidden ? "opacity-50 grayscale" : "",
+        selectedLayerId === layer.id ? "bg-indigo-900/40 border border-indigo-500/50" : "hover:bg-gray-800 border border-transparent"
+      )}
+    >
+       <div {...attributes} {...listeners} className="p-0.5 cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-300">
+         <GripVertical className="w-3.5 h-3.5" />
+       </div>
+       <div className="w-8 h-8 rounded-sm overflow-hidden bg-black/50 shrink-0 border border-gray-700">
+         <img src={layer.src} className="w-full h-full object-contain" />
+       </div>
+       <div className="flex-1 truncate pl-1">
+         <div className="text-[13px] font-medium text-gray-200 truncate">{layer.name}</div>
+         <div className="text-[10px] text-gray-500">{layer.symmetry.replace('-', ' ')}</div>
+       </div>
+       
+       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+         {onUpdateLayer && (
+           <button 
+             onClick={(e) => { e.stopPropagation(); onUpdateLayer(layer.id, { hidden: !layer.hidden }); }}
+             className="p-1 hover:text-white text-gray-400"
+             title={layer.hidden ? "Show Layer" : "Hide Layer"}
+           >
+             {layer.hidden ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+           </button>
+         )}
+         {onDuplicateLayer && (
+           <button 
+             onClick={(e) => { e.stopPropagation(); onDuplicateLayer(layer.id); }}
+             className="p-1 hover:text-white text-gray-400"
+             title="Duplicate Layer"
+           >
+             <Copy className="w-3.5 h-3.5" />
+           </button>
+         )}
+         <button onClick={(e) => { e.stopPropagation(); onDeleteLayer(layer.id); }} className="p-1 hover:text-red-400 text-gray-400" title="Delete Layer">
+           <Trash2 className="w-3.5 h-3.5" />
+         </button>
+       </div>
+    </div>
+  );
+}
+
+function SortablePolygonItem({ polygon, selectedPolygonId, onSelectPolygon, onUpdatePolygon, onDeletePolygon, onDuplicatePolygon }: { 
+  key?: string,
+  polygon: PolygonLayer, 
+  selectedPolygonId: string | null, 
+  onSelectPolygon: (id: string) => void, 
+  onUpdatePolygon?: (id: string, updates: Partial<PolygonLayer>) => void,
+  onDeletePolygon: (id: string) => void,
+  onDuplicatePolygon?: (id: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: polygon.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div 
+      ref={setNodeRef} style={style}
+      onClick={() => onSelectPolygon(polygon.id)}
+      className={cn(
+        "flex items-center gap-2 p-1.5 rounded cursor-pointer group transition-colors",
+        polygon.hidden ? "opacity-50 grayscale" : "",
+        selectedPolygonId === polygon.id ? "bg-indigo-900/40 border border-indigo-500/50" : "hover:bg-gray-800 border border-transparent"
+      )}
+    >
+       <div {...attributes} {...listeners} className="p-0.5 cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-300">
+         <GripVertical className="w-3.5 h-3.5" />
+       </div>
+       <div className="w-8 h-8 rounded-sm overflow-hidden bg-black/50 shrink-0 border border-gray-700 flex items-center justify-center">
+         {polygon.src ? (
+           <img src={polygon.src} className="w-full h-full object-cover" />
+         ) : (
+           <div className="w-4 h-4 rounded-sm border" style={{ backgroundColor: polygon.fillColor || '#6366f1' }} />
+         )}
+       </div>
+       <div className="flex-1 truncate pl-1">
+         <div className="text-[13px] font-medium text-gray-200 truncate">{polygon.name}</div>
+         <div className="text-[10px] text-gray-500">{polygon.points.length} vertices &bull; Scale {(polygon.textureScale ?? 1).toFixed(2)}x</div>
+       </div>
+       
+       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+         {onUpdatePolygon && (
+           <button 
+             onClick={(e) => { e.stopPropagation(); onUpdatePolygon(polygon.id, { hidden: !polygon.hidden }); }}
+             className="p-1 hover:text-white text-gray-400"
+             title={polygon.hidden ? "Show Polygon" : "Hide Polygon"}
+           >
+             {polygon.hidden ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+           </button>
+         )}
+         {onDuplicatePolygon && (
+           <button 
+             onClick={(e) => { e.stopPropagation(); onDuplicatePolygon(polygon.id); }}
+             className="p-1 hover:text-white text-gray-400"
+             title="Duplicate Polygon"
+           >
+             <Copy className="w-3.5 h-3.5" />
+           </button>
+         )}
+         <button onClick={(e) => { e.stopPropagation(); onDeletePolygon(polygon.id); }} className="p-1 hover:text-red-400 text-gray-400" title="Delete Polygon">
+           <Trash2 className="w-3.5 h-3.5" />
+         </button>
+       </div>
+    </div>
+  );
+}
+
+export default function Sidebar({
+  appMode,
+  onModeChange,
+  layers,
+  selectedLayerId,
+  onSelectLayer,
+  onUpdateLayer,
+  onDeleteLayer,
+  onDuplicateLayer,
+  onMoveLayerUp,
+  onMoveLayerDown,
+  onReorderLayers,
+  onAddLayer,
+  polygonLayers,
+  selectedPolygonId,
+  onSelectPolygon,
+  onUpdatePolygon,
+  onDeletePolygon,
+  onDuplicatePolygon,
+  onMovePolygonUp,
+  onMovePolygonDown,
+  onReorderPolygons,
+  onAddPresetPolygon,
+  isDrawingPolygon,
+  onToggleDrawPolygon,
+  onUploadPolygonTexture,
+  canvasBg,
+  onUpdateCanvasBg
+}: Props) {
+  const [activeTab, setActiveTab] = useState<'transform' | 'style' | 'motion'>('transform');
+  const [polyTab, setPolyTab] = useState<'texture' | 'style' | 'motion'>('texture');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEndSymmetry = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      onReorderLayers(active.id as string, over.id as string);
+    }
+  };
+
+  const handleDragEndPolygon = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      onReorderPolygons(active.id as string, over.id as string);
+    }
+  };
+
+  const handleSymmetryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const fileList: File[] = Array.from(e.target.files);
+      fileList.forEach((file: File) => {
+        onAddLayer(file, 0, 0);
+      });
+      e.target.value = '';
+    }
+  };
+
+  const handlePolygonTextureFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      onUploadPolygonTexture(file);
+      e.target.value = '';
+    }
+  };
+
+  const selectedLayer = layers.find(l => l.id === selectedLayerId);
+  const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
+
+  return (
+    <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col h-screen text-gray-200 overflow-y-auto shrink-0">
+      {/* Header & Mode Switcher */}
+      <div className="p-4 border-b border-gray-800">
+         <h1 className="text-xl font-bold text-white tracking-tight">Prism Canvas</h1>
+         <p className="text-xs text-gray-400 mt-0.5">Generative Motion Studio</p>
+
+         {/* Mode Switcher Buttons */}
+         <div className="mt-3 grid grid-cols-2 gap-1 p-1 bg-gray-950 rounded-lg border border-gray-800">
+           <button
+             onClick={() => onModeChange('symmetry')}
+             className={cn(
+               "flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-semibold transition-all",
+               appMode === 'symmetry'
+                 ? "bg-indigo-600 text-white shadow"
+                 : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/50"
+             )}
+           >
+             <Sparkles className="w-3.5 h-3.5" />
+             Symmetry
+           </button>
+           <button
+             onClick={() => onModeChange('polygon')}
+             className={cn(
+               "flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-semibold transition-all",
+               appMode === 'polygon'
+                 ? "bg-indigo-600 text-white shadow"
+                 : "text-gray-400 hover:text-gray-200 hover:bg-gray-800/50"
+             )}
+           >
+             <Shapes className="w-3.5 h-3.5" />
+             Tiled GIF
+           </button>
+         </div>
+      </div>
+
+      {/* Canvas Background Color */}
+      <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Canvas Background</label>
+        <input 
+          type="color" 
+          value={canvasBg}
+          onChange={(e) => onUpdateCanvasBg(e.target.value)}
+          className="w-8 h-6 rounded cursor-pointer border-0 bg-gray-800 p-0"
+        />
+      </div>
+
+      {/* MODE 1: SYMMETRY LAYERS */}
+      {appMode === 'symmetry' && (
+        <>
+          <div className="p-4 border-b border-gray-800">
+            <label className="flex items-center justify-center gap-2 w-full py-2 bg-gray-800 hover:bg-gray-700 rounded-md cursor-pointer transition-colors text-xs font-medium border border-gray-700">
+              <ImageIcon className="w-4 h-4 text-indigo-400" />
+              Upload Media / GIF
+              <input type="file" multiple accept="image/*" className="hidden" onChange={handleSymmetryFileChange} />
+            </label>
+          </div>
+
+          <div className="flex-1 overflow-y-auto min-h-0 relative">
+            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-4 py-2 border-b border-gray-800 z-10 flex items-center justify-between">
+               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Layers ({layers.length})</label>
+            </div>
+            
+            <div className="p-2 space-y-1">
+              <DndContext 
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEndSymmetry}
+              >
+                <SortableContext items={layers.map(l => l.id)} strategy={verticalListSortingStrategy}>
+                  {layers.map((layer) => (
+                    <SortableLayerItem 
+                      key={layer.id}
+                      layer={layer}
+                      selectedLayerId={selectedLayerId}
+                      onSelectLayer={onSelectLayer}
+                      onUpdateLayer={onUpdateLayer}
+                      onDeleteLayer={onDeleteLayer}
+                      onDuplicateLayer={onDuplicateLayer}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+              {layers.length === 0 && (
+                 <div className="p-4 text-center text-xs text-gray-500">No layers added yet. Upload an image or GIF to start.</div>
+              )}
+            </div>
+          </div>
+
+          {selectedLayer && (
+            <div className="p-3 border-t border-gray-800 bg-gray-900/80 flex flex-col min-h-[280px]">
+               {/* Layer Header & Quick Action Bar */}
+               <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
+                 <input
+                   type="text"
+                   value={selectedLayer.name}
+                   onChange={(e) => onUpdateLayer(selectedLayer.id, { name: e.target.value })}
+                   className="bg-transparent text-xs font-semibold text-gray-200 border-b border-transparent hover:border-gray-700 focus:border-indigo-500 focus:bg-gray-950 px-1 py-0.5 outline-none rounded truncate flex-1 mr-2"
+                   title="Click to rename layer"
+                 />
+                 <div className="flex items-center gap-0.5 shrink-0">
+                   <button
+                     onClick={() => onUpdateLayer(selectedLayer.id, { hidden: !selectedLayer.hidden })}
+                     className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+                     title={selectedLayer.hidden ? "Show Layer" : "Hide Layer"}
+                   >
+                     {selectedLayer.hidden ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+                   </button>
+                   {onDuplicateLayer && (
+                     <button
+                       onClick={() => onDuplicateLayer(selectedLayer.id)}
+                       className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+                       title="Duplicate Layer"
+                     >
+                       <Copy className="w-3.5 h-3.5" />
+                     </button>
+                   )}
+                   {onMoveLayerUp && (
+                     <button
+                       onClick={() => onMoveLayerUp(selectedLayer.id)}
+                       className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+                       title="Move Up in Order"
+                     >
+                       <ChevronUp className="w-3.5 h-3.5" />
+                     </button>
+                   )}
+                   {onMoveLayerDown && (
+                     <button
+                       onClick={() => onMoveLayerDown(selectedLayer.id)}
+                       className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+                       title="Move Down in Order"
+                     >
+                       <ChevronDown className="w-3.5 h-3.5" />
+                     </button>
+                   )}
+                   <button
+                     onClick={() => onDeleteLayer(selectedLayer.id)}
+                     className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-red-400 transition-colors"
+                     title="Delete Layer"
+                   >
+                     <Trash2 className="w-3.5 h-3.5" />
+                   </button>
+                 </div>
+               </div>
+
+               <div className="flex items-center gap-1 mb-3 border-b border-gray-800 pb-2">
+                 <button onClick={() => setActiveTab('transform')} className={cn("flex-1 text-[11px] font-medium py-1 rounded transition-colors", activeTab === 'transform' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200')}>Transform</button>
+                 <button onClick={() => setActiveTab('style')} className={cn("flex-1 text-[11px] font-medium py-1 rounded transition-colors", activeTab === 'style' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200')}>Style</button>
+                 <button onClick={() => setActiveTab('motion')} className={cn("flex-1 text-[11px] font-medium py-1 rounded transition-colors", activeTab === 'motion' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200')}>Motion</button>
+               </div>
+               
+               <div className="flex-1 overflow-y-auto pr-1">
+                 {activeTab === 'transform' && (
+                   <div className="space-y-3">
+                     <div>
+                        <div className="flex items-center justify-between mb-1">
+                           <span className="text-[11px] text-gray-400">Scale</span>
+                           <span className="text-[11px] font-mono">{selectedLayer.scaleX.toFixed(2)}</span>
+                        </div>
+                        <input type="range" min="0.1" max="5" step="0.05" value={Math.abs(selectedLayer.scaleX)} 
+                           onChange={(e) => {
+                              const s = parseFloat(e.target.value);
+                              onUpdateLayer(selectedLayer.id, { scaleX: Math.sign(selectedLayer.scaleX) * s || s, scaleY: Math.sign(selectedLayer.scaleY) * s || s });
+                           }} 
+                           className="w-full accent-indigo-500 h-1" 
+                        />
+                     </div>
+                     <div>
+                        <div className="flex items-center justify-between mb-1">
+                           <span className="text-[11px] text-gray-400">Rotation</span>
+                           <span className="text-[11px] font-mono">{Math.round(selectedLayer.rotation)}&deg;</span>
+                        </div>
+                        <input type="range" min="-180" max="180" step="1" value={selectedLayer.rotation} 
+                           onChange={(e) => onUpdateLayer(selectedLayer.id, { rotation: parseFloat(e.target.value) })} 
+                           className="w-full accent-indigo-500 h-1" 
+                        />
+                     </div>
+                     <div className="pt-2 border-t border-gray-800">
+                        <label className="text-[11px] text-gray-400 mb-1 block">Symmetry Engine</label>
+                        <select 
+                          value={selectedLayer.symmetry} 
+                          onChange={(e) => onUpdateLayer(selectedLayer.id, { symmetry: e.target.value as SymmetryType })}
+                          className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                           {SYMMETRY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                     </div>
+                     {selectedLayer.symmetry === 'radial' && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                              <label className="text-[11px] text-gray-400">Radial Segments</label>
+                              <span className="text-[11px] font-mono">{selectedLayer.radialSegments}</span>
+                          </div>
+                          <input type="range" min="2" max="24" step="1" value={selectedLayer.radialSegments} 
+                              onChange={(e) => onUpdateLayer(selectedLayer.id, { radialSegments: parseInt(e.target.value) })} 
+                              className="w-full accent-indigo-500 h-1" 
+                          />
+                        </div>
+                     )}
+                   </div>
+                 )}
+
+                 {activeTab === 'style' && (
+                   <div className="space-y-3">
+                     <div>
+                        <div className="flex items-center justify-between mb-1">
+                           <span className="text-[11px] text-gray-400">Opacity</span>
+                           <span className="text-[11px] font-mono">{Math.round(selectedLayer.opacity * 100)}%</span>
+                        </div>
+                        <input type="range" min="0" max="1" step="0.01" value={selectedLayer.opacity} 
+                           onChange={(e) => onUpdateLayer(selectedLayer.id, { opacity: parseFloat(e.target.value) })} 
+                           className="w-full accent-indigo-500 h-1" 
+                        />
+                     </div>
+                     <div className="pt-2 border-t border-gray-800">
+                        <label className="text-[11px] text-gray-400 mb-1 block">Blend Mode</label>
+                        <select 
+                          value={selectedLayer.blendMode} 
+                          onChange={(e) => onUpdateLayer(selectedLayer.id, { blendMode: e.target.value as BlendMode })}
+                          className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                           {BLEND_MODES.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                     </div>
+
+                     {selectedLayer.gifData && (
+                       <div className="pt-2 border-t border-gray-800 space-y-2">
+                         <div className="flex items-center justify-between">
+                           <label className="text-[11px] font-semibold text-indigo-400 flex items-center gap-1">
+                             <Film className="w-3.5 h-3.5" /> GIF Speed
+                           </label>
+                           <span className="text-[11px] font-mono text-gray-300">
+                             {(selectedLayer.gifSpeed ?? 1).toFixed(2)}x
+                           </span>
+                         </div>
+                         <input
+                           type="range"
+                           min="0"
+                           max="5"
+                           step="0.1"
+                           value={selectedLayer.gifSpeed ?? 1}
+                           onChange={(e) => onUpdateLayer(selectedLayer.id, { gifSpeed: parseFloat(e.target.value) })}
+                           className="w-full accent-indigo-500 h-1"
+                         />
+                         <div className="grid grid-cols-5 gap-1 pt-1">
+                           {[0.25, 0.5, 1.0, 2.0, 3.0].map((spd) => (
+                             <button
+                               key={spd}
+                               onClick={() => onUpdateLayer(selectedLayer.id, { gifSpeed: spd })}
+                               className={cn(
+                                 "py-1 text-[10px] rounded font-mono transition-colors border",
+                                 (selectedLayer.gifSpeed ?? 1) === spd
+                                   ? "bg-indigo-600 text-white border-indigo-500 font-bold"
+                                   : "bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-gray-200"
+                               )}
+                             >
+                               {spd}x
+                             </button>
+                           ))}
+                         </div>
+                       </div>
+                     )}
+                   </div>
+                 )}
+
+                 {activeTab === 'motion' && (
+                   <div className="space-y-2 pb-1">
+                      <MotionControl label="X-Axis" config={selectedLayer.motionX} onChange={c => onUpdateLayer(selectedLayer.id, { motionX: c })} maxAmplitude={500} stepAmplitude={5} />
+                      <MotionControl label="Y-Axis" config={selectedLayer.motionY} onChange={c => onUpdateLayer(selectedLayer.id, { motionY: c })} maxAmplitude={500} stepAmplitude={5} />
+                      <MotionControl label="Rotation" config={selectedLayer.motionRotation} onChange={c => onUpdateLayer(selectedLayer.id, { motionRotation: c })} maxAmplitude={360} stepAmplitude={1} />
+                      <MotionControl label="Scale" config={selectedLayer.motionScale} onChange={c => onUpdateLayer(selectedLayer.id, { motionScale: c })} maxAmplitude={3} stepAmplitude={0.05} />
+                   </div>
+                 )}
+               </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* MODE 2: POLYGON GIF TILER */}
+      {appMode === 'polygon' && (
+        <>
+          {/* Polygon Creation Controls */}
+          <div className="p-3 border-b border-gray-800 space-y-3">
+            <div>
+              <button
+                onClick={onToggleDrawPolygon}
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 py-2 rounded-md font-semibold text-xs transition-all border",
+                  isDrawingPolygon
+                    ? "bg-amber-600 text-white border-amber-500 animate-pulse"
+                    : "bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500"
+                )}
+              >
+                <PenTool className="w-4 h-4" />
+                {isDrawingPolygon ? "Click Canvas to Draw Points..." : "Draw Custom Polygon"}
+              </button>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Add Shape Presets</label>
+              <div className="grid grid-cols-4 gap-1">
+                <button
+                  onClick={() => onAddPresetPolygon('triangle')}
+                  className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                  title="Triangle"
+                >
+                  <span className="text-xs">🔺</span>
+                  Triangle
+                </button>
+                <button
+                  onClick={() => onAddPresetPolygon('rectangle')}
+                  className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                  title="Rectangle"
+                >
+                  <span className="text-xs">🟩</span>
+                  Square
+                </button>
+                <button
+                  onClick={() => onAddPresetPolygon('hexagon')}
+                  className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                  title="Hexagon"
+                >
+                  <span className="text-xs">🔷</span>
+                  Hexagon
+                </button>
+                <button
+                  onClick={() => onAddPresetPolygon('star')}
+                  className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                  title="Star"
+                >
+                  <span className="text-xs">⭐</span>
+                  Star
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="flex items-center justify-center gap-2 w-full py-1.5 bg-gray-800/80 hover:bg-gray-700 rounded-md cursor-pointer transition-colors text-xs text-gray-300 border border-gray-700">
+                <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
+                {selectedPolygon ? "Upload Texture for Selected Shape" : "Upload GIF / Texture"}
+                <input type="file" accept="image/*" className="hidden" onChange={handlePolygonTextureFileChange} />
+              </label>
+            </div>
+          </div>
+
+          {/* Polygon Layers List */}
+          <div className="flex-1 overflow-y-auto min-h-0 relative">
+            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-4 py-2 border-b border-gray-800 z-10 flex items-center justify-between">
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Polygons ({polygonLayers.length})</label>
+            </div>
+
+            <div className="p-2 space-y-1">
+              <DndContext 
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEndPolygon}
+              >
+                <SortableContext items={polygonLayers.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                  {polygonLayers.map((polygon) => (
+                    <SortablePolygonItem 
+                      key={polygon.id}
+                      polygon={polygon}
+                      selectedPolygonId={selectedPolygonId}
+                      onSelectPolygon={onSelectPolygon}
+                      onUpdatePolygon={onUpdatePolygon}
+                      onDeletePolygon={onDeletePolygon}
+                      onDuplicatePolygon={onDuplicatePolygon}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+              {polygonLayers.length === 0 && (
+                <div className="p-4 text-center text-xs text-gray-500">
+                  No polygons created. Click "Draw Custom Polygon" or pick a shape preset above!
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Selected Polygon Controls */}
+          {selectedPolygon && (
+            <div className="p-3 border-t border-gray-800 bg-gray-900/90 flex flex-col min-h-[300px]">
+              {/* Polygon Header & Layer Action Bar */}
+              <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
+                <input
+                  type="text"
+                  value={selectedPolygon.name}
+                  onChange={(e) => onUpdatePolygon(selectedPolygon.id, { name: e.target.value })}
+                  className="bg-transparent text-xs font-semibold text-gray-200 border-b border-transparent hover:border-gray-700 focus:border-indigo-500 focus:bg-gray-950 px-1 py-0.5 outline-none rounded truncate flex-1 mr-2"
+                  title="Click to rename layer"
+                />
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    onClick={() => onUpdatePolygon(selectedPolygon.id, { hidden: !selectedPolygon.hidden })}
+                    className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+                    title={selectedPolygon.hidden ? "Show Polygon" : "Hide Polygon"}
+                  >
+                    {selectedPolygon.hidden ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                  {onDuplicatePolygon && (
+                    <button
+                      onClick={() => onDuplicatePolygon(selectedPolygon.id)}
+                      className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+                      title="Duplicate Polygon"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {onMovePolygonUp && (
+                    <button
+                      onClick={() => onMovePolygonUp(selectedPolygon.id)}
+                      className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+                      title="Move Up in Order"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {onMovePolygonDown && (
+                    <button
+                      onClick={() => onMovePolygonDown(selectedPolygon.id)}
+                      className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+                      title="Move Down in Order"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onDeletePolygon(selectedPolygon.id)}
+                    className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-red-400 transition-colors"
+                    title="Delete Polygon"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 mb-3 border-b border-gray-800 pb-2">
+                <button
+                  onClick={() => setPolyTab('texture')}
+                  className={cn("flex-1 text-[11px] font-medium py-1 rounded transition-colors", polyTab === 'texture' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200')}
+                >
+                  Texture
+                </button>
+                <button
+                  onClick={() => setPolyTab('style')}
+                  className={cn("flex-1 text-[11px] font-medium py-1 rounded transition-colors", polyTab === 'style' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200')}
+                >
+                  Style
+                </button>
+                <button
+                  onClick={() => setPolyTab('motion')}
+                  className={cn("flex-1 text-[11px] font-medium py-1 rounded transition-colors", polyTab === 'motion' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200')}
+                >
+                  Motion
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-1">
+                {polyTab === 'texture' && (
+                  <div className="space-y-3">
+                    {/* Texture Scale Slider & Quick Presets */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-indigo-300">Texture Scale</span>
+                        <span className="text-[11px] font-mono text-indigo-400 font-bold">{selectedPolygon.textureScale.toFixed(2)}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.05"
+                        max="5.0"
+                        step="0.05"
+                        value={selectedPolygon.textureScale}
+                        onChange={(e) => onUpdatePolygon(selectedPolygon.id, { textureScale: parseFloat(e.target.value) })}
+                        className="w-full accent-indigo-500 h-1.5"
+                      />
+                      <div className="grid grid-cols-5 gap-1 mt-1.5">
+                        {[0.25, 0.5, 1.0, 2.0, 4.0].map((sVal) => (
+                          <button
+                            key={sVal}
+                            onClick={() => onUpdatePolygon(selectedPolygon.id, { textureScale: sVal })}
+                            className={cn(
+                              "py-1 text-[10px] rounded font-mono border transition-colors",
+                              selectedPolygon.textureScale === sVal
+                                ? "bg-indigo-600 text-white border-indigo-400 font-bold"
+                                : "bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-gray-200"
+                            )}
+                          >
+                            {sVal}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* GIF Speed */}
+                    <div className="pt-2 border-t border-gray-800">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-gray-300 flex items-center gap-1">
+                          <Film className="w-3.5 h-3.5 text-indigo-400" /> Animated GIF Speed
+                        </span>
+                        <span className="text-[11px] font-mono text-gray-300">{(selectedPolygon.gifSpeed ?? 1).toFixed(2)}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="5"
+                        step="0.1"
+                        value={selectedPolygon.gifSpeed ?? 1}
+                        onChange={(e) => onUpdatePolygon(selectedPolygon.id, { gifSpeed: parseFloat(e.target.value) })}
+                        className="w-full accent-indigo-500 h-1"
+                      />
+                      <div className="grid grid-cols-5 gap-1 mt-1">
+                        {[0.25, 0.5, 1.0, 2.0, 3.0].map((spd) => (
+                          <button
+                            key={spd}
+                            onClick={() => onUpdatePolygon(selectedPolygon.id, { gifSpeed: spd })}
+                            className={cn(
+                              "py-1 text-[10px] rounded font-mono border transition-colors",
+                              (selectedPolygon.gifSpeed ?? 1) === spd
+                                ? "bg-indigo-600 text-white border-indigo-400 font-bold"
+                                : "bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-gray-200"
+                            )}
+                          >
+                            {spd}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Texture Rotation */}
+                    <div className="pt-2 border-t border-gray-800">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-gray-400">Texture Rotation</span>
+                        <span className="text-[11px] font-mono">{Math.round(selectedPolygon.textureRotation)}&deg;</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="360"
+                        step="1"
+                        value={selectedPolygon.textureRotation}
+                        onChange={(e) => onUpdatePolygon(selectedPolygon.id, { textureRotation: parseFloat(e.target.value) })}
+                        className="w-full accent-indigo-500 h-1"
+                      />
+                    </div>
+
+                    {/* Texture Offset X & Y */}
+                    <div className="pt-2 border-t border-gray-800 grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                          <span>Offset X</span>
+                          <span>{Math.round(selectedPolygon.textureOffsetX)}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-500"
+                          max="500"
+                          step="5"
+                          value={selectedPolygon.textureOffsetX}
+                          onChange={(e) => onUpdatePolygon(selectedPolygon.id, { textureOffsetX: parseFloat(e.target.value) })}
+                          className="w-full accent-indigo-500 h-1"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                          <span>Offset Y</span>
+                          <span>{Math.round(selectedPolygon.textureOffsetY)}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-500"
+                          max="500"
+                          step="5"
+                          value={selectedPolygon.textureOffsetY}
+                          onChange={(e) => onUpdatePolygon(selectedPolygon.id, { textureOffsetY: parseFloat(e.target.value) })}
+                          className="w-full accent-indigo-500 h-1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {polyTab === 'style' && (
+                  <div className="space-y-3">
+                    {/* Opacity */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-gray-400">Opacity</span>
+                        <span className="text-[11px] font-mono">{Math.round(selectedPolygon.opacity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={selectedPolygon.opacity}
+                        onChange={(e) => onUpdatePolygon(selectedPolygon.id, { opacity: parseFloat(e.target.value) })}
+                        className="w-full accent-indigo-500 h-1"
+                      />
+                    </div>
+
+                    {/* Blend Mode */}
+                    <div className="pt-2 border-t border-gray-800">
+                      <label className="text-[11px] text-gray-400 mb-1 block">Blend Mode</label>
+                      <select
+                        value={selectedPolygon.blendMode}
+                        onChange={(e) => onUpdatePolygon(selectedPolygon.id, { blendMode: e.target.value as BlendMode })}
+                        className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        {BLEND_MODES.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                      </select>
+                    </div>
+
+                    {/* Stroke Color & Width */}
+                    <div className="pt-2 border-t border-gray-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] text-gray-400">Stroke Border</label>
+                        <input
+                          type="color"
+                          value={selectedPolygon.strokeColor === 'transparent' ? '#ffffff' : selectedPolygon.strokeColor}
+                          onChange={(e) => onUpdatePolygon(selectedPolygon.id, { strokeColor: e.target.value })}
+                          className="w-6 h-5 rounded cursor-pointer border-0 bg-gray-800 p-0"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] text-gray-400">Border Width</span>
+                          <span className="text-[11px] font-mono">{selectedPolygon.strokeWidth}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="20"
+                          step="1"
+                          value={selectedPolygon.strokeWidth}
+                          onChange={(e) => onUpdatePolygon(selectedPolygon.id, { strokeWidth: parseInt(e.target.value) })}
+                          className="w-full accent-indigo-500 h-1"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Solid Fill Color Fallback */}
+                    <div className="pt-2 border-t border-gray-800 flex items-center justify-between">
+                      <label className="text-[11px] text-gray-400">Fallback Fill Color</label>
+                      <input
+                        type="color"
+                        value={selectedPolygon.fillColor || '#6366f1'}
+                        onChange={(e) => onUpdatePolygon(selectedPolygon.id, { fillColor: e.target.value })}
+                        className="w-6 h-5 rounded cursor-pointer border-0 bg-gray-800 p-0"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {polyTab === 'motion' && (
+                  <div className="space-y-2 pb-1">
+                    <MotionControl
+                      label="Texture Scale Pulse"
+                      config={selectedPolygon.motionTextureScale}
+                      onChange={c => onUpdatePolygon(selectedPolygon.id, { motionTextureScale: c })}
+                      maxAmplitude={2}
+                      stepAmplitude={0.05}
+                    />
+                    <MotionControl
+                      label="Texture Spin"
+                      config={selectedPolygon.motionTextureRotation}
+                      onChange={c => onUpdatePolygon(selectedPolygon.id, { motionTextureRotation: c })}
+                      maxAmplitude={360}
+                      stepAmplitude={1}
+                    />
+                    <MotionControl
+                      label="Texture Offset X Drift"
+                      config={selectedPolygon.motionTextureOffsetX}
+                      onChange={c => onUpdatePolygon(selectedPolygon.id, { motionTextureOffsetX: c })}
+                      maxAmplitude={500}
+                      stepAmplitude={5}
+                    />
+                    <MotionControl
+                      label="Texture Offset Y Drift"
+                      config={selectedPolygon.motionTextureOffsetY}
+                      onChange={c => onUpdatePolygon(selectedPolygon.id, { motionTextureOffsetY: c })}
+                      maxAmplitude={500}
+                      stepAmplitude={5}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
