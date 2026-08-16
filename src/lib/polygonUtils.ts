@@ -68,6 +68,8 @@ export function createNewPolygonLayer(
     strokeWidth: 2,
     fillColor: '#6366f1',
     gifSpeed: 1,
+    symmetry: 'none',
+    radialSegments: 6,
     ...options
   };
 }

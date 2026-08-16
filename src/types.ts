@@ -26,10 +26,59 @@ export interface PolygonLayer {
   motionTextureRotation?: MotionConfig;
   motionTextureOffsetX?: MotionConfig;
   motionTextureOffsetY?: MotionConfig;
+  // Symmetry is shared with Layer: same field names/shapes so a single
+  // <SymmetryEditor> UI and the shared getSymmetryTransforms() engine work
+  // for both. Optional so old saved polygons (which predate this feature)
+  // default cleanly to 'none' instead of requiring a file migration.
+  symmetry?: SymmetryType;
+  radialSegments?: number;
+  symmetryParams?: SymmetryParams;
+  // Per-vertex "jelly"/breathing deformation, applied before symmetry.
+  // incoherence (0..1) desyncs each vertex's phase so they don't pulse in
+  // unison; reuses MotionConfig/applyMotion rather than a new time system.
+  vertexNoise?: MotionConfig & { incoherence: number };
 }
 
 
-export type SymmetryType = 'none' | 'mirror-x' | 'mirror-y' | 'quad' | 'radial';
+export type SymmetryType =
+  | 'none' | 'mirror-x' | 'mirror-y' | 'quad' | 'radial'
+  | 'spiral' | 'wallpaper' | 'poincare' | 'voronoi';
+
+export type WallpaperLattice = 'p3' | 'p4m' | 'p6';
+
+// Extra per-mode knobs shared by every symmetry type on both Layer and
+// PolygonLayer. originX/originY re-center all modes on a draggable anchor
+// instead of the canvas origin. Fields are grouped by the mode that reads
+// them; unused fields for the active mode are simply ignored.
+export interface SymmetryParams {
+  originX: number;
+  originY: number;
+  spiralGrowth: number;
+  spiralAngleStep: number;
+  spiralInstances: number;
+  wallpaperLattice: WallpaperLattice;
+  wallpaperCellSize: number;
+  poincareRings: number;
+  poincareRadius: number;
+  voronoiCells: number;
+  voronoiSeed: number;
+  voronoiPhaseVariation: number;
+}
+
+export const DEFAULT_SYMMETRY_PARAMS: SymmetryParams = {
+  originX: 0,
+  originY: 0,
+  spiralGrowth: 0.85,
+  spiralAngleStep: 25,
+  spiralInstances: 10,
+  wallpaperLattice: 'p6',
+  wallpaperCellSize: 260,
+  poincareRings: 4,
+  poincareRadius: 480,
+  voronoiCells: 16,
+  voronoiSeed: 1,
+  voronoiPhaseVariation: 0.4
+};
 
 export type BlendMode = 
   | 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' 
@@ -71,8 +120,9 @@ export interface Layer {
   scaleX: number;
   scaleY: number;
   symmetry: SymmetryType;
-  radialSegments: number; 
-  blendMode: BlendMode; 
+  radialSegments: number;
+  symmetryParams?: SymmetryParams;
+  blendMode: BlendMode;
   opacity: number;
   hidden?: boolean;
   motionX?: MotionConfig;

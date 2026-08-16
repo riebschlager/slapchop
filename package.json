@@ -24,6 +24,7 @@
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-window-state": "^2.4.1",
     "clsx": "^2.1.1",
+    "d3-delaunay": "^6.0.4",
     "file-saver": "^2.0.5",
     "gifenc": "^1.0.3",
     "gifuct-js": "^2.1.2",
@@ -43,6 +44,7 @@
   "devDependencies": {
     "@eslint/js": "^9.30.0",
     "@tauri-apps/cli": "^2.11.4",
+    "@types/d3-delaunay": "^6.0.4",
     "@types/file-saver": "^2.0.7",
     "@types/node": "^22.14.0",
     "@types/omggif": "^1.0.5",

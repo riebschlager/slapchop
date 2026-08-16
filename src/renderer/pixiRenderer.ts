@@ -19,10 +19,18 @@ import './hueBlend';
 import { RgbSplitFilter } from './filters/rgbSplitFilter';
 import { DuotoneFilter } from './filters/duotoneFilter';
 import { ScanlinesFilter } from './filters/scanlinesFilter';
-import { GifData, Layer, PolygonLayer } from '../types';
+import { GifData, Layer, PolygonLayer, PolygonPoint } from '../types';
 import { getGifFrameIndexAtTime } from '../lib/gifUtils';
-import { applyMotion, getInstances } from '../lib/motion';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage } from './render2d';
+import {
+  applyMotion,
+  getDeformedPoints,
+  getInstances,
+  getModulatedLayer,
+  getPolygonSymmetryTransforms,
+  resolveSymmetryParams
+} from '../lib/motion';
+import { getVoronoiCells, VoronoiCell } from '../lib/voronoi';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage, getLayerSize } from './render2d';
 
 // The app's BlendMode strings are identical to Pixi's names. The advanced set
 // ('color-dodge', 'color-burn', 'saturation', 'color', 'luminosity') comes from
@@ -37,17 +45,54 @@ function clamp01(v: number): number {
 
 const DEG = Math.PI / 180;
 
+// A masked copy of the layer's own sprite, used only in voronoi mode. Mask
+// and sprite live in the same wrapper so displacing the wrapper moves both
+// together (a rigid "shard"), matching the Canvas 2D voronoi path.
+interface VoronoiShardNode {
+  wrapper: Container;
+  sprite: Sprite;
+  maskG: Graphics;
+}
+
 interface SymmetryNode {
   container: Container;
   sprites: Sprite[];
+  shards: VoronoiShardNode[];
+  voronoiKey: string;
+  voronoiCells: VoronoiCell[];
 }
 
-interface PolygonNode {
-  container: Container;
+// One instance per symmetrized copy. Pixi display objects can only have a
+// single parent, so each copy needs its own mask/tiler/fill/stroke set,
+// pooled the same way SymmetryNode pools sprites.
+interface PolygonInstanceNode {
+  wrapper: Container;
   tiler: TilingSprite;
   maskG: Graphics;
   fillG: Graphics;
   strokeG: Graphics;
+}
+
+// One shard per Voronoi cell. Two nested container masks (outer = parent
+// shape, inner = this cell) intersect automatically through Pixi's render
+// pipeline — no polygon-polygon boolean math needed, same idea as chaining
+// two ctx.clip() calls in the Canvas 2D path.
+interface PolygonVoronoiShardNode {
+  outer: Container;
+  parentMaskG: Graphics;
+  inner: Container;
+  cellMaskG: Graphics;
+  tiler: TilingSprite;
+  fillG: Graphics;
+  strokeG: Graphics;
+}
+
+interface PolygonNode {
+  container: Container;
+  instances: PolygonInstanceNode[];
+  voronoiShards: PolygonVoronoiShardNode[];
+  voronoiKey: string;
+  voronoiCells: VoronoiCell[];
   // Change-detection keys so Graphics geometry is only rebuilt when needed.
   pointsRef: PolygonLayer['points'] | null;
   fillColor: string | undefined;
@@ -277,7 +322,7 @@ export class PixiSceneRenderer {
     for (const layer of layers) {
       if (!this.symNodes.has(layer.id)) {
         const container = new Container();
-        this.symNodes.set(layer.id, { container, sprites: [] });
+        this.symNodes.set(layer.id, { container, sprites: [], shards: [], voronoiKey: '', voronoiCells: [] });
       }
     }
     const order = layers.map((l) => l.id).join('\n');
@@ -311,6 +356,14 @@ export class PixiSceneRenderer {
 
   private createPolygonNode(): PolygonNode {
     const container = new Container();
+    return {
+      container, instances: [], voronoiShards: [], voronoiKey: '', voronoiCells: [],
+      pointsRef: null, fillColor: undefined, strokeColor: undefined, strokeWidth: -1
+    };
+  }
+
+  private createPolygonInstanceNode(): PolygonInstanceNode {
+    const wrapper = new Container();
     const tiler = new TilingSprite({ texture: Texture.EMPTY, width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
     // Cover the full canvas; local origin lands on the canvas top-left so the
     // tile transform matches the Canvas 2D pattern space exactly.
@@ -319,11 +372,8 @@ export class PixiSceneRenderer {
     const fillG = new Graphics();
     const strokeG = new Graphics();
     tiler.mask = maskG;
-    container.addChild(tiler, fillG, maskG, strokeG);
-    return {
-      container, tiler, maskG, fillG, strokeG,
-      pointsRef: null, fillColor: undefined, strokeColor: undefined, strokeWidth: -1
-    };
+    wrapper.addChild(tiler, fillG, maskG, strokeG);
+    return { wrapper, tiler, maskG, fillG, strokeG };
   }
 
   // ------------------------------------------------------------ symmetry mode
@@ -342,6 +392,13 @@ export class PixiSceneRenderer {
     }
     node.container.visible = texture !== null;
     if (!texture) return;
+
+    if (layer.symmetry === 'voronoi') {
+      this.syncSymmetryVoronoi(node, layer, texture, t);
+      while (node.sprites.length > 0) node.sprites.pop()!.destroy();
+      return;
+    }
+    while (node.shards.length > 0) node.shards.pop()!.wrapper.destroy({ children: true });
 
     const instances = getInstances(layer, t);
     while (node.sprites.length < instances.length) {
@@ -365,6 +422,65 @@ export class PixiSceneRenderer {
     }
   }
 
+  /**
+   * Voronoi for an image layer shatters the sprite into masked shards
+   * rather than tiling a pattern (Layer has no tiling concept, unlike
+   * PolygonLayer). Each shard is a wrapper containing both the sprite and
+   * its cell mask, displaced together a small deterministic amount along
+   * its own phase — a "shattered glass" mosaic, matching the Canvas 2D path.
+   */
+  private syncSymmetryVoronoi(node: SymmetryNode, layer: Layer, texture: Texture, t: number) {
+    const m = getModulatedLayer(layer, t);
+    const { w, h } = getLayerSize(layer);
+    const halfW = (w * Math.abs(m.scaleX)) / 2;
+    const halfH = (h * Math.abs(m.scaleY)) / 2;
+    const bounds = { minX: m.x - halfW, minY: m.y - halfH, maxX: m.x + halfW, maxY: m.y + halfH };
+
+    const params = resolveSymmetryParams(layer.symmetryParams);
+    const key = `${bounds.minX}|${bounds.minY}|${bounds.maxX}|${bounds.maxY}|${params.voronoiCells}|${params.voronoiSeed}`;
+    let needsRedraw = node.voronoiKey !== key;
+    if (needsRedraw) {
+      node.voronoiCells = getVoronoiCells(bounds, params.voronoiCells, params.voronoiSeed);
+      node.voronoiKey = key;
+    }
+    const cells = node.voronoiCells;
+
+    while (node.shards.length < cells.length) {
+      const wrapper = new Container();
+      const sprite = new Sprite();
+      sprite.anchor.set(0.5);
+      const maskG = new Graphics();
+      wrapper.addChild(sprite, maskG);
+      sprite.mask = maskG;
+      node.shards.push({ wrapper, sprite, maskG });
+      node.container.addChild(wrapper);
+      needsRedraw = true;
+    }
+    while (node.shards.length > cells.length) {
+      node.shards.pop()!.wrapper.destroy({ children: true });
+    }
+
+    const jitter = params.voronoiPhaseVariation * 30;
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      const shard = node.shards[i];
+      const angle = cell.phase * Math.PI * 2;
+      const dx = Math.cos(angle) * jitter * cell.phase;
+      const dy = Math.sin(angle) * jitter * cell.phase;
+
+      shard.wrapper.position.set(dx, dy);
+      shard.wrapper.alpha = clamp01(m.opacity);
+      shard.wrapper.blendMode = toBlendMode(m.blendMode);
+      if (needsRedraw) {
+        shard.maskG.clear().poly(cell.points, true).fill(0xffffff);
+      }
+      shard.sprite.texture = texture;
+      shard.sprite.position.set(m.x, m.y);
+      shard.sprite.rotation = m.rotation * DEG;
+      shard.sprite.scale.set(m.scaleX, m.scaleY);
+    }
+  }
+
   // ------------------------------------------------------------- polygon mode
 
   private syncPolygon(node: PolygonNode, polygon: PolygonLayer, t: number) {
@@ -385,47 +501,211 @@ export class PixiSceneRenderer {
     }
     if (!texture && polygon.src) texture = this.getStaticTexture(polygon.src);
 
-    const geometryChanged = node.pointsRef !== polygon.points;
-    if (geometryChanged) {
-      node.maskG.clear().poly(polygon.points, true).fill(0xffffff);
-    }
+    const points = getDeformedPoints(polygon, t);
+    // Vertex noise makes `points` a fresh array every frame even when the
+    // source `polygon.points` reference hasn't changed, so the reference
+    // check alone can't detect it — force a redraw every frame while it's
+    // actively animating (Canvas 2D redraws every frame regardless, so this
+    // only affects the cached-geometry Pixi path).
+    const isAnimatingVertices = !!polygon.vertexNoise && polygon.vertexNoise.type !== 'none';
+    const shapeChanged = isAnimatingVertices || node.pointsRef !== polygon.points;
+    const fillColor = polygon.fillColor || '#6366f1';
 
-    if (texture) {
-      node.tiler.visible = true;
-      node.fillG.visible = false;
-      node.tiler.texture = texture;
-      const scaleVal = Math.max(0.01, applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t));
-      const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
-      const offsetX = applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
-      const offsetY = applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
-      node.tiler.tileScale.set(scaleVal, scaleVal);
-      node.tiler.tileRotation = rotationVal * DEG;
-      node.tiler.tilePosition.set(offsetX, offsetY);
-    } else {
-      node.tiler.visible = false;
-      node.fillG.visible = true;
-      const fillColor = polygon.fillColor || '#6366f1';
-      if (geometryChanged || node.fillColor !== fillColor) {
-        node.fillG.clear().poly(polygon.points, true).fill(fillColor);
-        node.fillColor = fillColor;
-      }
-    }
-
-    const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
-    if (geometryChanged || node.strokeColor !== polygon.strokeColor || node.strokeWidth !== polygon.strokeWidth) {
-      node.strokeG.clear();
-      if (hasStroke) {
-        node.strokeG.poly(polygon.points, true).stroke({
-          width: polygon.strokeWidth,
-          color: polygon.strokeColor,
-          join: 'round'
-        });
-      }
+    if ((polygon.symmetry ?? 'none') === 'voronoi') {
+      this.syncPolygonVoronoi(node, polygon, points, texture, t, shapeChanged);
+      while (node.instances.length > 0) node.instances.pop()!.wrapper.destroy({ children: true });
+      node.pointsRef = polygon.points;
+      node.fillColor = fillColor;
       node.strokeColor = polygon.strokeColor;
       node.strokeWidth = polygon.strokeWidth;
+      return;
+    }
+    while (node.voronoiShards.length > 0) node.voronoiShards.pop()!.outer.destroy({ children: true });
+
+    let geometryChanged = shapeChanged;
+    let styleChanged = geometryChanged || node.fillColor !== fillColor;
+    let strokeChanged = geometryChanged || node.strokeColor !== polygon.strokeColor || node.strokeWidth !== polygon.strokeWidth;
+
+    const transforms = getPolygonSymmetryTransforms(polygon);
+    while (node.instances.length < transforms.length) {
+      const inst = this.createPolygonInstanceNode();
+      node.instances.push(inst);
+      node.container.addChild(inst.wrapper);
+      // A freshly created instance's Graphics are empty regardless of
+      // whether the polygon's own data changed this frame — force its
+      // first draw.
+      geometryChanged = true;
+      styleChanged = true;
+      strokeChanged = true;
+    }
+    while (node.instances.length > transforms.length) {
+      node.instances.pop()!.wrapper.destroy({ children: true });
+    }
+
+    const origin = resolveSymmetryParams(polygon.symmetryParams);
+    const scaleVal = Math.max(0.01, applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t));
+    const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
+    const offsetX = applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
+    const offsetY = applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
+    const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
+
+    for (let i = 0; i < transforms.length; i++) {
+      const tr = transforms[i];
+      const inst = node.instances[i];
+
+      // Rigid transform around the symmetry origin — pivot and position at
+      // the same point cancel translation, leaving only rotate/mirror/scale
+      // around it, matching the Canvas 2D wrapping transform exactly.
+      inst.wrapper.pivot.set(origin.originX, origin.originY);
+      inst.wrapper.position.set(origin.originX, origin.originY);
+      inst.wrapper.rotation = tr.rotationDeg * DEG;
+      inst.wrapper.scale.set((tr.mirrorX ? -1 : 1) * tr.scaleMult, (tr.mirrorY ? -1 : 1) * tr.scaleMult);
+
+      if (geometryChanged) {
+        inst.maskG.clear().poly(points, true).fill(0xffffff);
+      }
+
+      if (texture) {
+        inst.tiler.visible = true;
+        inst.fillG.visible = false;
+        inst.tiler.texture = texture;
+        inst.tiler.tileScale.set(scaleVal, scaleVal);
+        inst.tiler.tileRotation = rotationVal * DEG;
+        inst.tiler.tilePosition.set(offsetX, offsetY);
+      } else {
+        inst.tiler.visible = false;
+        inst.fillG.visible = true;
+        if (styleChanged) {
+          inst.fillG.clear().poly(points, true).fill(fillColor);
+        }
+      }
+
+      if (strokeChanged) {
+        inst.strokeG.clear();
+        if (hasStroke) {
+          inst.strokeG.poly(points, true).stroke({
+            width: polygon.strokeWidth,
+            color: polygon.strokeColor,
+            join: 'round'
+          });
+        }
+      }
     }
 
     node.pointsRef = polygon.points;
+    node.fillColor = fillColor;
+    node.strokeColor = polygon.strokeColor;
+    node.strokeWidth = polygon.strokeWidth;
+  }
+
+  private createPolygonVoronoiShardNode(): PolygonVoronoiShardNode {
+    // Two nested container masks: outer clips to the parent shape, inner
+    // clips to this cell — Pixi composes nested masks through the render
+    // pipeline automatically, so their intersection needs no polygon-
+    // polygon boolean math (same idea as chaining two ctx.clip() calls).
+    const outer = new Container();
+    const parentMaskG = new Graphics();
+    const inner = new Container();
+    const cellMaskG = new Graphics();
+    const tiler = new TilingSprite({ texture: Texture.EMPTY, width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
+    tiler.position.set(-CANVAS_WIDTH / 2, -CANVAS_HEIGHT / 2);
+    const fillG = new Graphics();
+    const strokeG = new Graphics();
+
+    inner.addChild(tiler, fillG, strokeG, cellMaskG);
+    inner.mask = cellMaskG;
+    outer.addChild(parentMaskG, inner);
+    outer.mask = parentMaskG;
+
+    return { outer, parentMaskG, inner, cellMaskG, tiler, fillG, strokeG };
+  }
+
+  /**
+   * Voronoi is a subdivision/masking effect, not a repeat-and-transform
+   * one, so it bypasses getPolygonSymmetryTransforms entirely: each shard
+   * is its own two-level-masked node (parent shape ∩ cell), textured with
+   * the same pattern at a small deterministic per-cell phase offset.
+   */
+  private syncPolygonVoronoi(
+    node: PolygonNode,
+    polygon: PolygonLayer,
+    points: PolygonPoint[],
+    texture: Texture | null,
+    t: number,
+    shapeChanged: boolean
+  ) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    const params = resolveSymmetryParams(polygon.symmetryParams);
+    const key = `${minX}|${minY}|${maxX}|${maxY}|${params.voronoiCells}|${params.voronoiSeed}`;
+    let cellsChanged = node.voronoiKey !== key;
+    if (cellsChanged) {
+      node.voronoiCells = getVoronoiCells({ minX, minY, maxX, maxY }, params.voronoiCells, params.voronoiSeed);
+      node.voronoiKey = key;
+    }
+    const cells = node.voronoiCells;
+
+    while (node.voronoiShards.length < cells.length) {
+      const shard = this.createPolygonVoronoiShardNode();
+      node.voronoiShards.push(shard);
+      node.container.addChild(shard.outer);
+      cellsChanged = true;
+    }
+    while (node.voronoiShards.length > cells.length) {
+      node.voronoiShards.pop()!.outer.destroy({ children: true });
+    }
+
+    const shapeNeedsRedraw = shapeChanged || cellsChanged;
+    const scaleVal = Math.max(0.01, applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t));
+    const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
+    const baseOffsetX = applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
+    const baseOffsetY = applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
+    const fillColor = polygon.fillColor || '#6366f1';
+    const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
+    const spread = 400 * params.voronoiPhaseVariation;
+
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      const shard = node.voronoiShards[i];
+
+      if (shapeNeedsRedraw) {
+        shard.parentMaskG.clear().poly(points, true).fill(0xffffff);
+      }
+      if (cellsChanged) {
+        shard.cellMaskG.clear().poly(cell.points, true).fill(0xffffff);
+      }
+
+      if (texture) {
+        shard.tiler.visible = true;
+        shard.fillG.visible = false;
+        shard.tiler.texture = texture;
+        shard.tiler.tileScale.set(scaleVal, scaleVal);
+        shard.tiler.tileRotation = rotationVal * DEG;
+        const phaseX = (cell.phase - 0.5) * spread;
+        const phaseY = (((cell.phase * 7.3) % 1) - 0.5) * spread;
+        shard.tiler.tilePosition.set(baseOffsetX + phaseX, baseOffsetY + phaseY);
+      } else {
+        shard.tiler.visible = false;
+        shard.fillG.visible = true;
+        if (cellsChanged) {
+          shard.fillG.clear().poly(cell.points, true).fill(fillColor);
+        }
+      }
+
+      if (cellsChanged) {
+        shard.strokeG.clear();
+        if (hasStroke) {
+          shard.strokeG.poly(cell.points, true).stroke({
+            width: polygon.strokeWidth,
+            color: polygon.strokeColor,
+            join: 'round'
+          });
+        }
+      }
+    }
   }
 
   // ----------------------------------------------------------------- textures

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Layer, PolygonLayer, SymmetryType, BlendMode, MotionConfig, MotionType } from '../types';
+import { Layer, PolygonLayer, SymmetryType, SymmetryParams, WallpaperLattice, DEFAULT_SYMMETRY_PARAMS, BlendMode, MotionConfig, MotionType } from '../types';
 import { Trash2, Image as ImageIcon, GripVertical, Film, Sparkles, Shapes, PenTool, Eye, EyeOff, Copy, ChevronUp, ChevronDown, Undo2, Redo2, Save, FolderOpen, Wand2, RotateCcw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { redo, undo, useStore } from '../store';
@@ -71,7 +71,188 @@ const SYMMETRY_OPTIONS: { value: SymmetryType; label: string }[] = [
   { value: 'mirror-y', label: 'Vertical Mirror' },
   { value: 'quad', label: 'Quadrant' },
   { value: 'radial', label: 'Radial (Kaleidoscope)' },
+  { value: 'spiral', label: 'Spiral (Droste)' },
+  { value: 'wallpaper', label: 'Wallpaper Tiling' },
+  { value: 'poincare', label: 'Poincaré Disk' },
+  { value: 'voronoi', label: 'Voronoi Shards' },
 ];
+
+const WALLPAPER_LATTICE_OPTIONS: { value: WallpaperLattice; label: string }[] = [
+  { value: 'p3', label: 'P3 — Triangular' },
+  { value: 'p4m', label: 'P4M — Square + Mirror' },
+  { value: 'p6', label: 'P6 — Hexagonal' },
+];
+
+/**
+ * Shared symmetry controls, reused by both the Layer and PolygonLayer
+ * inspectors — same field names on both document types (see types.ts), so
+ * one editor + one onChange shape works for either via updateLayer/
+ * updatePolygon. Each mode's extra knobs live in symmetryParams.
+ */
+function SymmetryEditor({
+  symmetry, radialSegments, symmetryParams, onChange
+}: {
+  symmetry: SymmetryType;
+  radialSegments: number;
+  symmetryParams?: SymmetryParams;
+  onChange: (updates: Partial<{ symmetry: SymmetryType; radialSegments: number; symmetryParams: SymmetryParams }>) => void;
+}) {
+  const params = { ...DEFAULT_SYMMETRY_PARAMS, ...symmetryParams };
+  const updateParams = (p: Partial<SymmetryParams>) => onChange({ symmetryParams: { ...params, ...p } });
+
+  return (
+    <>
+      <div>
+        <label className="text-[11px] text-gray-400 mb-1 block">Symmetry Engine</label>
+        <select
+          value={symmetry}
+          onChange={(e) => onChange({ symmetry: e.target.value as SymmetryType })}
+          className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+          {SYMMETRY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+        </select>
+      </div>
+
+      {symmetry === 'radial' && (
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[11px] text-gray-400">Radial Segments</label>
+            <span className="text-[11px] font-mono">{radialSegments}</span>
+          </div>
+          <input type="range" min="2" max="24" step="1" value={radialSegments}
+            onChange={(e) => onChange({ radialSegments: parseInt(e.target.value) })}
+            className="w-full accent-indigo-500 h-1" />
+        </div>
+      )}
+
+      {symmetry === 'spiral' && (
+        <div className="space-y-2">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Copies</label>
+              <span className="text-[11px] font-mono">{params.spiralInstances}</span>
+            </div>
+            <input type="range" min="2" max="30" step="1" value={params.spiralInstances}
+              onChange={(e) => updateParams({ spiralInstances: parseInt(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Angle Step</label>
+              <span className="text-[11px] font-mono">{params.spiralAngleStep.toFixed(0)}&deg;</span>
+            </div>
+            <input type="range" min="1" max="90" step="1" value={params.spiralAngleStep}
+              onChange={(e) => updateParams({ spiralAngleStep: parseFloat(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Growth (shrink / grow per copy)</label>
+              <span className="text-[11px] font-mono">{params.spiralGrowth.toFixed(2)}</span>
+            </div>
+            <input type="range" min="0.5" max="1.3" step="0.01" value={params.spiralGrowth}
+              onChange={(e) => updateParams({ spiralGrowth: parseFloat(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+        </div>
+      )}
+
+      {symmetry === 'wallpaper' && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-[11px] text-gray-400 mb-1 block">Lattice Type</label>
+            <select
+              value={params.wallpaperLattice}
+              onChange={(e) => updateParams({ wallpaperLattice: e.target.value as WallpaperLattice })}
+              className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              {WALLPAPER_LATTICE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Cell Size</label>
+              <span className="text-[11px] font-mono">{Math.round(params.wallpaperCellSize)}px</span>
+            </div>
+            <input type="range" min="60" max="600" step="10" value={params.wallpaperCellSize}
+              onChange={(e) => updateParams({ wallpaperCellSize: parseFloat(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+        </div>
+      )}
+
+      {symmetry === 'poincare' && (
+        <div className="space-y-2">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Copies per Ring</label>
+              <span className="text-[11px] font-mono">{radialSegments}</span>
+            </div>
+            <input type="range" min="2" max="24" step="1" value={radialSegments}
+              onChange={(e) => onChange({ radialSegments: parseInt(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Rings</label>
+              <span className="text-[11px] font-mono">{params.poincareRings}</span>
+            </div>
+            <input type="range" min="1" max="8" step="1" value={params.poincareRings}
+              onChange={(e) => updateParams({ poincareRings: parseInt(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Boundary Radius</label>
+              <span className="text-[11px] font-mono">{Math.round(params.poincareRadius)}px</span>
+            </div>
+            <input type="range" min="100" max="900" step="10" value={params.poincareRadius}
+              onChange={(e) => updateParams({ poincareRadius: parseFloat(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+        </div>
+      )}
+
+      {symmetry === 'voronoi' && (
+        <div className="space-y-2">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Shard Count</label>
+              <span className="text-[11px] font-mono">{params.voronoiCells}</span>
+            </div>
+            <input type="range" min="5" max="50" step="1" value={params.voronoiCells}
+              onChange={(e) => updateParams({ voronoiCells: parseInt(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Seed</label>
+              <span className="text-[11px] font-mono">{params.voronoiSeed}</span>
+            </div>
+            <input type="range" min="1" max="999" step="1" value={params.voronoiSeed}
+              onChange={(e) => updateParams({ voronoiSeed: parseInt(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] text-gray-400">Phase Variation</label>
+              <span className="text-[11px] font-mono">{Math.round(params.voronoiPhaseVariation * 100)}%</span>
+            </div>
+            <input type="range" min="0" max="1" step="0.05" value={params.voronoiPhaseVariation}
+              onChange={(e) => updateParams({ voronoiPhaseVariation: parseFloat(e.target.value) })}
+              className="w-full accent-indigo-500 h-1" />
+          </div>
+        </div>
+      )}
+
+      {symmetry !== 'none' && symmetry !== 'voronoi' && (
+        <div className="pt-1 text-[10px] text-gray-500">
+          Drag the amber origin handle on canvas to re-center this symmetry.
+        </div>
+      )}
+    </>
+  );
+}
 
 const BLEND_MODES: { value: BlendMode; label: string }[] = [
   { value: 'normal', label: 'Normal' },
@@ -734,7 +915,7 @@ export default function Sidebar() {
   const onUpdateCanvasBg = useStore(s => s.setCanvasBg);
 
   const [activeTab, setActiveTab] = useState<'transform' | 'style' | 'motion'>('transform');
-  const [polyTab, setPolyTab] = useState<'texture' | 'style' | 'motion'>('texture');
+  const [polyTab, setPolyTab] = useState<'texture' | 'style' | 'symmetry' | 'motion'>('texture');
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -996,28 +1177,14 @@ export default function Sidebar() {
                            className="w-full accent-indigo-500 h-1" 
                         />
                      </div>
-                     <div className="pt-2 border-t border-gray-800">
-                        <label className="text-[11px] text-gray-400 mb-1 block">Symmetry Engine</label>
-                        <select 
-                          value={selectedLayer.symmetry} 
-                          onChange={(e) => onUpdateLayer(selectedLayer.id, { symmetry: e.target.value as SymmetryType })}
-                          className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 outline-none focus:ring-1 focus:ring-indigo-500"
-                        >
-                           {SYMMETRY_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
+                     <div className="pt-2 border-t border-gray-800 space-y-3">
+                        <SymmetryEditor
+                          symmetry={selectedLayer.symmetry}
+                          radialSegments={selectedLayer.radialSegments}
+                          symmetryParams={selectedLayer.symmetryParams}
+                          onChange={(updates) => onUpdateLayer(selectedLayer.id, updates)}
+                        />
                      </div>
-                     {selectedLayer.symmetry === 'radial' && (
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                              <label className="text-[11px] text-gray-400">Radial Segments</label>
-                              <span className="text-[11px] font-mono">{selectedLayer.radialSegments}</span>
-                          </div>
-                          <input type="range" min="2" max="24" step="1" value={selectedLayer.radialSegments} 
-                              onChange={(e) => onUpdateLayer(selectedLayer.id, { radialSegments: parseInt(e.target.value) })} 
-                              className="w-full accent-indigo-500 h-1" 
-                          />
-                        </div>
-                     )}
                    </div>
                  )}
 
@@ -1270,6 +1437,12 @@ export default function Sidebar() {
                   Style
                 </button>
                 <button
+                  onClick={() => setPolyTab('symmetry')}
+                  className={cn("flex-1 text-[11px] font-medium py-1 rounded transition-colors", polyTab === 'symmetry' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200')}
+                >
+                  Symmetry
+                </button>
+                <button
                   onClick={() => setPolyTab('motion')}
                   className={cn("flex-1 text-[11px] font-medium py-1 rounded transition-colors", polyTab === 'motion' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200')}
                 >
@@ -1474,8 +1647,46 @@ export default function Sidebar() {
                   </div>
                 )}
 
+                {polyTab === 'symmetry' && (
+                  <div className="space-y-3">
+                    <SymmetryEditor
+                      symmetry={selectedPolygon.symmetry ?? 'none'}
+                      radialSegments={selectedPolygon.radialSegments ?? 6}
+                      symmetryParams={selectedPolygon.symmetryParams}
+                      onChange={(updates) => onUpdatePolygon(selectedPolygon.id, updates)}
+                    />
+                  </div>
+                )}
+
                 {polyTab === 'motion' && (
                   <div className="space-y-2 pb-1">
+                    <div className="pb-2 mb-1 border-b border-gray-800">
+                      <MotionControl
+                        label="Vertex Deformation (Jelly)"
+                        config={selectedPolygon.vertexNoise}
+                        onChange={(c) => onUpdatePolygon(selectedPolygon.id, {
+                          vertexNoise: c ? { ...c, incoherence: selectedPolygon.vertexNoise?.incoherence ?? 0.6 } : undefined
+                        })}
+                        maxAmplitude={150}
+                        stepAmplitude={2}
+                      />
+                      {selectedPolygon.vertexNoise && selectedPolygon.vertexNoise.type !== 'none' && (
+                        <div className="-mt-2 border border-t-0 border-gray-800 p-2 rounded-b bg-gray-800/30">
+                          <div className="flex justify-between text-[9px] text-gray-400 mb-1">
+                            <span>Incoherence (desync per vertex)</span>
+                            <span>{Math.round(selectedPolygon.vertexNoise.incoherence * 100)}%</span>
+                          </div>
+                          <input
+                            type="range" min="0" max="1" step="0.05"
+                            value={selectedPolygon.vertexNoise.incoherence}
+                            onChange={(e) => onUpdatePolygon(selectedPolygon.id, {
+                              vertexNoise: { ...selectedPolygon.vertexNoise!, incoherence: parseFloat(e.target.value) }
+                            })}
+                            className="w-full accent-indigo-500 h-1"
+                          />
+                        </div>
+                      )}
+                    </div>
                     <MotionControl
                       label="Texture Scale Pulse"
                       config={selectedPolygon.motionTextureScale}

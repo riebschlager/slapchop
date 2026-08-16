@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { PolygonPoint } from '../types';
+import { DEFAULT_SYMMETRY_PARAMS, PolygonPoint } from '../types';
 import { cn } from '../lib/utils';
 import { Download, Video, X, Loader2, PenTool, Film, Repeat, Clapperboard } from 'lucide-react';
 import { getPolygonCentroid, isPointInPolygon } from '../lib/polygonUtils';
@@ -384,6 +384,35 @@ export default function CanvasWorkspace() {
     startLayerDrag(layerId, startCoords);
   };
 
+  // Off-center symmetry anchor: shared by both app modes since Layer and
+  // PolygonLayer carry the same symmetryParams shape. Dragging re-centers
+  // whichever modes are active (mirror/radial/spiral/…) around this point.
+  const startSymmetryOriginDrag = (kind: 'layer' | 'polygon', id: string, startCoords: PolygonPoint) => {
+    const readParams = () => kind === 'layer'
+      ? useStore.getState().layers.find(l => l.id === id)?.symmetryParams
+      : useStore.getState().polygonLayers.find(p => p.id === id)?.symmetryParams;
+    const start = readParams();
+    const startOriginX = start?.originX ?? 0;
+    const startOriginY = start?.originY ?? 0;
+
+    beginDrag((moveEvent) => {
+      const currentCoords = getCanvasCoords(moveEvent);
+      if (!currentCoords) return;
+      const dx = currentCoords.x - startCoords.x;
+      const dy = currentCoords.y - startCoords.y;
+      const symmetryParams = { ...DEFAULT_SYMMETRY_PARAMS, ...readParams(), originX: startOriginX + dx, originY: startOriginY + dy };
+      if (kind === 'layer') onUpdateLayer(id, { symmetryParams });
+      else onUpdatePolygon(id, { symmetryParams });
+    });
+  };
+
+  const handleSymmetryOriginMouseDown = (e: React.MouseEvent, kind: 'layer' | 'polygon', id: string) => {
+    e.stopPropagation();
+    const startCoords = getCanvasCoords(e);
+    if (!startCoords) return;
+    startSymmetryOriginDrag(kind, id, startCoords);
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(true);
@@ -713,6 +742,23 @@ export default function CanvasWorkspace() {
                     />
                   );
                 })}
+
+                {/* Symmetry Origin Handle */}
+                {/* Voronoi's shard bounds derive from the shape itself, not
+                    a separate origin, so the handle would have no effect. */}
+                {!['none', 'voronoi'].includes(selectedPolygon.symmetry ?? 'none') && (
+                  <div
+                    onMouseDown={(e) => handleSymmetryOriginMouseDown(e, 'polygon', selectedPolygon.id)}
+                    style={{
+                      left: `${(CANVAS_WIDTH / 2 + (selectedPolygon.symmetryParams?.originX ?? 0)) * scale}px`,
+                      top: `${(CANVAS_HEIGHT / 2 + (selectedPolygon.symmetryParams?.originY ?? 0)) * scale}px`
+                    }}
+                    className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-amber-500/90 hover:bg-amber-400 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-30"
+                    title="Drag to Move Symmetry Origin"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -740,6 +786,26 @@ export default function CanvasWorkspace() {
                 )}
               </div>
             ))}
+
+            {/* Symmetry Origin Handle — a trailing sibling, not indexed by
+                the instance-position rAF tick above (which reads
+                el.children[i] against instances[i] and stops at the first
+                missing index, so this extra child is safely left alone). */}
+            {/* Voronoi's shard bounds derive from the layer itself, not a
+                separate origin, so the handle would have no effect. */}
+            {selectedLayer.symmetry !== 'none' && selectedLayer.symmetry !== 'voronoi' && (
+              <div
+                onMouseDown={(e) => handleSymmetryOriginMouseDown(e, 'layer', selectedLayer.id)}
+                style={{
+                  left: `${(CANVAS_WIDTH / 2 + (selectedLayer.symmetryParams?.originX ?? 0)) * scale}px`,
+                  top: `${(CANVAS_HEIGHT / 2 + (selectedLayer.symmetryParams?.originY ?? 0)) * scale}px`
+                }}
+                className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-amber-500/90 hover:bg-amber-400 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-30"
+                title="Drag to Move Symmetry Origin"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
-import { AppMode, Layer, MasterFxConfig, PolygonLayer } from '../types';
+import { AppMode, Layer, MasterFxConfig, PolygonLayer, PolygonPoint } from '../types';
 import { getGifFrameAtTime } from '../lib/gifUtils';
-import { applyMotion, getInstances } from '../lib/motion';
+import { applyMotion, getDeformedPoints, getInstances, getModulatedLayer, getPolygonSymmetryTransforms, resolveSymmetryParams } from '../lib/motion';
+import { getVoronoiCells } from '../lib/voronoi';
 
 export const CANVAS_WIDTH = 1080;
 export const CANVAS_HEIGHT = 1920;
@@ -78,6 +79,103 @@ function getPattern(
   return pattern;
 }
 
+function tracePolygonPath(
+  ctx: CanvasRenderingContext2D,
+  points: { x: number; y: number }[],
+  width: number,
+  height: number,
+  scaleX: number,
+  scaleY: number
+) {
+  ctx.beginPath();
+  points.forEach((pt, i) => {
+    const px = (width / 2) + pt.x * scaleX;
+    const py = (height / 2) + pt.y * scaleY;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.closePath();
+}
+
+/**
+ * Voronoi is a subdivision/masking effect, not a repeat-and-transform one,
+ * so it bypasses getPolygonSymmetryTransforms entirely: each shard clips to
+ * the *intersection* of the parent shape and its own cell polygon (two
+ * nested ctx.clip() calls — Canvas 2D intersects clip regions automatically,
+ * no polygon-polygon boolean math needed), then fills with the same texture
+ * pattern at a small deterministic per-cell phase offset.
+ */
+function renderVoronoiPolygon(
+  ctx: CanvasRenderingContext2D,
+  polygon: PolygonLayer,
+  points: PolygonPoint[],
+  frameSource: CanvasImageSource | null,
+  scaleVal: number,
+  rotationVal: number,
+  offsetX: number,
+  offsetY: number,
+  scaleX: number,
+  scaleY: number,
+  width: number,
+  height: number
+) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  const params = resolveSymmetryParams(polygon.symmetryParams);
+  const cells = getVoronoiCells({ minX, minY, maxX, maxY }, params.voronoiCells, params.voronoiSeed);
+  const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
+
+  for (const cell of cells) {
+    ctx.save();
+    tracePolygonPath(ctx, points, width, height, scaleX, scaleY);
+    ctx.clip();
+    tracePolygonPath(ctx, cell.points, width, height, scaleX, scaleY);
+    ctx.clip();
+
+    ctx.globalAlpha = Math.max(0, Math.min(1, polygon.opacity));
+    ctx.globalCompositeOperation = BLEND_MAP[polygon.blendMode] || 'source-over';
+
+    if (frameSource) {
+      try {
+        const pattern = getPattern(ctx, `${polygon.id}-voronoi`, frameSource);
+        if (pattern) {
+          const spread = 400 * params.voronoiPhaseVariation;
+          const phaseX = (cell.phase - 0.5) * spread;
+          const phaseY = (((cell.phase * 7.3) % 1) - 0.5) * spread;
+          const matrix = new DOMMatrix();
+          matrix.scaleSelf(scaleX, scaleY);
+          matrix.translateSelf(offsetX + phaseX, offsetY + phaseY);
+          matrix.scaleSelf(Math.max(0.01, scaleVal), Math.max(0.01, scaleVal));
+          matrix.rotateSelf(rotationVal);
+          pattern.setTransform(matrix);
+          ctx.fillStyle = pattern;
+          ctx.fill();
+        }
+      } catch (err) {
+        console.warn('Pattern fill failed:', err);
+        ctx.fillStyle = polygon.fillColor || '#6366f1';
+        ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = polygon.fillColor || '#6366f1';
+      ctx.fill();
+    }
+
+    if (hasStroke) {
+      tracePolygonPath(ctx, cell.points, width, height, scaleX, scaleY);
+      ctx.lineWidth = polygon.strokeWidth * Math.min(scaleX, scaleY);
+      ctx.strokeStyle = polygon.strokeColor;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
 function renderPolygon(
   ctx: CanvasRenderingContext2D,
   polygon: PolygonLayer,
@@ -86,6 +184,7 @@ function renderPolygon(
   height: number
 ) {
   if (!polygon.points || polygon.points.length < 3) return;
+  const points = getDeformedPoints(polygon, t);
 
   const scaleVal = applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t);
   const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
@@ -95,20 +194,6 @@ function renderPolygon(
   const scaleX = width / CANVAS_WIDTH;
   const scaleY = height / CANVAS_HEIGHT;
 
-  ctx.save();
-
-  ctx.beginPath();
-  polygon.points.forEach((pt, i) => {
-    const px = (width / 2) + pt.x * scaleX;
-    const py = (height / 2) + pt.y * scaleY;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  });
-  ctx.closePath();
-
-  ctx.globalAlpha = Math.max(0, Math.min(1, polygon.opacity));
-  ctx.globalCompositeOperation = BLEND_MAP[polygon.blendMode] || 'source-over';
-
   let frameSource: CanvasImageSource | null = null;
   if (polygon.gifData) {
     frameSource = getGifFrameAtTime(polygon.gifData, t, polygon.gifSpeed ?? 1);
@@ -117,39 +202,116 @@ function renderPolygon(
     frameSource = getCachedImage(polygon.src);
   }
 
-  if (frameSource) {
-    try {
-      const pattern = getPattern(ctx, polygon.id, frameSource);
-      if (pattern) {
-        const matrix = new DOMMatrix();
-        // Design-space pattern transform, mapped to output pixels so the
-        // texture stays resolution-independent at any export size.
-        matrix.scaleSelf(scaleX, scaleY);
-        matrix.translateSelf(offsetX, offsetY);
-        matrix.scaleSelf(Math.max(0.01, scaleVal), Math.max(0.01, scaleVal));
-        matrix.rotateSelf(rotationVal);
-        pattern.setTransform(matrix);
-        ctx.fillStyle = pattern;
+  if ((polygon.symmetry ?? 'none') === 'voronoi') {
+    renderVoronoiPolygon(ctx, polygon, points, frameSource, scaleVal, rotationVal, offsetX, offsetY, scaleX, scaleY, width, height);
+    return;
+  }
+
+  const origin = resolveSymmetryParams(polygon.symmetryParams);
+  const originPxX = (width / 2) + origin.originX * scaleX;
+  const originPxY = (height / 2) + origin.originY * scaleY;
+
+  // Each symmetrized copy wraps the whole draw (path + texture pattern +
+  // stroke) in a rigid transform around the origin, so the pattern mirrors
+  // /rotates along with the shape — matching how a mirrored Layer's raster
+  // content flips, not just its outline.
+  for (const tr of getPolygonSymmetryTransforms(polygon)) {
+    ctx.save();
+    ctx.translate(originPxX, originPxY);
+    ctx.rotate((tr.rotationDeg * Math.PI) / 180);
+    ctx.scale((tr.mirrorX ? -1 : 1) * tr.scaleMult, (tr.mirrorY ? -1 : 1) * tr.scaleMult);
+    ctx.translate(-originPxX, -originPxY);
+
+    tracePolygonPath(ctx, points, width, height, scaleX, scaleY);
+
+    ctx.globalAlpha = Math.max(0, Math.min(1, polygon.opacity));
+    ctx.globalCompositeOperation = BLEND_MAP[polygon.blendMode] || 'source-over';
+
+    if (frameSource) {
+      try {
+        const pattern = getPattern(ctx, polygon.id, frameSource);
+        if (pattern) {
+          const matrix = new DOMMatrix();
+          // Design-space pattern transform, mapped to output pixels so the
+          // texture stays resolution-independent at any export size.
+          matrix.scaleSelf(scaleX, scaleY);
+          matrix.translateSelf(offsetX, offsetY);
+          matrix.scaleSelf(Math.max(0.01, scaleVal), Math.max(0.01, scaleVal));
+          matrix.rotateSelf(rotationVal);
+          pattern.setTransform(matrix);
+          ctx.fillStyle = pattern;
+          ctx.fill();
+        }
+      } catch (err) {
+        console.warn('Pattern fill failed:', err);
+        ctx.fillStyle = polygon.fillColor || '#6366f1';
         ctx.fill();
       }
-    } catch (err) {
-      console.warn('Pattern fill failed:', err);
+    } else {
       ctx.fillStyle = polygon.fillColor || '#6366f1';
       ctx.fill();
     }
-  } else {
-    ctx.fillStyle = polygon.fillColor || '#6366f1';
-    ctx.fill();
-  }
 
-  if (polygon.strokeWidth > 0 && polygon.strokeColor && polygon.strokeColor !== 'transparent') {
-    ctx.lineWidth = polygon.strokeWidth * Math.min(scaleX, scaleY);
-    ctx.strokeStyle = polygon.strokeColor;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-  }
+    if (polygon.strokeWidth > 0 && polygon.strokeColor && polygon.strokeColor !== 'transparent') {
+      ctx.lineWidth = polygon.strokeWidth * Math.min(scaleX, scaleY);
+      ctx.strokeStyle = polygon.strokeColor;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
 
-  ctx.restore();
+    ctx.restore();
+  }
+}
+
+/**
+ * Voronoi for an image layer shatters the sprite into masked shards rather
+ * than tiling a pattern (Layer has no tiling concept, unlike PolygonLayer).
+ * Each shard is displaced a small deterministic amount along its own phase
+ * — mask and image translate together, so the piece stays intact but sits
+ * slightly out of place, reading as a "shattered glass" mosaic.
+ */
+function renderVoronoiLayer(
+  ctx: CanvasRenderingContext2D,
+  layer: Layer,
+  t: number,
+  drawSource: CanvasImageSource,
+  w: number,
+  h: number,
+  width: number,
+  height: number
+) {
+  const scaleX = width / CANVAS_WIDTH;
+  const scaleY = height / CANVAS_HEIGHT;
+  const m = getModulatedLayer(layer, t);
+  const halfW = (w * Math.abs(m.scaleX)) / 2;
+  const halfH = (h * Math.abs(m.scaleY)) / 2;
+  const bounds = { minX: m.x - halfW, minY: m.y - halfH, maxX: m.x + halfW, maxY: m.y + halfH };
+
+  const params = resolveSymmetryParams(layer.symmetryParams);
+  const cells = getVoronoiCells(bounds, params.voronoiCells, params.voronoiSeed);
+  const jitter = params.voronoiPhaseVariation * 30;
+
+  for (const cell of cells) {
+    const angle = cell.phase * Math.PI * 2;
+    const dx = Math.cos(angle) * jitter * cell.phase;
+    const dy = Math.sin(angle) * jitter * cell.phase;
+
+    ctx.save();
+    tracePolygonPath(ctx, cell.points.map(p => ({ x: p.x + dx, y: p.y + dy })), width, height, scaleX, scaleY);
+    ctx.clip();
+
+    ctx.globalAlpha = Math.max(0, Math.min(1, m.opacity));
+    ctx.globalCompositeOperation = BLEND_MAP[m.blendMode] || 'source-over';
+    ctx.translate((width / 2) + (m.x + dx) * scaleX, (height / 2) + (m.y + dy) * scaleY);
+    ctx.rotate((m.rotation * Math.PI) / 180);
+    ctx.scale(m.scaleX * scaleX, m.scaleY * scaleY);
+    try {
+      ctx.drawImage(drawSource, -w / 2, -h / 2, w, h);
+    } catch (e) {
+      console.warn('Canvas drawImage failed:', e);
+    }
+    ctx.restore();
+  }
 }
 
 export function renderFrame(
@@ -199,6 +361,11 @@ export function renderFrame(
         }
       }
       if (!drawSource) return;
+
+      if (layer.symmetry === 'voronoi') {
+        renderVoronoiLayer(ctx, layer, t, drawSource, w, h, width, height);
+        return;
+      }
 
       const instances = getInstances(layer, t);
       instances.forEach((inst) => {
