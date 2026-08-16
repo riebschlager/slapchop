@@ -352,7 +352,7 @@ function applyMasterFx2D(
     // Film Grain / Noise
     if (hasNoise) {
       const amt = fx.noiseAmount * 255;
-      const seed = Math.floor(t * (fx.noiseSpeed || 1) * 10);
+      const seed = Math.floor((t * (fx.noiseSpeed || 1) * 10) % 1000);
       for (let i = 0; i < len; i += 4) {
         if (data[i + 3] === 0) continue;
         const n = ((Math.sin((i + seed) * 12.9898) * 43758.5453) % 1) - 0.5;
@@ -370,7 +370,7 @@ function applyMasterFx2D(
   if (fx.scanlinesEnabled && fx.scanlinesOpacity > 0) {
     ctx.save();
     const count = fx.scanlinesCount || 360;
-    const scanTime = t * (fx.scanlinesSpeed ?? 0.5);
+    const scanTime = (t * (fx.scanlinesSpeed ?? 0.5)) % 1000;
     const lineSpacing = height / count;
     ctx.fillStyle = `rgba(0, 0, 0, ${fx.scanlinesOpacity * 0.5})`;
     for (let y = (scanTime * lineSpacing * 10) % lineSpacing; y < height; y += lineSpacing) {

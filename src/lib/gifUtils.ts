@@ -32,6 +32,7 @@ async function parseWithOmggif(uint8Array: Uint8Array): Promise<GifData | null> 
 
     const width = reader.width;
     const height = reader.height;
+    if (width <= 0 || height <= 0) return null;
 
     const workCanvas = document.createElement('canvas');
     workCanvas.width = width;
@@ -106,6 +107,7 @@ async function parseWithGifuct(arrayBuffer: ArrayBuffer): Promise<GifData | null
 
     const width = gif.lsd.width;
     const height = gif.lsd.height;
+    if (width <= 0 || height <= 0) return null;
 
     const workCanvas = document.createElement('canvas');
     workCanvas.width = width;
@@ -182,9 +184,11 @@ async function parseWithGifuct(arrayBuffer: ArrayBuffer): Promise<GifData | null
  * Uses O(log N) binary search for smooth 60fps animation performance.
  */
 export function getGifFrameIndexAtTime(gifData: GifData, tInSeconds: number, speed: number = 1): number {
-  if (!gifData || !gifData.frames.length || gifData.totalDurationMs <= 0) return -1;
-  const effectiveSpeed = typeof speed === 'number' && !isNaN(speed) ? speed : 1;
-  const timeMs = Math.abs(tInSeconds * effectiveSpeed * 1000) % gifData.totalDurationMs;
+  if (!gifData || !gifData.frames || !gifData.frames.length || gifData.totalDurationMs <= 0) return -1;
+  const effectiveSpeed = typeof speed === 'number' && !isNaN(speed) && isFinite(speed) ? speed : 1;
+  const total = gifData.totalDurationMs;
+  let timeMs = Math.abs(tInSeconds * effectiveSpeed * 1000) % total;
+  if (isNaN(timeMs) || !isFinite(timeMs)) timeMs = 0;
 
   const frames = gifData.frames;
   let low = 0;
@@ -202,7 +206,8 @@ export function getGifFrameIndexAtTime(gifData: GifData, tInSeconds: number, spe
     }
   }
 
-  return 0;
+  // Bounds fallback for floating-point boundary imprecision
+  return Math.max(0, Math.min(frames.length - 1, low));
 }
 
 /**

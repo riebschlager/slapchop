@@ -100,7 +100,8 @@ export class PixiSceneRenderer {
       width: CANVAS_WIDTH,
       height: CANVAS_HEIGHT,
       antialias: true,
-      backgroundAlpha: 0
+      backgroundAlpha: 0,
+      gcActive: false
     });
     return new PixiSceneRenderer(renderer);
   }
@@ -170,7 +171,9 @@ export class PixiSceneRenderer {
   private syncMasterFx(t: number, state: RenderState, width: number, height: number) {
     const fx = state.masterFx;
     if (!fx || !fx.enabled) {
-      this.stage.filters = [];
+      if (this.stage.filters && (this.stage.filters as Filter[]).length > 0) {
+        this.stage.filters = [];
+      }
       return;
     }
 
@@ -225,7 +228,7 @@ export class PixiSceneRenderer {
 
     // 5. CRT Scanlines
     if (fx.scanlinesEnabled && fx.scanlinesOpacity > 0) {
-      const scanTime = t * (fx.scanlinesSpeed ?? 0.5);
+      const scanTime = (t * (fx.scanlinesSpeed ?? 0.5)) % 1000;
       this.scanlinesFilter.setParams(fx.scanlinesCount || 360, fx.scanlinesOpacity, scanTime);
       activeFilters.push(this.scanlinesFilter);
     }
@@ -237,7 +240,19 @@ export class PixiSceneRenderer {
       activeFilters.push(this.noiseFilter);
     }
 
-    this.stage.filters = activeFilters;
+    const currentFilters = (this.stage.filters as Filter[]) || [];
+    let filtersChanged = currentFilters.length !== activeFilters.length;
+    if (!filtersChanged) {
+      for (let i = 0; i < activeFilters.length; i++) {
+        if (currentFilters[i] !== activeFilters[i]) {
+          filtersChanged = true;
+          break;
+        }
+      }
+    }
+    if (filtersChanged) {
+      this.stage.filters = activeFilters;
+    }
   }
 
   private layout(width: number, height: number, bgColor: string) {
@@ -318,7 +333,10 @@ export class PixiSceneRenderer {
     if (!layer.hidden) {
       if (layer.gifData) {
         const idx = getGifFrameIndexAtTime(layer.gifData, t, layer.gifSpeed ?? 1);
-        if (idx >= 0) texture = this.getGifTextures(layer.gifData)[idx];
+        if (idx >= 0) {
+          const textures = this.getGifTextures(layer.gifData);
+          texture = textures[Math.min(idx, textures.length - 1)] ?? null;
+        }
       }
       if (!texture) texture = this.getStaticTexture(layer.src);
     }
@@ -360,7 +378,10 @@ export class PixiSceneRenderer {
     let texture: Texture | null = null;
     if (polygon.gifData) {
       const idx = getGifFrameIndexAtTime(polygon.gifData, t, polygon.gifSpeed ?? 1);
-      if (idx >= 0) texture = this.getGifTextures(polygon.gifData)[idx];
+      if (idx >= 0) {
+        const textures = this.getGifTextures(polygon.gifData);
+        texture = textures[Math.min(idx, textures.length - 1)] ?? null;
+      }
     }
     if (!texture && polygon.src) texture = this.getStaticTexture(polygon.src);
 
@@ -413,7 +434,7 @@ export class PixiSceneRenderer {
     let arr = this.gifTextures.get(gif);
     if (!arr) {
       arr = gif.frames.map(
-        (f) => new Texture({ source: new ImageSource({ resource: f.image as ImageBitmap }) })
+        (f) => new Texture({ source: new ImageSource({ resource: f.image as ImageBitmap, autoGarbageCollect: false }) })
       );
       this.gifTextures.set(gif, arr);
     }
@@ -426,7 +447,7 @@ export class PixiSceneRenderer {
     if (cached) return cached;
     const img = getCachedImage(src);
     if (!img) return null; // not decoded yet; retried next frame
-    const tex = new Texture({ source: new ImageSource({ resource: img }) });
+    const tex = new Texture({ source: new ImageSource({ resource: img, autoGarbageCollect: false }) });
     this.staticTextures.set(src, tex);
     return tex;
   }

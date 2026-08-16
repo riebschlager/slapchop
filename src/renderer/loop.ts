@@ -65,14 +65,39 @@ export function startRenderLoop(
   let disposed = false;
   let gpu: PixiSceneRenderer | null = null;
 
-  const startTicking = (draw: (t: number, state: RenderState) => void) => {
+  let consecutiveErrors = 0;
+
+  const startTicking = (drawFn: (t: number, state: RenderState) => void) => {
+    let draw = drawFn;
     const t0 = performance.now();
     let frames = 0;
     let lastFpsAt = t0;
 
     const tick = (now: number) => {
+      if (disposed) return;
       playbackTime = (now - t0) / 1000;
-      draw(playbackTime, useStore.getState());
+
+      try {
+        draw(playbackTime, useStore.getState());
+        consecutiveErrors = 0;
+      } catch (err) {
+        consecutiveErrors++;
+        console.warn('Render loop frame error:', err);
+        // If the GPU renderer encounters repeated failures (e.g. lost context / driver crash),
+        // gracefully fall back to the Canvas 2D path so the studio never freezes.
+        if (gpu && consecutiveErrors > 5) {
+          console.warn('GPU renderer failed repeatedly; falling back to Canvas 2D.');
+          if (activeGpu === gpu) activeGpu = null;
+          try {
+            gpu.destroy();
+          } catch {
+            // Ignore cleanup failure on a lost context
+          }
+          gpu = null;
+          draw = (t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT);
+          consecutiveErrors = 0;
+        }
+      }
 
       frames++;
       if (onFps && now - lastFpsAt >= 1000) {
@@ -80,7 +105,9 @@ export function startRenderLoop(
         frames = 0;
         lastFpsAt = now;
       }
-      raf = requestAnimationFrame(tick);
+      if (!disposed) {
+        raf = requestAnimationFrame(tick);
+      }
     };
     raf = requestAnimationFrame(tick);
   };

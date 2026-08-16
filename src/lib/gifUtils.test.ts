@@ -79,4 +79,25 @@ describe('getGifFrameIndexAtTime', () => {
     expect(getGifFrameIndexAtTime(makeGifData([]), 0.5)).toBe(-1);
     expect(getGifFrameIndexAtTime(makeGifData([0]), 0.5)).toBe(-1);
   });
+
+  it('remains stable and within valid bounds over 10 minutes of simulated 60fps playback', () => {
+    const multiFrameGif = makeGifData([40, 50, 60, 70, 80]); // 300ms total
+    const numFrames = multiFrameGif.frames.length;
+    const durationSeconds = 600; // 10 minutes
+    const stepSeconds = 1 / 60;
+
+    for (let t = 0; t <= durationSeconds; t += stepSeconds) {
+      const idx = getGifFrameIndexAtTime(multiFrameGif, t);
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(idx).toBeLessThan(numFrames);
+    }
+  });
+
+  it('handles infinite, NaN, or extreme speed values safely', () => {
+    const gif = makeGifData([100, 100, 100]);
+    expect(getGifFrameIndexAtTime(gif, 10, Infinity)).toBeGreaterThanOrEqual(0);
+    expect(getGifFrameIndexAtTime(gif, 10, -Infinity)).toBeGreaterThanOrEqual(0);
+    expect(getGifFrameIndexAtTime(gif, 10, NaN)).toBeGreaterThanOrEqual(0);
+    expect(getGifFrameIndexAtTime(gif, 10, 0)).toBeGreaterThanOrEqual(0);
+  });
 });
