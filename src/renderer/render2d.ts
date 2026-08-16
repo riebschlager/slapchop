@@ -1,4 +1,4 @@
-import { AppMode, Layer, PolygonLayer } from '../types';
+import { AppMode, Layer, MasterFxConfig, PolygonLayer } from '../types';
 import { getGifFrameAtTime } from '../lib/gifUtils';
 import { applyMotion, getInstances } from '../lib/motion';
 
@@ -10,6 +10,7 @@ export interface RenderState {
   layers: Layer[];
   polygonLayers: PolygonLayer[];
   canvasBg: string;
+  masterFx?: MasterFxConfig;
 }
 
 const BLEND_MAP: Record<string, GlobalCompositeOperation> = {
@@ -220,5 +221,161 @@ export function renderFrame(
       if (polygon.hidden) return;
       renderPolygon(ctx, polygon, t, width, height);
     });
+  }
+
+  if (state.masterFx?.enabled) {
+    applyMasterFx2D(ctx, t, state.masterFx, width, height);
+  }
+}
+
+function parseHexColor(hex: string): [number, number, number] {
+  const clean = hex.replace('#', '');
+  if (clean.length === 3) {
+    return [
+      parseInt(clean[0] + clean[0], 16),
+      parseInt(clean[1] + clean[1], 16),
+      parseInt(clean[2] + clean[2], 16)
+    ];
+  }
+  return [
+    parseInt(clean.substring(0, 2), 16) || 0,
+    parseInt(clean.substring(2, 4), 16) || 0,
+    parseInt(clean.substring(4, 6), 16) || 0
+  ];
+}
+
+function applyMasterFx2D(
+  ctx: CanvasRenderingContext2D,
+  t: number,
+  fx: MasterFxConfig | undefined,
+  width: number,
+  height: number
+) {
+  if (!fx || !fx.enabled) return;
+
+  // 1. Color Adjustments and Bloom using CSS filter pass if needed
+  const hue = applyMotion(fx.hueRotate, fx.motionHueRotate, t);
+  const hasColorAdjust = fx.colorAdjustEnabled && (fx.brightness !== 0 || fx.contrast !== 0 || fx.saturation !== 0 || hue !== 0);
+  const hasBloom = fx.bloomEnabled && fx.bloomStrength > 0;
+
+  if (hasColorAdjust || hasBloom) {
+    const filterParts: string[] = [];
+    if (fx.colorAdjustEnabled) {
+      if (fx.brightness !== 0) filterParts.push(`brightness(${Math.max(0, 1 + fx.brightness)})`);
+      if (fx.contrast !== 0) filterParts.push(`contrast(${Math.max(0, 1 + fx.contrast)})`);
+      if (fx.saturation !== 0) {
+        const satVal = fx.saturation > 0 ? 1 + fx.saturation * 2 : Math.max(0, 1 + fx.saturation);
+        filterParts.push(`saturate(${satVal})`);
+      }
+      if (hue !== 0) filterParts.push(`hue-rotate(${hue}deg)`);
+    }
+    if (hasBloom) {
+      filterParts.push(`blur(${fx.bloomStrength * (width / CANVAS_WIDTH) * 0.5}px)`);
+    }
+
+    if (filterParts.length > 0) {
+      const offscreen = document.createElement('canvas');
+      offscreen.width = width;
+      offscreen.height = height;
+      const offCtx = offscreen.getContext('2d');
+      if (offCtx) {
+        offCtx.drawImage(ctx.canvas, 0, 0);
+        ctx.save();
+        ctx.filter = filterParts.join(' ');
+        ctx.drawImage(offscreen, 0, 0);
+        ctx.restore();
+      }
+    }
+  }
+
+  // 2. Pixel passes (Duotone, RGB Split, Noise)
+  const hasDuotone = fx.duotoneEnabled && fx.duotoneIntensity > 0;
+  const hasRgbSplit = fx.rgbSplitEnabled;
+  const hasNoise = fx.noiseEnabled && fx.noiseAmount > 0;
+
+  if (hasDuotone || hasRgbSplit || hasNoise) {
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+    const len = data.length;
+
+    // Duotone
+    if (hasDuotone) {
+      const [sr, sg, sb] = parseHexColor(fx.duotoneShadowColor);
+      const [hr, hg, hb] = parseHexColor(fx.duotoneHighlightColor);
+      const intensity = fx.duotoneIntensity;
+
+      for (let i = 0; i < len; i += 4) {
+        const a = data[i + 3];
+        if (a === 0) continue;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        const mr = sr + (hr - sr) * lum;
+        const mg = sg + (hg - sg) * lum;
+        const mb = sb + (hb - sb) * lum;
+        data[i] = r + (mr - r) * intensity;
+        data[i + 1] = g + (mg - g) * intensity;
+        data[i + 2] = b + (mb - b) * intensity;
+      }
+    }
+
+    // RGB Split
+    if (hasRgbSplit) {
+      const offsetPx = applyMotion(fx.rgbSplitOffset, fx.motionRgbSplitOffset, t) * (width / CANVAS_WIDTH);
+      const angleRad = (fx.rgbSplitAngle * Math.PI) / 180;
+      const dx = Math.round(Math.cos(angleRad) * offsetPx);
+      const dy = Math.round(Math.sin(angleRad) * offsetPx);
+
+      if (dx !== 0 || dy !== 0) {
+        const copy = new Uint8ClampedArray(data);
+        for (let y = 0; y < height; y++) {
+          const row = y * width;
+          for (let x = 0; x < width; x++) {
+            const idx = (row + x) * 4;
+
+            const rx = Math.min(width - 1, Math.max(0, x + dx));
+            const ry = Math.min(height - 1, Math.max(0, y + dy));
+            const rIdx = (ry * width + rx) * 4;
+
+            const bx = Math.min(width - 1, Math.max(0, x - dx));
+            const by = Math.min(height - 1, Math.max(0, y - dy));
+            const bIdx = (by * width + bx) * 4;
+
+            data[idx] = copy[rIdx];
+            data[idx + 2] = copy[bIdx + 2];
+          }
+        }
+      }
+    }
+
+    // Film Grain / Noise
+    if (hasNoise) {
+      const amt = fx.noiseAmount * 255;
+      const seed = Math.floor(t * (fx.noiseSpeed || 1) * 10);
+      for (let i = 0; i < len; i += 4) {
+        if (data[i + 3] === 0) continue;
+        const n = ((Math.sin((i + seed) * 12.9898) * 43758.5453) % 1) - 0.5;
+        const diff = n * amt;
+        data[i] = Math.max(0, Math.min(255, data[i] + diff));
+        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + diff));
+        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + diff));
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  // 3. Scanlines
+  if (fx.scanlinesEnabled && fx.scanlinesOpacity > 0) {
+    ctx.save();
+    const count = fx.scanlinesCount || 360;
+    const scanTime = t * (fx.scanlinesSpeed ?? 0.5);
+    const lineSpacing = height / count;
+    ctx.fillStyle = `rgba(0, 0, 0, ${fx.scanlinesOpacity * 0.5})`;
+    for (let y = (scanTime * lineSpacing * 10) % lineSpacing; y < height; y += lineSpacing) {
+      ctx.fillRect(0, y, width, Math.max(1, lineSpacing * 0.4));
+    }
+    ctx.restore();
   }
 }

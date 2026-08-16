@@ -80,3 +80,70 @@ export interface Layer {
   motionRotation?: MotionConfig;
   motionScale?: MotionConfig;
 }
+
+export interface MasterFxConfig {
+  enabled: boolean;
+
+  // 1. Chromatic Aberration / RGB Split
+  rgbSplitEnabled: boolean;
+  rgbSplitOffset: number;
+  rgbSplitAngle: number;
+  motionRgbSplitOffset?: MotionConfig;
+
+  // 2. Duotone / Color Gradient Map
+  duotoneEnabled: boolean;
+  duotoneShadowColor: string;
+  duotoneHighlightColor: string;
+  duotoneIntensity: number;
+
+  // 3. Film Grain / Noise
+  noiseEnabled: boolean;
+  noiseAmount: number;
+  noiseSpeed: number;
+
+  // 4. CRT Scanlines
+  scanlinesEnabled: boolean;
+  scanlinesCount: number;
+  scanlinesOpacity: number;
+  scanlinesSpeed: number;
+
+  // 5. Bloom / Soft Glow
+  bloomEnabled: boolean;
+  bloomStrength: number;
+  bloomQuality: number;
+
+  // 6. Color Adjustments
+  colorAdjustEnabled: boolean;
+  brightness: number; // -1 to 1 (0 = neutral)
+  contrast: number;   // -1 to 1 (0 = neutral)
+  saturation: number; // -1 to 1 (0 = neutral)
+  hueRotate: number;  // 0 to 360 deg
+  motionHueRotate?: MotionConfig;
+}
+
+export const DEFAULT_MASTER_FX: MasterFxConfig = {
+  enabled: false,
+  rgbSplitEnabled: false,
+  rgbSplitOffset: 12,
+  rgbSplitAngle: 0,
+  duotoneEnabled: false,
+  duotoneShadowColor: '#180033',
+  duotoneHighlightColor: '#00ffcc',
+  duotoneIntensity: 1,
+  noiseEnabled: false,
+  noiseAmount: 0.15,
+  noiseSpeed: 1,
+  scanlinesEnabled: false,
+  scanlinesCount: 360,
+  scanlinesOpacity: 0.25,
+  scanlinesSpeed: 0.5,
+  bloomEnabled: false,
+  bloomStrength: 4,
+  bloomQuality: 3,
+  colorAdjustEnabled: false,
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  hueRotate: 0,
+};
+

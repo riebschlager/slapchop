@@ -1,8 +1,12 @@
 import {
   autoDetectRenderer,
+  BlurFilter,
+  ColorMatrixFilter,
   Container,
+  Filter,
   Graphics,
   ImageSource,
+  NoiseFilter,
   RenderTexture,
   Renderer,
   Sprite,
@@ -12,6 +16,9 @@ import {
 } from 'pixi.js';
 import 'pixi.js/advanced-blend-modes';
 import './hueBlend';
+import { RgbSplitFilter } from './filters/rgbSplitFilter';
+import { DuotoneFilter } from './filters/duotoneFilter';
+import { ScanlinesFilter } from './filters/scanlinesFilter';
 import { GifData, Layer, PolygonLayer } from '../types';
 import { getGifFrameIndexAtTime } from '../lib/gifUtils';
 import { applyMotion, getInstances } from '../lib/motion';
@@ -69,6 +76,13 @@ export class PixiSceneRenderer {
   private gifTextures = new Map<GifData, Texture[]>();
   private staticTextures = new Map<string, Texture>();
 
+  private rgbSplitFilter = new RgbSplitFilter();
+  private duotoneFilter = new DuotoneFilter();
+  private scanlinesFilter = new ScanlinesFilter();
+  private noiseFilter = new NoiseFilter();
+  private blurFilter = new BlurFilter();
+  private colorMatrixFilter = new ColorMatrixFilter();
+
   private bgW = 0;
   private bgH = 0;
   private bgColor = '';
@@ -119,6 +133,12 @@ export class PixiSceneRenderer {
     this.gifTextures.clear();
     for (const tx of this.staticTextures.values()) tx.destroy(true);
     this.staticTextures.clear();
+    this.rgbSplitFilter.destroy();
+    this.duotoneFilter.destroy();
+    this.scanlinesFilter.destroy();
+    this.noiseFilter.destroy();
+    this.blurFilter.destroy();
+    this.colorMatrixFilter.destroy();
     this.stage.destroy({ children: true });
     this.renderer.destroy();
   }
@@ -143,7 +163,81 @@ export class PixiSceneRenderer {
       state.polygonLayers.forEach((poly) => this.syncPolygon(this.polyNodes.get(poly.id)!, poly, t));
     }
 
+    this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  private syncMasterFx(t: number, state: RenderState, width: number, height: number) {
+    const fx = state.masterFx;
+    if (!fx || !fx.enabled) {
+      this.stage.filters = [];
+      return;
+    }
+
+    const activeFilters: Filter[] = [];
+
+    // 1. Duotone / Color Gradient Map
+    if (fx.duotoneEnabled && fx.duotoneIntensity > 0) {
+      this.duotoneFilter.setColors(fx.duotoneShadowColor, fx.duotoneHighlightColor, fx.duotoneIntensity);
+      activeFilters.push(this.duotoneFilter);
+    }
+
+    // 2. Color Adjustments
+    if (fx.colorAdjustEnabled) {
+      const hue = applyMotion(fx.hueRotate, fx.motionHueRotate, t);
+      const hasAdjustment = fx.brightness !== 0 || fx.contrast !== 0 || fx.saturation !== 0 || hue !== 0;
+      if (hasAdjustment) {
+        this.colorMatrixFilter.reset();
+        if (fx.brightness !== 0) {
+          this.colorMatrixFilter.brightness(Math.max(0, 1 + fx.brightness), false);
+        }
+        if (fx.contrast !== 0) {
+          this.colorMatrixFilter.contrast(fx.contrast, false);
+        }
+        if (fx.saturation > 0) {
+          this.colorMatrixFilter.saturate(fx.saturation * 2, false);
+        } else if (fx.saturation < 0) {
+          this.colorMatrixFilter.desaturate();
+        }
+        if (hue !== 0) {
+          this.colorMatrixFilter.hue(hue, false);
+        }
+        activeFilters.push(this.colorMatrixFilter);
+      }
+    }
+
+    // 3. Bloom / Soft Glow
+    if (fx.bloomEnabled && fx.bloomStrength > 0) {
+      this.blurFilter.strength = fx.bloomStrength * (width / CANVAS_WIDTH);
+      this.blurFilter.quality = fx.bloomQuality || 3;
+      activeFilters.push(this.blurFilter);
+    }
+
+    // 4. RGB Split / Chromatic Aberration
+    if (fx.rgbSplitEnabled) {
+      const offsetPx = applyMotion(fx.rgbSplitOffset, fx.motionRgbSplitOffset, t) * (width / CANVAS_WIDTH);
+      const angleRad = (fx.rgbSplitAngle * Math.PI) / 180;
+      const dx = (Math.cos(angleRad) * offsetPx) / width;
+      const dy = (Math.sin(angleRad) * offsetPx) / height;
+      this.rgbSplitFilter.setOffset(dx, dy);
+      activeFilters.push(this.rgbSplitFilter);
+    }
+
+    // 5. CRT Scanlines
+    if (fx.scanlinesEnabled && fx.scanlinesOpacity > 0) {
+      const scanTime = t * (fx.scanlinesSpeed ?? 0.5);
+      this.scanlinesFilter.setParams(fx.scanlinesCount || 360, fx.scanlinesOpacity, scanTime);
+      activeFilters.push(this.scanlinesFilter);
+    }
+
+    // 6. Film Grain / Noise
+    if (fx.noiseEnabled && fx.noiseAmount > 0) {
+      this.noiseFilter.noise = fx.noiseAmount;
+      this.noiseFilter.seed = (t * (fx.noiseSpeed || 1) * 10) % 1000;
+      activeFilters.push(this.noiseFilter);
+    }
+
+    this.stage.filters = activeFilters;
   }
 
   private layout(width: number, height: number, bgColor: string) {

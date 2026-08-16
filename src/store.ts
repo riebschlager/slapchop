@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
-import { AppMode, Layer, PolygonLayer, PolygonPoint } from './types';
+import { AppMode, DEFAULT_MASTER_FX, Layer, MasterFxConfig, PolygonLayer, PolygonPoint } from './types';
 import { parseGifFile } from './lib/gifUtils';
 import { createNewPolygonLayer, createPresetPolygonPoints } from './lib/polygonUtils';
 
@@ -8,6 +8,7 @@ export interface DocumentState {
   layers: Layer[];
   polygonLayers: PolygonLayer[];
   canvasBg: string;
+  masterFx: MasterFxConfig;
 }
 
 export interface AppState extends DocumentState {
@@ -19,6 +20,11 @@ export interface AppState extends DocumentState {
   setAppMode: (mode: AppMode) => void;
   setCanvasBg: (color: string) => void;
   loadDocument: (doc: DocumentState) => void;
+
+  // Master FX
+  updateMasterFx: (updates: Partial<MasterFxConfig>) => void;
+  applyFxPreset: (preset: Partial<MasterFxConfig>) => void;
+  resetMasterFx: () => void;
 
   // Symmetry layers
   addLayerFromFile: (file: File, x?: number, y?: number) => Promise<void>;
@@ -72,6 +78,7 @@ export const useStore = create<AppState>()(
       layers: [],
       polygonLayers: [INITIAL_POLYGON],
       canvasBg: '#000000',
+      masterFx: { ...DEFAULT_MASTER_FX },
       appMode: 'symmetry',
       selectedLayerId: null,
       selectedPolygonId: INITIAL_POLYGON.id,
@@ -83,9 +90,20 @@ export const useStore = create<AppState>()(
         layers: doc.layers,
         polygonLayers: doc.polygonLayers,
         canvasBg: doc.canvasBg,
+        masterFx: doc.masterFx ? { ...DEFAULT_MASTER_FX, ...doc.masterFx } : { ...DEFAULT_MASTER_FX },
         selectedLayerId: null,
         selectedPolygonId: null,
         isDrawingPolygon: false
+      }),
+
+      updateMasterFx: (updates) => set(s => ({
+        masterFx: { ...s.masterFx, ...updates }
+      })),
+      applyFxPreset: (preset) => set(s => ({
+        masterFx: { ...s.masterFx, ...preset }
+      })),
+      resetMasterFx: () => set({
+        masterFx: { ...DEFAULT_MASTER_FX }
       }),
 
       addLayerFromFile: async (file, x = 0, y = 0) => {
@@ -211,9 +229,9 @@ export const useStore = create<AppState>()(
     {
       // Undo history tracks the document only — selection, mode, and drawing
       // state stay outside so undo never "jumps" the UI around.
-      partialize: (s) => ({ layers: s.layers, polygonLayers: s.polygonLayers, canvasBg: s.canvasBg }),
+      partialize: (s) => ({ layers: s.layers, polygonLayers: s.polygonLayers, canvasBg: s.canvasBg, masterFx: s.masterFx }),
       equality: (a, b) =>
-        a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.canvasBg === b.canvasBg,
+        a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
       limit: 100,
       // Coalesce rapid bursts (slider scrubs) into few history entries.
       handleSet: (handleSet) => {
@@ -231,8 +249,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, canvasBg } = useStore.getState();
-  return { layers, polygonLayers, canvasBg };
+  const { layers, polygonLayers, canvasBg, masterFx } = useStore.getState();
+  return { layers, polygonLayers, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();

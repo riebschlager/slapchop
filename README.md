@@ -39,6 +39,7 @@ lives at `src-tauri/binaries/ffmpeg-aarch64-apple-darwin` (a static arm64 build)
 
 - **Symmetry canvas** — drop images/GIFs as layers; each layer has position/rotation/scale, mirror/quad/radial symmetry, blend mode, opacity, and sine/noise motion modulators.
 - **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture with animatable scale, rotation, and offset.
+- **Master FX & Shader pipeline** — real-time post-processing shaders including chromatic aberration (RGB split), duotone/gradient mapping, CRT scanlines, film grain, bloom/glow, and color grading with motion modulation and one-click aesthetic presets.
 
 ## Rendering
 

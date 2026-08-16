@@ -1,6 +1,6 @@
 import { DocumentState, clearHistory, getDocumentSnapshot, useStore } from '../store';
 import { saveBlob } from './native';
-import { Layer, PolygonLayer } from '../types';
+import { DEFAULT_MASTER_FX, Layer, MasterFxConfig, PolygonLayer } from '../types';
 import { parseGifFile } from './gifUtils';
 
 // .slapchop project file: the document state as JSON, with every image/GIF
@@ -20,6 +20,7 @@ interface ProjectFileV1 {
   version: 1;
   savedAt: string;
   canvasBg: string;
+  masterFx?: MasterFxConfig;
   layers: SerializedLayer[];
   polygonLayers: SerializedPolygon[];
   assets: Record<string, ProjectAsset>;
@@ -77,6 +78,7 @@ export async function saveProject(): Promise<void> {
     version: 1,
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
+    masterFx: doc.masterFx,
     layers,
     polygonLayers,
     assets
@@ -114,7 +116,16 @@ export async function openProject(file: File): Promise<void> {
     return { ...rest, src: asset?.src, gifData: asset?.gifData };
   });
 
-  const doc: DocumentState = { layers, polygonLayers, canvasBg: payload.canvasBg };
+  const masterFx: MasterFxConfig = payload.masterFx
+    ? { ...DEFAULT_MASTER_FX, ...payload.masterFx }
+    : { ...DEFAULT_MASTER_FX };
+
+  const doc: DocumentState = {
+    layers,
+    polygonLayers,
+    canvasBg: payload.canvasBg,
+    masterFx
+  };
   useStore.getState().loadDocument(doc);
   clearHistory();
 }
