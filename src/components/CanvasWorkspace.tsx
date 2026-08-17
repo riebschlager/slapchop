@@ -3,6 +3,12 @@ import { DEFAULT_SYMMETRY_PARAMS, PolygonPoint } from '../types';
 import { cn } from '../lib/utils';
 import { Download, Video, X, Loader2, PenTool, Film, Repeat, Clapperboard, Radio } from 'lucide-react';
 import { getPolygonCentroid, isPointInPolygon } from '../lib/polygonUtils';
+import {
+  clampHandleToBounds,
+  getVisibleHandleBounds,
+  isPointOutsideCanvas,
+  Viewport
+} from '../lib/canvasViewport';
 import { getInstances } from '../lib/motion';
 import { getDocumentSnapshot, pauseHistory, resumeHistory, useStore } from '../store';
 import {
@@ -23,6 +29,11 @@ import {
   LiveOutputState,
   TouchDesignerWebRtcOutput
 } from '../lib/liveOutput';
+
+// Gutters kept clear of handles that have been pinned to the workspace edge.
+// The top gutter clears the floating header bar so a pinned handle stays
+// clickable rather than sliding underneath it.
+const HANDLE_VIEWPORT_INSETS = { top: 72, right: 20, bottom: 20, left: 20 };
 
 function getExportTimestamp(): string {
   const now = new Date();
@@ -56,6 +67,8 @@ export default function CanvasWorkspace() {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [scale, setScale] = useState(1);
   const scaleRef = useRef(1);
+  // Workspace size in CSS pixels; null until the first measurement.
+  const [viewport, setViewport] = useState<Viewport | null>(null);
 
   // Drawing mode points state
   const [drawingPoints, setDrawingPoints] = useState<PolygonPoint[]>([]);
@@ -118,6 +131,7 @@ export default function CanvasWorkspace() {
         const next = Math.min(scaleX, scaleY, 1);
         scaleRef.current = next;
         setScale(next);
+        setViewport({ width: rect.width, height: rect.height });
       }
     };
     updateScale();
@@ -191,6 +205,14 @@ export default function CanvasWorkspace() {
 
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
   const selectedLayer = layers.find(l => l.id === selectedLayerId);
+
+  // Handles for points beyond the frame are drawn in the workspace margin, and
+  // pinned to the edge of it once they would leave the window entirely.
+  const handleBounds = viewport
+    ? getVisibleHandleBounds(viewport, scale, HANDLE_VIEWPORT_INSETS)
+    : null;
+  const polygonExtendsOffCanvas = !!selectedPolygon
+    && selectedPolygon.points.some(pt => isPointOutsideCanvas(pt, CANVAS_WIDTH, CANVAS_HEIGHT));
 
   // Selection overlay for symmetry layers follows motion-modulated instances.
   // Positions are written straight to the DOM each frame — React only
@@ -313,11 +335,18 @@ export default function CanvasWorkspace() {
     });
   };
 
-  const handleContainerMouseMove = (e: React.MouseEvent) => {
+  // Drawing accepts the whole workspace, not just the frame, so vertices can be
+  // placed outside the canvas bounds. Floating chrome (header buttons, the
+  // drawing banner) lives in its own subtrees, so only the workspace backdrop
+  // itself and anything inside the canvas count as drawing surface.
+  const isDrawingSurface = (target: EventTarget | null): boolean =>
+    target === wrapRef.current
+    || (target instanceof Node && !!containerRef.current?.contains(target));
+
+  const handleWorkspaceMouseMove = (e: React.MouseEvent) => {
+    if (!isDrawingPolygon || !isDrawingSurface(e.target)) return;
     const coords = getCanvasCoords(e);
-    if (coords && isDrawingPolygon) {
-      setMouseCanvasPos(coords);
-    }
+    if (coords) setMouseCanvasPos(coords);
   };
 
   const handleContainerMouseDown = (e: React.MouseEvent) => {
@@ -353,8 +382,8 @@ export default function CanvasWorkspace() {
     }
   };
 
-  const handleContainerClick = (e: React.MouseEvent) => {
-    if (!isDrawingPolygon) return;
+  const handleWorkspaceClick = (e: React.MouseEvent) => {
+    if (!isDrawingPolygon || !isDrawingSurface(e.target)) return;
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
@@ -373,9 +402,8 @@ export default function CanvasWorkspace() {
     setDrawingPoints(prev => [...prev, coords]);
   };
 
-  const handleContainerDoubleClick = (e: React.MouseEvent) => {
-    if (!isDrawingPolygon) return;
-    e.stopPropagation();
+  const handleWorkspaceDoubleClick = (e: React.MouseEvent) => {
+    if (!isDrawingPolygon || !isDrawingSurface(e.target)) return;
     if (drawingPoints.length >= 3) {
       onFinishDrawingPolygon(drawingPoints);
       setDrawingPoints([]);
@@ -387,14 +415,24 @@ export default function CanvasWorkspace() {
     e.stopPropagation();
     const polygonId = selectedPolygonId;
     if (!polygonId) return;
+    const startCoords = getCanvasCoords(e);
+    const startPoint = useStore.getState().polygonLayers
+      .find(p => p.id === polygonId)?.points[index];
+    if (!startCoords || !startPoint) return;
 
+    // Moving by delta rather than snapping the vertex to the cursor: a handle
+    // pinned to the workspace edge stands in for a point further out, and
+    // grabbing it must not drag that point back to the handle's position.
     beginDrag((moveEvent) => {
       const coords = getCanvasCoords(moveEvent);
       if (!coords) return;
       const poly = useStore.getState().polygonLayers.find(p => p.id === polygonId);
       if (!poly) return;
       const newPoints = [...poly.points];
-      newPoints[index] = coords;
+      newPoints[index] = {
+        x: startPoint.x + (coords.x - startCoords.x),
+        y: startPoint.y + (coords.y - startCoords.y)
+      };
       onUpdatePolygon(polygonId, { points: newPoints });
     });
   };
@@ -648,7 +686,13 @@ export default function CanvasWorkspace() {
   return (
     <div
       ref={wrapRef}
-      className="flex-1 bg-gray-950 flex items-center justify-center relative overflow-hidden select-none"
+      className={cn(
+        "flex-1 bg-gray-950 flex items-center justify-center relative overflow-hidden select-none",
+        isDrawingPolygon ? "cursor-crosshair" : ""
+      )}
+      onClick={handleWorkspaceClick}
+      onDoubleClick={handleWorkspaceDoubleClick}
+      onMouseMove={handleWorkspaceMouseMove}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -706,7 +750,7 @@ export default function CanvasWorkspace() {
       {isDrawingPolygon && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-amber-950/90 border border-amber-500/80 px-4 py-2 rounded-full shadow-2xl backdrop-blur text-amber-200 text-xs">
           <PenTool className="w-4 h-4 text-amber-400 animate-bounce" />
-          <span>Click canvas to add vertices ({drawingPoints.length} added). Double-click or click start point to close.</span>
+          <span>Click anywhere to add vertices, inside or outside the frame ({drawingPoints.length} added). Double-click or click start point to close.</span>
           {drawingPoints.length >= 3 && (
             <button
               onClick={() => {
@@ -736,11 +780,12 @@ export default function CanvasWorkspace() {
       <div
         ref={containerRef}
         onMouseDown={handleContainerMouseDown}
-        onClick={handleContainerClick}
-        onDoubleClick={handleContainerDoubleClick}
-        onMouseMove={handleContainerMouseMove}
         className={cn(
-          "relative shadow-2xl transition-all duration-75 overflow-hidden",
+          // Deliberately not clipped: interaction overlays have to be able to
+          // paint into the surrounding margin so handles for points outside
+          // the frame stay visible. Anything that must stay inside the frame
+          // clips itself.
+          "relative shadow-2xl transition-all duration-75",
           isDraggingOver ? "ring-4 ring-indigo-500/50" : "",
           isDrawingPolygon ? "cursor-crosshair" : "cursor-default"
         )}
@@ -761,9 +806,14 @@ export default function CanvasWorkspace() {
         {/* Polygon Interactive Handle Overlay */}
         {appMode === 'polygon' && (
           <div className="absolute inset-0 pointer-events-none">
-            {/* Draw active polygon guidance line */}
+            {/* Draw active polygon guidance line. `overflow: visible` keeps the
+                in-progress geometry legible when vertices land outside the
+                frame — an SVG root clips to its viewport otherwise. */}
             {isDrawingPolygon && (
-              <svg className="w-full h-full absolute inset-0 pointer-events-none">
+              <svg
+                className="w-full h-full absolute inset-0 pointer-events-none"
+                style={{ overflow: 'visible' }}
+              >
                 {drawingPoints.length > 0 && (
                   <polyline
                     points={drawingPoints.map(p => `${(CANVAS_WIDTH / 2 + p.x) * scale},${(CANVAS_HEIGHT / 2 + p.y) * scale}`).join(' ')}
@@ -800,34 +850,75 @@ export default function CanvasWorkspace() {
             {/* Selected polygon handles */}
             {selectedPolygon && !isDrawingPolygon && (
               <div className="w-full h-full relative pointer-events-none">
+                {/* The renderer clips the shape to the frame, so once part of
+                    it lies outside, trace the true outline over the margin to
+                    show what the handles are attached to. */}
+                {polygonExtendsOffCanvas && (
+                  <svg
+                    className="w-full h-full absolute inset-0 pointer-events-none"
+                    style={{ overflow: 'visible' }}
+                  >
+                    <polygon
+                      points={selectedPolygon.points
+                        .map(p => `${(CANVAS_WIDTH / 2 + p.x) * scale},${(CANVAS_HEIGHT / 2 + p.y) * scale}`)
+                        .join(' ')}
+                      fill="none"
+                      stroke="#818cf8"
+                      strokeWidth={1.5}
+                      strokeDasharray="6 4"
+                      opacity={0.7}
+                    />
+                  </svg>
+                )}
+
                 {/* Center Translation Handle */}
                 {(() => {
-                  const center = getPolygonCentroid(selectedPolygon.points);
-                  const cx = (CANVAS_WIDTH / 2 + center.x) * scale;
-                  const cy = (CANVAS_HEIGHT / 2 + center.y) * scale;
+                  const center = clampHandleToBounds(
+                    getPolygonCentroid(selectedPolygon.points),
+                    handleBounds
+                  );
                   return (
                     <div
                       onMouseDown={(e) => handlePolygonCenterMouseDown(e, selectedPolygon.id)}
-                      style={{ left: `${cx}px`, top: `${cy}px` }}
-                      className="absolute w-6 h-6 -ml-3 -mt-3 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
-                      title="Drag to Move Polygon"
+                      style={{
+                        left: `${(CANVAS_WIDTH / 2 + center.x) * scale}px`,
+                        top: `${(CANVAS_HEIGHT / 2 + center.y) * scale}px`
+                      }}
+                      className={cn(
+                        "absolute w-6 h-6 -ml-3 -mt-3 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20",
+                        center.pinned ? "border-amber-400 border-dashed" : "border-white"
+                      )}
+                      title={center.pinned
+                        ? 'Drag to Move Polygon (center is off screen)'
+                        : 'Drag to Move Polygon'}
                     >
                       <div className="w-1.5 h-1.5 rounded-full bg-white" />
                     </div>
                   );
                 })()}
 
-                {/* Vertex Point Handles */}
+                {/* Vertex Point Handles. A vertex dragged past the edge of the
+                    workspace keeps a handle pinned at the boundary so it can
+                    always be grabbed and brought back. */}
                 {selectedPolygon.points.map((pt, i) => {
-                  const vx = (CANVAS_WIDTH / 2 + pt.x) * scale;
-                  const vy = (CANVAS_HEIGHT / 2 + pt.y) * scale;
+                  const vertex = clampHandleToBounds(pt, handleBounds);
                   return (
                     <div
                       key={`v-handle-${i}`}
                       onMouseDown={(e) => handleVertexMouseDown(e, i)}
-                      style={{ left: `${vx}px`, top: `${vy}px` }}
-                      className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full bg-white border-2 border-indigo-600 shadow-md pointer-events-auto cursor-move hover:scale-150 transition-transform z-20"
-                      title={`Vertex ${i + 1}`}
+                      style={{
+                        left: `${(CANVAS_WIDTH / 2 + vertex.x) * scale}px`,
+                        top: `${(CANVAS_HEIGHT / 2 + vertex.y) * scale}px`
+                      }}
+                      className={cn(
+                        "absolute w-4 h-4 -ml-2 -mt-2 rounded-full shadow-md pointer-events-auto cursor-move hover:scale-150 transition-transform z-20",
+                        vertex.pinned
+                          ? "bg-amber-200 border-2 border-amber-500 border-dashed"
+                          : "bg-white border-2 border-indigo-600"
+                      )}
+                      title={vertex.pinned
+                        ? `Vertex ${i + 1} (off screen — drag to bring it back)`
+                        : `Vertex ${i + 1}`}
                     />
                   );
                 })}
@@ -835,19 +926,30 @@ export default function CanvasWorkspace() {
                 {/* Symmetry Origin Handle */}
                 {/* Voronoi's shard bounds derive from the shape itself, not
                     a separate origin, so the handle would have no effect. */}
-                {!['none', 'voronoi'].includes(selectedPolygon.symmetry ?? 'none') && (
-                  <div
-                    onMouseDown={(e) => handleSymmetryOriginMouseDown(e, 'polygon', selectedPolygon.id)}
-                    style={{
-                      left: `${(CANVAS_WIDTH / 2 + (selectedPolygon.symmetryParams?.originX ?? 0)) * scale}px`,
-                      top: `${(CANVAS_HEIGHT / 2 + (selectedPolygon.symmetryParams?.originY ?? 0)) * scale}px`
-                    }}
-                    className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-amber-500/90 hover:bg-amber-400 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-30"
-                    title="Drag to Move Symmetry Origin"
-                  >
-                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                  </div>
-                )}
+                {!['none', 'voronoi'].includes(selectedPolygon.symmetry ?? 'none') && (() => {
+                  const origin = clampHandleToBounds({
+                    x: selectedPolygon.symmetryParams?.originX ?? 0,
+                    y: selectedPolygon.symmetryParams?.originY ?? 0
+                  }, handleBounds);
+                  return (
+                    <div
+                      onMouseDown={(e) => handleSymmetryOriginMouseDown(e, 'polygon', selectedPolygon.id)}
+                      style={{
+                        left: `${(CANVAS_WIDTH / 2 + origin.x) * scale}px`,
+                        top: `${(CANVAS_HEIGHT / 2 + origin.y) * scale}px`
+                      }}
+                      className={cn(
+                        "absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-amber-500/90 hover:bg-amber-400 border-2 shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-30",
+                        origin.pinned ? "border-amber-200 border-dashed" : "border-white"
+                      )}
+                      title={origin.pinned
+                        ? 'Drag to Move Symmetry Origin (off screen)'
+                        : 'Drag to Move Symmetry Origin'}
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -855,46 +957,61 @@ export default function CanvasWorkspace() {
 
         {/* Symmetry Mode Layer Interactive Handle Overlay */}
         {appMode === 'symmetry' && selectedLayer && !selectedLayer.hidden && (
-          <div ref={symOverlayRef} className="absolute inset-0 pointer-events-none">
-            {getInstances(selectedLayer, getPlaybackTime()).map((inst, idx) => (
-              <div
-                key={`layer-select-outline-${inst.isPrimary ? 'primary' : 'sym'}-${idx}`}
-                className={cn(
-                  "absolute border-2 pointer-events-none rounded",
-                  inst.isPrimary ? "border-indigo-400 border-dashed" : "border-indigo-500/30 border-dotted"
-                )}
-              >
-                {inst.isPrimary && (
-                  <div
-                    onMouseDown={(e) => handleLayerCenterMouseDown(e, selectedLayer.id)}
-                    className="absolute top-1/2 left-1/2 -ml-3.5 -mt-3.5 w-7 h-7 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
-                    title="Drag to Move GIF / Layer"
-                  >
-                    <div className="w-2 h-2 rounded-full bg-white" />
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="absolute inset-0 pointer-events-none">
+            {/* Instance outlines trace what the renderer draws, so they clip
+                to the frame like it does. The ref'd element holds nothing but
+                those boxes: the rAF tick above reads el.children[i] against
+                instances[i]. */}
+            <div ref={symOverlayRef} className="absolute inset-0 overflow-hidden">
+              {getInstances(selectedLayer, getPlaybackTime()).map((inst, idx) => (
+                <div
+                  key={`layer-select-outline-${inst.isPrimary ? 'primary' : 'sym'}-${idx}`}
+                  className={cn(
+                    "absolute border-2 pointer-events-none rounded",
+                    inst.isPrimary ? "border-indigo-400 border-dashed" : "border-indigo-500/30 border-dotted"
+                  )}
+                >
+                  {inst.isPrimary && (
+                    <div
+                      onMouseDown={(e) => handleLayerCenterMouseDown(e, selectedLayer.id)}
+                      className="absolute top-1/2 left-1/2 -ml-3.5 -mt-3.5 w-7 h-7 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
+                      title="Drag to Move GIF / Layer"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-white" />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
 
-            {/* Symmetry Origin Handle — a trailing sibling, not indexed by
-                the instance-position rAF tick above (which reads
-                el.children[i] against instances[i] and stops at the first
-                missing index, so this extra child is safely left alone). */}
+            {/* Symmetry Origin Handle — kept out of the clipped container
+                above so it stays reachable when dragged past the frame. */}
             {/* Voronoi's shard bounds derive from the layer itself, not a
                 separate origin, so the handle would have no effect. */}
-            {selectedLayer.symmetry !== 'none' && selectedLayer.symmetry !== 'voronoi' && (
-              <div
-                onMouseDown={(e) => handleSymmetryOriginMouseDown(e, 'layer', selectedLayer.id)}
-                style={{
-                  left: `${(CANVAS_WIDTH / 2 + (selectedLayer.symmetryParams?.originX ?? 0)) * scale}px`,
-                  top: `${(CANVAS_HEIGHT / 2 + (selectedLayer.symmetryParams?.originY ?? 0)) * scale}px`
-                }}
-                className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-amber-500/90 hover:bg-amber-400 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-30"
-                title="Drag to Move Symmetry Origin"
-              >
-                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-              </div>
-            )}
+            {selectedLayer.symmetry !== 'none' && selectedLayer.symmetry !== 'voronoi' && (() => {
+              const origin = clampHandleToBounds({
+                x: selectedLayer.symmetryParams?.originX ?? 0,
+                y: selectedLayer.symmetryParams?.originY ?? 0
+              }, handleBounds);
+              return (
+                <div
+                  onMouseDown={(e) => handleSymmetryOriginMouseDown(e, 'layer', selectedLayer.id)}
+                  style={{
+                    left: `${(CANVAS_WIDTH / 2 + origin.x) * scale}px`,
+                    top: `${(CANVAS_HEIGHT / 2 + origin.y) * scale}px`
+                  }}
+                  className={cn(
+                    "absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-amber-500/90 hover:bg-amber-400 border-2 shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-30",
+                    origin.pinned ? "border-amber-200 border-dashed" : "border-white"
+                  )}
+                  title={origin.pinned
+                    ? 'Drag to Move Symmetry Origin (off screen)'
+                    : 'Drag to Move Symmetry Origin'}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
