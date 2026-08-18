@@ -9,7 +9,6 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import Segmented, { SegmentedOption } from '../controls/Segmented';
 import LayerRow from './LayerRow';
 import PolygonRow from './PolygonRow';
-import MasterFxPanel from './MasterFxPanel';
 
 type AppModeValue = 'symmetry' | 'polygon';
 
@@ -40,8 +39,6 @@ export default function StackPanel() {
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
   const onToggleDrawPolygon = useStore(s => s.toggleDrawPolygon);
   const onUploadPolygonTexture = useStore(s => s.uploadPolygonTexture);
-  const canvasBg = useStore(s => s.canvasBg);
-  const onUpdateCanvasBg = useStore(s => s.setCanvasBg);
 
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -290,11 +287,11 @@ export default function StackPanel() {
         </>
       )}
 
-      {/* Docked Scene section: the document-wide controls (background, Master
-          FX) that used to sit above the list and permanently shrink it.
-          Clicking the header deselects the current layer/polygon, since Scene
-          is a selection rather than its own section — Phase 4 moves this
-          content into the Inspector's Scene tab and slims this to a row. */}
+      {/* Docked Scene row: Scene is a selection, not a section — clicking it
+          deselects the current layer/polygon and points the Inspector at
+          its Scene tab, which now holds the document-wide controls
+          (background, Master FX) this row used to render inline above the
+          list, permanently shrinking it. */}
       <div className="shrink-0 border-t border-gray-800">
         <button
           onClick={selectScene}
@@ -306,16 +303,6 @@ export default function StackPanel() {
           <Layers className="w-3.5 h-3.5" />
           Scene
         </button>
-        <div className="px-4 pb-3 flex items-center justify-between">
-          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Canvas Background</label>
-          <input
-            type="color"
-            value={canvasBg}
-            onChange={(e) => onUpdateCanvasBg(e.target.value)}
-            className="w-8 h-6 rounded cursor-pointer border-0 bg-gray-800 p-0"
-          />
-        </div>
-        <MasterFxPanel />
       </div>
     </div>
   );
