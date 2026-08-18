@@ -8,7 +8,9 @@ Read `README.md` and `package.json` before changing behavior. Prefer small chang
 
 ## Repository map
 
-- `src/components/`: React UI and user interaction. `CanvasWorkspace.tsx` owns canvas interaction and export orchestration; `Sidebar.tsx` owns controls.
+- `src/components/`: React UI and user interaction. `CanvasWorkspace.tsx` owns canvas interaction and export orchestration; `Sidebar.tsx` composes the control panels.
+- `src/components/controls/`: shared input primitives (`Slider`, `Select`, `Segmented`, `Toggle`) plus the composite `MotionControl` and `SymmetryEditor` editors.
+- `src/components/panels/`: panel-level pieces — `LayerRow`, `PolygonRow`, and `MasterFxPanel`.
 - `src/store.ts`: Zustand document and UI state, plus zundo history.
 - `src/types.ts`: shared domain types for layers, polygons, motion, and GIF data.
 - `src/renderer/`: the imperative render loop, PixiJS renderer, and Canvas 2D fallback.
@@ -35,6 +37,7 @@ Do not edit generated or vendored output in `dist/`, `node_modules/`, `src-tauri
 - Follow the existing TypeScript style: ES modules, single quotes, semicolons, two-space indentation, functional React components, and explicit shared types.
 - Put shared domain models in `src/types.ts`, document mutations in `src/store.ts`, and reusable or testable logic in `src/lib/`.
 - Keep pure calculations separate from DOM, PixiJS, Tauri, and encoding side effects. Add or update a colocated `*.test.ts` when changing pure behavior or fixing a regression.
+- Build inspector controls from the `src/components/controls/` primitives instead of hand-rolling range or select markup, so density, focus styling, and label association stay tunable in one place. `Slider` covers the three existing densities via `size`; reach for its `*ClassName` overrides only for a genuinely emphasized control.
 - Use existing Tailwind utilities and `cn()` for UI styling, and Lucide for interface icons. Preserve the compact dark desktop-tool aesthetic and keyboard accessibility.
 - Do not paper over failures with broad catches, unchecked casts, or silent fallbacks. Include useful context in user-visible errors and keep intentional fallback behavior narrow.
 - Comments should explain timing, coordinate, compatibility, or lifecycle constraints—not restate the code.
