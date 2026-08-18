@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+/* The app UI is a fixed dark desktop-tool aesthetic (see CLAUDE.md), independent
+   of the OS light/dark setting. Declaring color-scheme keeps OS-drawn chrome
+   embedded in the page — scrollbars, native form controls, selection —
+   consistent with that fixed dark UI instead of picking up the system setting
+   on its own. The native window title bar/traffic lights are unaffected by
+   this and continue to follow the OS theme via Tauri's own default. */
+:root {
+  color-scheme: dark;
+}
