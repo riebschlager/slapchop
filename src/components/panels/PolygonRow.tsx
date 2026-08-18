@@ -1,6 +1,7 @@
 import { PolygonLayer } from '../../types';
 import { Trash2, GripVertical, Eye, EyeOff, Copy } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { symmetryBadgeLabel } from '../../lib/symmetryLabels';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -46,14 +47,19 @@ export default function PolygonRow({ polygon, selectedPolygonId, onSelectPolygon
            <div className="w-4 h-4 rounded-sm border" style={{ backgroundColor: polygon.fillColor || '#6366f1' }} />
          )}
        </div>
-       <div className="flex-1 truncate pl-1">
+       <div className="flex-1 min-w-0 pl-1">
          <div className="text-[13px] font-medium text-gray-200 truncate">{polygon.name}</div>
-         <div className="text-[10px] text-gray-500">{polygon.points.length} vertices &bull; Scale {(polygon.textureScale ?? 1).toFixed(2)}x</div>
+         <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-gray-800 border border-gray-700 text-gray-400">
+           {symmetryBadgeLabel(polygon.symmetry)}
+         </span>
        </div>
-       
-       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+
+       {/* Visibility and duplicate stay visible at all times so hidden polygons
+           are identifiable at a glance; only the destructive delete waits for
+           hover to reduce accidental clicks. */}
+       <div className="flex items-center gap-0.5 shrink-0">
          {onUpdatePolygon && (
-           <button 
+           <button
              onClick={(e) => { e.stopPropagation(); onUpdatePolygon(polygon.id, { hidden: !polygon.hidden }); }}
              className="p-1 hover:text-white text-gray-400"
              title={polygon.hidden ? "Show Polygon" : "Hide Polygon"}
@@ -62,7 +68,7 @@ export default function PolygonRow({ polygon, selectedPolygonId, onSelectPolygon
            </button>
          )}
          {onDuplicatePolygon && (
-           <button 
+           <button
              onClick={(e) => { e.stopPropagation(); onDuplicatePolygon(polygon.id); }}
              className="p-1 hover:text-white text-gray-400"
              title="Duplicate Polygon"
@@ -70,7 +76,11 @@ export default function PolygonRow({ polygon, selectedPolygonId, onSelectPolygon
              <Copy className="w-3.5 h-3.5" />
            </button>
          )}
-         <button onClick={(e) => { e.stopPropagation(); onDeletePolygon(polygon.id); }} className="p-1 hover:text-red-400 text-gray-400" title="Delete Polygon">
+         <button
+           onClick={(e) => { e.stopPropagation(); onDeletePolygon(polygon.id); }}
+           className="p-1 hover:text-red-400 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
+           title="Delete Polygon"
+         >
            <Trash2 className="w-3.5 h-3.5" />
          </button>
        </div>

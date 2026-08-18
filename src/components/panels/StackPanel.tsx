@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen } from 'lucide-react';
+import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
@@ -97,6 +97,8 @@ export default function StackPanel() {
   };
 
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
+  const isSceneActive = appMode === 'symmetry' ? !selectedLayerId : !selectedPolygonId;
+  const selectScene = () => (appMode === 'symmetry' ? onSelectLayer(null) : onSelectPolygon(null));
 
   return (
     <div className="w-66 bg-gray-900 border-r border-gray-800 flex flex-col h-screen text-gray-200 shrink-0">
@@ -139,22 +141,6 @@ export default function StackPanel() {
            onChange={onModeChange}
            options={MODE_OPTIONS}
          />
-      </div>
-
-      {/* Canvas Background Color */}
-      <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between shrink-0">
-        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Canvas Background</label>
-        <input
-          type="color"
-          value={canvasBg}
-          onChange={(e) => onUpdateCanvasBg(e.target.value)}
-          className="w-8 h-6 rounded cursor-pointer border-0 bg-gray-800 p-0"
-        />
-      </div>
-
-      {/* Master Post-Processing FX & Shaders */}
-      <div className="shrink-0">
-        <MasterFxPanel />
       </div>
 
       {/* MODE 1: SYMMETRY LAYERS */}
@@ -303,6 +289,34 @@ export default function StackPanel() {
           </div>
         </>
       )}
+
+      {/* Docked Scene section: the document-wide controls (background, Master
+          FX) that used to sit above the list and permanently shrink it.
+          Clicking the header deselects the current layer/polygon, since Scene
+          is a selection rather than its own section — Phase 4 moves this
+          content into the Inspector's Scene tab and slims this to a row. */}
+      <div className="shrink-0 border-t border-gray-800">
+        <button
+          onClick={selectScene}
+          className={cn(
+            "w-full flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors",
+            isSceneActive ? "text-indigo-300 bg-indigo-900/20" : "text-gray-400 hover:bg-gray-800/60"
+          )}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          Scene
+        </button>
+        <div className="px-4 pb-3 flex items-center justify-between">
+          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Canvas Background</label>
+          <input
+            type="color"
+            value={canvasBg}
+            onChange={(e) => onUpdateCanvasBg(e.target.value)}
+            className="w-8 h-6 rounded cursor-pointer border-0 bg-gray-800 p-0"
+          />
+        </div>
+        <MasterFxPanel />
+      </div>
     </div>
   );
 }
