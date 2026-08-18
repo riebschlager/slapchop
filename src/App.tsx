@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
-import Sidebar from './components/Sidebar';
-import CanvasWorkspace from './components/CanvasWorkspace';
+import AppShell from './components/AppShell';
 import { redo, undo } from './store';
 import { saveProject } from './lib/project';
 
@@ -31,8 +30,7 @@ export default function App() {
 
   return (
     <div className="flex w-full h-screen font-sans bg-gray-950 overflow-hidden text-gray-100">
-      <Sidebar />
-      <CanvasWorkspace />
+      <AppShell />
     </div>
   );
 }

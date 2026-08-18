@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { RefObject, useEffect, useRef, useState } from 'react';
 import { DEFAULT_SYMMETRY_PARAMS, PolygonPoint } from '../types';
 import { cn } from '../lib/utils';
-import { Download, Video, X, Loader2, PenTool, Film, Repeat, Clapperboard, Radio } from 'lucide-react';
+import { PenTool } from 'lucide-react';
 import { getPolygonCentroid, isPointInPolygon } from '../lib/polygonUtils';
 import {
   clampHandleToBounds,
@@ -10,38 +10,17 @@ import {
   Viewport
 } from '../lib/canvasViewport';
 import { getInstances } from '../lib/motion';
-import { getDocumentSnapshot, pauseHistory, resumeHistory, useStore } from '../store';
+import { pauseHistory, resumeHistory, useStore } from '../store';
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
-  RenderState,
   getLayerSize
 } from '../renderer/render2d';
-import { getActiveRendererName, getPlaybackTime, renderExportFrame, startRenderLoop } from '../renderer/loop';
-import { exportVideo, supportsWebCodecs, VideoFormat } from '../lib/videoExport';
-import { exportZipSequence } from '../lib/zipExport';
-import { exportGif } from '../lib/gifExport';
-import { imageFilesFromPaths, isNative, openProjectFromPath, pickSavePath, saveBlob } from '../lib/native';
-import { exportProRes } from '../lib/proresExport';
-import {
-  DEFAULT_SIGNALING_URL,
-  INITIAL_LIVE_OUTPUT_STATE,
-  LiveOutputState,
-  TouchDesignerWebRtcOutput
-} from '../lib/liveOutput';
+import { getActiveRendererName, getPlaybackTime, startRenderLoop } from '../renderer/loop';
+import { imageFilesFromPaths, isNative, openProjectFromPath } from '../lib/native';
+import { WORKSPACE_FIT_MARGIN } from '../lib/layout';
 
-// Gutters kept clear of handles that have been pinned to the workspace edge.
-// The top gutter clears the floating header bar so a pinned handle stays
-// clickable rather than sliding underneath it.
-const HANDLE_VIEWPORT_INSETS = { top: 72, right: 20, bottom: 20, left: 20 };
-
-function getExportTimestamp(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-}
-
-export default function CanvasWorkspace() {
+export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HTMLCanvasElement | null> }) {
   const appMode = useStore(s => s.appMode);
   const layers = useStore(s => s.layers);
   const polygonLayers = useStore(s => s.polygonLayers);
@@ -60,57 +39,22 @@ export default function CanvasWorkspace() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const fpsRef = useRef<HTMLSpanElement>(null);
   const symOverlayRef = useRef<HTMLDivElement>(null);
+  const statusPillRef = useRef<HTMLDivElement>(null);
 
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [scale, setScale] = useState(1);
   const scaleRef = useRef(1);
   // Workspace size in CSS pixels; null until the first measurement.
   const [viewport, setViewport] = useState<Viewport | null>(null);
+  // Height of the only chrome still floating over the canvas — the status
+  // pill — so the top handle gutter clears it exactly instead of guessing.
+  const [statusPillInset, setStatusPillInset] = useState(WORKSPACE_FIT_MARGIN);
 
   // Drawing mode points state
   const [drawingPoints, setDrawingPoints] = useState<PolygonPoint[]>([]);
   const [mouseCanvasPos, setMouseCanvasPos] = useState<PolygonPoint | null>(null);
-
-  // Export settings state
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportType, setExportType] = useState<'mp4' | 'webm' | 'prores' | 'gif' | 'zip'>('mp4');
-  const [exportResolution, setExportResolution] = useState<'full' | 'hd' | 'compact'>('hd');
-  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
-  const [exportDuration, setExportDuration] = useState<number>(3);
-  const [exportFps, setExportFps] = useState<number>(30);
-
-  // Live output is connection state, not document state, so it intentionally
-  // stays outside Zustand history and is torn down with this workspace.
-  const liveOutputRef = useRef<TouchDesignerWebRtcOutput | null>(null);
-  const [showLiveOutputModal, setShowLiveOutputModal] = useState(false);
-  const [liveOutputState, setLiveOutputState] = useState<LiveOutputState>(INITIAL_LIVE_OUTPUT_STATE);
-  const [liveOutputUrl, setLiveOutputUrl] = useState(DEFAULT_SIGNALING_URL);
-  const [liveOutputFps, setLiveOutputFps] = useState(30);
-  const [selectedReceiverAddress, setSelectedReceiverAddress] = useState('');
-  const [liveOutputActionError, setLiveOutputActionError] = useState<string | null>(null);
-
-  // Active export progress state (null when no export is running)
-  const [exportJob, setExportJob] = useState<{ label: string; percent: number } | null>(null);
-
-  const isCancelExportRef = useRef(false);
-
-  useEffect(() => {
-    const output = new TouchDesignerWebRtcOutput((nextState) => {
-      setLiveOutputState(nextState);
-      setSelectedReceiverAddress((current) => {
-        if (nextState.receivers.some((receiver) => receiver.address === current)) return current;
-        return nextState.receivers[0]?.address ?? '';
-      });
-    });
-    liveOutputRef.current = output;
-    return () => {
-      output.destroy();
-      liveOutputRef.current = null;
-    };
-  }, []);
 
   // The render loop lives outside React: it reads the store imperatively and
   // repaints the canvas every frame without triggering any component renders.
@@ -120,36 +64,31 @@ export default function CanvasWorkspace() {
     return startRenderLoop(canvas, (fps) => {
       if (fpsRef.current) fpsRef.current.textContent = `${fps} fps · ${getActiveRendererName()}`;
     });
-  }, []);
+  }, [canvasRef]);
 
+  // Observes the workspace element itself, not the window: once side columns
+  // can resize or collapse, workspace width changes without a window resize,
+  // and a stale scale/viewport would silently corrupt hit-testing and handle
+  // pinning.
   useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
     const updateScale = () => {
-      if (wrapRef.current) {
-        const rect = wrapRef.current.getBoundingClientRect();
-        const scaleX = (rect.width - 80) / CANVAS_WIDTH;
-        const scaleY = (rect.height - 80) / CANVAS_HEIGHT;
-        const next = Math.min(scaleX, scaleY, 1);
-        scaleRef.current = next;
-        setScale(next);
-        setViewport({ width: rect.width, height: rect.height });
-      }
+      const rect = wrap.getBoundingClientRect();
+      const scaleX = (rect.width - WORKSPACE_FIT_MARGIN * 2) / CANVAS_WIDTH;
+      const scaleY = (rect.height - WORKSPACE_FIT_MARGIN * 2) / CANVAS_HEIGHT;
+      const next = Math.min(scaleX, scaleY, 1);
+      scaleRef.current = next;
+      setScale(next);
+      setViewport({ width: rect.width, height: rect.height });
+
+      const pillHeight = statusPillRef.current?.getBoundingClientRect().height ?? 0;
+      setStatusPillInset(pillHeight > 0 ? pillHeight + WORKSPACE_FIT_MARGIN / 2 : WORKSPACE_FIT_MARGIN);
     };
     updateScale();
-    window.addEventListener('resize', updateScale);
-    return () => window.removeEventListener('resize', updateScale);
-  }, []);
-
-  // Native menu items (File > Export…) reach us via window events.
-  useEffect(() => {
-    const showExport = () => setShowExportModal(true);
-    const exportPng = () => void handleExportHighRes();
-    window.addEventListener('slapchop:show-export', showExport);
-    window.addEventListener('slapchop:export-png', exportPng);
-    return () => {
-      window.removeEventListener('slapchop:show-export', showExport);
-      window.removeEventListener('slapchop:export-png', exportPng);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleExportHighRes reads all state through the store
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(wrap);
+    return () => observer.disconnect();
   }, []);
 
   // In the desktop app Tauri intercepts Finder drags before HTML5 sees them,
@@ -207,9 +146,18 @@ export default function CanvasWorkspace() {
   const selectedLayer = layers.find(l => l.id === selectedLayerId);
 
   // Handles for points beyond the frame are drawn in the workspace margin, and
-  // pinned to the edge of it once they would leave the window entirely.
+  // pinned to the edge of it once they would leave the window entirely. Only
+  // the status pill still floats over the canvas, so its measured height
+  // stands in for the top gutter; the other three sides use the same margin
+  // the fit-to-window scale calc reserves.
+  const handleViewportInsets = {
+    top: statusPillInset,
+    right: WORKSPACE_FIT_MARGIN,
+    bottom: WORKSPACE_FIT_MARGIN,
+    left: WORKSPACE_FIT_MARGIN
+  };
   const handleBounds = viewport
-    ? getVisibleHandleBounds(viewport, scale, HANDLE_VIEWPORT_INSETS)
+    ? getVisibleHandleBounds(viewport, scale, handleViewportInsets)
     : null;
   const polygonExtendsOffCanvas = !!selectedPolygon
     && selectedPolygon.points.some(pt => isPointOutsideCanvas(pt, CANVAS_WIDTH, CANVAS_HEIGHT));
@@ -508,181 +456,6 @@ export default function CanvasWorkspace() {
     });
   };
 
-  // Reads through getState() so it stays correct inside long-lived listeners.
-  const snapshotRenderState = (): RenderState => ({
-    appMode: useStore.getState().appMode,
-    ...getDocumentSnapshot()
-  });
-
-  const handleExportHighRes = async () => {
-    try {
-      const canvas = document.createElement('canvas');
-      renderExportFrame(canvas, getPlaybackTime(), snapshotRenderState(), CANVAS_WIDTH, CANVAS_HEIGHT);
-      const blob = await (await fetch(canvas.toDataURL('image/png'))).blob();
-      await saveBlob(blob, `slapchop-art-${getExportTimestamp()}.png`);
-    } catch (e) {
-      console.error('High-Res export failed', e);
-    }
-  };
-
-  const finishExport = async (blob: Blob, filename: string) => {
-    await saveBlob(blob, filename);
-    setShowExportModal(false);
-  };
-
-  // Real-time MediaRecorder capture, kept only for browsers without WebCodecs.
-  const recordVideoFallback = (doc: RenderState, resW: number, resH: number) =>
-    new Promise<void>((resolve) => {
-      const offscreenCanvas = document.createElement('canvas');
-      offscreenCanvas.width = resW;
-      offscreenCanvas.height = resH;
-
-      const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-      let selectedMimeType = 'video/webm';
-      for (const type of mimeTypes) {
-        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
-          selectedMimeType = type;
-          break;
-        }
-      }
-
-      const stream = offscreenCanvas.captureStream(exportFps);
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
-
-      const chunks: Blob[] = [];
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        if (!isCancelExportRef.current) {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          finishExport(blob, `slapchop-video-${getExportTimestamp()}-${exportDuration}s.webm`);
-        }
-        resolve();
-      };
-
-      mediaRecorder.start();
-
-      const startTime = performance.now();
-      const interval = setInterval(() => {
-        const elapsed = (performance.now() - startTime) / 1000;
-        setExportJob({
-          label: `Recording in real time (WebCodecs unavailable)… ${elapsed.toFixed(1)}s / ${exportDuration}s`,
-          percent: Math.min(100, (elapsed / exportDuration) * 100)
-        });
-
-        renderExportFrame(offscreenCanvas, elapsed, doc, resW, resH);
-
-        if (elapsed >= exportDuration || isCancelExportRef.current) {
-          clearInterval(interval);
-          if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-        }
-      }, 1000 / exportFps);
-    });
-
-  const startExport = async () => {
-    isCancelExportRef.current = false;
-    const doc = snapshotRenderState();
-    const [resW, resH] = exportResolution === 'full' ? [1080, 1920]
-                       : exportResolution === 'hd' ? [720, 1280]
-                       : [540, 960];
-    const ts = getExportTimestamp();
-
-    const common = {
-      width: resW,
-      height: resH,
-      fps: exportFps,
-      duration: exportDuration,
-      renderFrame: (canvas: HTMLCanvasElement, t: number) =>
-        renderExportFrame(canvas, t, doc, resW, resH),
-      isCancelled: () => isCancelExportRef.current
-    };
-    const frameProgress = (verb: string) => (done: number, total: number) =>
-      setExportJob({ label: `${verb} frame ${done}/${total}…`, percent: (done / total) * 100 });
-
-    setExportJob({ label: 'Preparing export…', percent: 0 });
-    try {
-      if (exportType === 'zip') {
-        const blob = await exportZipSequence({
-          ...common,
-          imageFormat: exportFormat,
-          onProgress: frameProgress('Rendering'),
-          onZipProgress: (percent) => setExportJob({ label: 'Compressing ZIP…', percent })
-        });
-        if (blob) finishExport(blob, `slapchop-sequence-${ts}-${exportResolution}-${exportDuration}s.zip`);
-      } else if (exportType === 'gif') {
-        const blob = await exportGif({ ...common, onProgress: frameProgress('Encoding GIF') });
-        if (blob) finishExport(blob, `slapchop-anim-${ts}-${exportDuration}s.gif`);
-      } else if (exportType === 'prores') {
-        const savePath = await pickSavePath(`slapchop-video-${ts}-${exportDuration}s.mov`);
-        if (savePath) {
-          const ok = await exportProRes({
-            ...common,
-            savePath,
-            onProgress: frameProgress('Rendering'),
-            onEncodeProgress: (done, total) =>
-              setExportJob({ label: `Encoding ProRes ${done}/${total}…`, percent: (done / total) * 100 })
-          });
-          if (ok) setShowExportModal(false);
-        }
-      } else if (supportsWebCodecs()) {
-        const blob = await exportVideo(exportType as VideoFormat, {
-          ...common,
-          onProgress: frameProgress('Encoding')
-        });
-        if (blob) finishExport(blob, `slapchop-video-${ts}-${exportDuration}s.${exportType}`);
-      } else {
-        await recordVideoFallback(doc, resW, resH);
-      }
-    } catch (e) {
-      console.error('Export failed:', e);
-    } finally {
-      setExportJob(null);
-    }
-  };
-
-  const connectLiveOutput = async () => {
-    setLiveOutputActionError(null);
-    try {
-      await liveOutputRef.current?.connect(liveOutputUrl);
-    } catch (error) {
-      setLiveOutputActionError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const startLiveOutput = async () => {
-    const canvas = canvasRef.current;
-    const output = liveOutputRef.current;
-    if (!canvas || !output) return;
-    setLiveOutputActionError(null);
-    try {
-      await output.startStreaming(canvas, selectedReceiverAddress, liveOutputFps);
-    } catch (error) {
-      output.stopStreaming();
-      setLiveOutputActionError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const stopLiveOutput = () => {
-    liveOutputRef.current?.stopStreaming();
-    setLiveOutputActionError(null);
-  };
-
-  const disconnectLiveOutput = () => {
-    liveOutputRef.current?.disconnect();
-    setLiveOutputActionError(null);
-  };
-
-  const liveOutputConnected = !['idle', 'error'].includes(liveOutputState.phase);
-  const liveOutputBusy = ['connecting', 'negotiating'].includes(liveOutputState.phase);
-  const liveOutputStreaming = liveOutputState.phase === 'streaming';
-  const liveOutputMetrics = liveOutputState.metrics;
-  const liveOutputDownscaled = liveOutputMetrics?.encodedWidth !== undefined
-    && liveOutputMetrics.encodedHeight !== undefined
-    && (liveOutputMetrics.encodedWidth < liveOutputMetrics.sourceWidth
-      || liveOutputMetrics.encodedHeight < liveOutputMetrics.sourceHeight);
-
   return (
     <div
       ref={wrapRef}
@@ -697,9 +470,12 @@ export default function CanvasWorkspace() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Top Action Header Bar */}
-      <div className="absolute top-4 left-6 right-6 flex items-center justify-between z-20 pointer-events-none">
-        <div className="flex items-center gap-2 pointer-events-auto bg-gray-900/80 backdrop-blur border border-gray-800 px-3 py-1.5 rounded-full text-xs text-gray-300 shadow-lg">
+      {/* Floating status pill — the only chrome still overlaying the canvas
+          now that identity/mode chrome and export/live-output triggers live
+          in the side columns. Its measured height drives the top handle
+          gutter above, so this stays the sole floating element by design. */}
+      <div className="absolute top-4 left-6 flex items-center z-20 pointer-events-none">
+        <div ref={statusPillRef} className="flex items-center gap-2 pointer-events-auto bg-gray-900/80 backdrop-blur border border-gray-800 px-3 py-1.5 rounded-full text-xs text-gray-300 shadow-lg">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="font-semibold text-white">
             {appMode === 'symmetry' ? 'Symmetry Canvas' : 'Polygon GIF Tiler'}
@@ -708,41 +484,6 @@ export default function CanvasWorkspace() {
           {import.meta.env.DEV && (
             <span ref={fpsRef} className="text-emerald-400 font-mono" />
           )}
-        </div>
-
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <button
-            onClick={() => setShowLiveOutputModal(true)}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors shadow-lg backdrop-blur",
-              liveOutputStreaming
-                ? "bg-emerald-950/90 hover:bg-emerald-900 text-emerald-200 border-emerald-600/80"
-                : liveOutputConnected
-                  ? "bg-amber-950/90 hover:bg-amber-900 text-amber-200 border-amber-700/80"
-                  : "bg-gray-900/80 hover:bg-gray-800 text-gray-200 border-gray-700/80"
-            )}
-          >
-            {liveOutputBusy
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <Radio className="w-3.5 h-3.5" />}
-            {liveOutputStreaming ? 'Live' : 'Live Output'}
-          </button>
-
-          <button
-            onClick={handleExportHighRes}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900/80 hover:bg-gray-800 text-gray-200 border border-gray-700/80 rounded-lg text-xs font-medium transition-colors shadow-lg backdrop-blur"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export Image
-          </button>
-
-          <button
-            onClick={() => setShowExportModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all"
-          >
-            <Video className="w-3.5 h-3.5" />
-            Export Animation
-          </button>
         </div>
       </div>
 
@@ -1016,384 +757,6 @@ export default function CanvasWorkspace() {
         )}
       </div>
 
-      {/* TouchDesigner WebRTC Live Output Modal */}
-      {showLiveOutputModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 text-gray-100 shadow-2xl relative">
-            <button
-              onClick={() => setShowLiveOutputModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800 transition-colors"
-              aria-label="Close live output settings"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-2 mb-1">
-              <Radio className={cn(
-                "w-5 h-5",
-                liveOutputStreaming ? "text-emerald-400" : "text-indigo-400"
-              )} />
-              <h3 className="text-lg font-bold text-white">TouchDesigner Live Output</h3>
-            </div>
-            <p className="text-xs text-gray-400 mb-5">
-              Stream the live 1080×1920 canvas over WebRTC using TouchDesigner&apos;s signaling server.
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
-                  Signaling Server
-                </label>
-                <input
-                  type="text"
-                  value={liveOutputUrl}
-                  onChange={(event) => setLiveOutputUrl(event.target.value)}
-                  disabled={liveOutputConnected}
-                  spellCheck={false}
-                  className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs font-mono text-white disabled:text-gray-500 disabled:cursor-not-allowed outline-none focus:ring-1 focus:ring-indigo-500"
-                />
-                <p className="text-[10px] text-gray-500 mt-1">
-                  TouchDesigner&apos;s signalingServer COMP defaults to port 9980.
-                </p>
-              </div>
-
-              <div className={cn(
-                "rounded-lg border px-3 py-2 text-xs",
-                liveOutputState.phase === 'error' || liveOutputActionError
-                  ? "bg-red-950/40 border-red-900 text-red-300"
-                  : liveOutputStreaming
-                    ? "bg-emerald-950/40 border-emerald-800 text-emerald-300"
-                    : "bg-gray-950 border-gray-800 text-gray-300"
-              )}>
-                <div className="flex items-center gap-2">
-                  <span className={cn(
-                    "w-2 h-2 rounded-full shrink-0",
-                    liveOutputState.phase === 'error' || liveOutputActionError
-                      ? "bg-red-500"
-                      : liveOutputStreaming
-                        ? "bg-emerald-500 animate-pulse"
-                        : liveOutputConnected ? "bg-amber-500" : "bg-gray-600"
-                  )} />
-                  <span>{liveOutputActionError ?? liveOutputState.message}</span>
-                </div>
-              </div>
-
-              {liveOutputConnected && (
-                <>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
-                      Receiver
-                    </label>
-                    <select
-                      value={selectedReceiverAddress}
-                      onChange={(event) => setSelectedReceiverAddress(event.target.value)}
-                      disabled={liveOutputState.receivers.length === 0 || liveOutputBusy || liveOutputStreaming}
-                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white disabled:text-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      {liveOutputState.receivers.length === 0 && (
-                        <option value="">No receivers discovered</option>
-                      )}
-                      {liveOutputState.receivers.map((receiver) => (
-                        <option key={receiver.id} value={receiver.address}>
-                          {typeof receiver.properties.name === 'string'
-                            ? `${receiver.properties.name} — ${receiver.address}`
-                            : receiver.address}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
-                      Frame Rate
-                    </label>
-                    <select
-                      value={liveOutputFps}
-                      onChange={(event) => setLiveOutputFps(parseInt(event.target.value))}
-                      disabled={liveOutputBusy || liveOutputStreaming}
-                      className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white disabled:text-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value={30}>30 FPS — recommended</option>
-                      <option value={60}>60 FPS</option>
-                    </select>
-                  </div>
-                </>
-              )}
-
-              {liveOutputStreaming && liveOutputMetrics && (
-                <div className="rounded-lg bg-gray-950 border border-gray-800 px-3 py-3">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                    Outbound Encoder
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                    <div>
-                      <div className="text-[10px] text-gray-500">Source</div>
-                      <div className="font-mono text-gray-200">
-                        {liveOutputMetrics.sourceWidth}×{liveOutputMetrics.sourceHeight}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-500">Encoded</div>
-                      <div className={cn(
-                        "font-mono",
-                        liveOutputDownscaled ? "text-amber-300" : "text-emerald-300"
-                      )}>
-                        {liveOutputMetrics.encodedWidth !== undefined
-                          && liveOutputMetrics.encodedHeight !== undefined
-                          ? `${liveOutputMetrics.encodedWidth}×${liveOutputMetrics.encodedHeight}`
-                          : 'Measuring…'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-500">Encoded FPS</div>
-                      <div className="font-mono text-gray-200">
-                        {liveOutputMetrics.framesPerSecond === undefined
-                          ? 'Measuring…'
-                          : liveOutputMetrics.framesPerSecond.toFixed(1)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-500">Send Rate</div>
-                      <div className="font-mono text-gray-200">
-                        {liveOutputMetrics.bitrateMbps === undefined
-                          ? 'Measuring…'
-                          : `${liveOutputMetrics.bitrateMbps.toFixed(1)} Mbps`}
-                      </div>
-                    </div>
-                  </div>
-                  {liveOutputMetrics.qualityLimitationReason
-                    && liveOutputMetrics.qualityLimitationReason !== 'none' && (
-                    <div className="mt-2 pt-2 border-t border-gray-800 text-[10px] text-amber-300">
-                      WebRTC reports a {liveOutputMetrics.qualityLimitationReason} quality limit.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {liveOutputState.qualityWarning && (
-                <div className="rounded-lg bg-amber-950/30 border border-amber-900 px-3 py-2 text-[10px] leading-relaxed text-amber-200">
-                  {liveOutputState.qualityWarning}
-                </div>
-              )}
-
-              <div className="rounded-lg bg-indigo-950/20 border border-indigo-900/60 px-3 py-2 text-[10px] leading-relaxed text-indigo-200/80">
-                In TouchDesigner, connect signalingClient and webRTC COMPs to the active signalingServer,
-                then use a Video Stream In TOP in WebRTC mode followed by a Null TOP.
-              </div>
-
-              <div className="pt-3 border-t border-gray-800 flex items-center justify-between gap-2">
-                {liveOutputConnected ? (
-                  <button
-                    onClick={disconnectLiveOutput}
-                    className="px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg text-xs font-medium transition-colors"
-                  >
-                    Disconnect
-                  </button>
-                ) : (
-                  <span />
-                )}
-
-                {liveOutputStreaming || liveOutputState.phase === 'negotiating' ? (
-                  <button
-                    onClick={stopLiveOutput}
-                    className="px-5 py-2 bg-red-700 hover:bg-red-600 text-white font-semibold rounded-lg text-xs transition-colors"
-                  >
-                    Stop Stream
-                  </button>
-                ) : liveOutputConnected ? (
-                  <button
-                    onClick={() => void startLiveOutput()}
-                    disabled={!selectedReceiverAddress || liveOutputBusy}
-                    className="flex items-center gap-2 px-5 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg text-xs transition-colors"
-                  >
-                    {liveOutputBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    Start Stream
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => void connectLiveOutput()}
-                    disabled={liveOutputBusy}
-                    className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold rounded-lg text-xs transition-colors"
-                  >
-                    {liveOutputBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    Find Receivers
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Export Options Modal */}
-      {showExportModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 text-gray-100 shadow-2xl relative">
-            <button
-              onClick={() => {
-                isCancelExportRef.current = true;
-                setShowExportModal(false);
-              }}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-lg font-bold text-white mb-1">Export Animation</h3>
-            <p className="text-xs text-gray-400 mb-5">Export sequence frames or video file for social media</p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Export Format</label>
-                <div className="grid grid-cols-2 gap-2 p-1 bg-gray-950 rounded-lg border border-gray-800">
-                  {([
-                    { id: 'mp4', label: 'MP4 (H.264)', Icon: Film },
-                    { id: 'webm', label: 'WebM (VP9)', Icon: Video },
-                    ...(isNative() ? [{ id: 'prores', label: 'ProRes 4444', Icon: Clapperboard }] : []),
-                    { id: 'gif', label: 'Animated GIF', Icon: Repeat },
-                    { id: 'zip', label: 'Frames (ZIP)', Icon: Download }
-                  ] as { id: 'mp4' | 'webm' | 'prores' | 'gif' | 'zip'; label: string; Icon: typeof Film }[]).map(({ id, label, Icon }) => (
-                    <button
-                      key={id}
-                      onClick={() => setExportType(id)}
-                      className={cn(
-                        "py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-2",
-                        exportType === id ? "bg-indigo-600 text-white shadow" : "text-gray-400 hover:text-white"
-                      )}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {(exportType === 'mp4' || exportType === 'webm') && !supportsWebCodecs() && (
-                  <p className="text-[10px] text-amber-400/90 mt-1.5">
-                    WebCodecs is unavailable in this browser — video will be recorded in real time as WebM.
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Resolution</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'full', label: '1080x1920', sub: 'Full 1080p' },
-                    { id: 'hd', label: '720x1280', sub: 'HD Ready' },
-                    { id: 'compact', label: '540x960', sub: 'Compact' }
-                  ].map((res) => (
-                    <button
-                      key={res.id}
-                      onClick={() => setExportResolution(res.id as 'full' | 'hd' | 'compact')}
-                      className={cn(
-                        "p-2 rounded-lg border text-left transition-colors",
-                        exportResolution === res.id
-                          ? "bg-indigo-950/50 border-indigo-500 text-white"
-                          : "bg-gray-950/50 border-gray-800 text-gray-400 hover:border-gray-700"
-                      )}
-                    >
-                      <div className="text-xs font-semibold">{res.label}</div>
-                      <div className="text-[10px] text-gray-500">{res.sub}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Duration (Sec)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={exportDuration}
-                    onChange={(e) => setExportDuration(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">FPS</label>
-                  <select
-                    value={exportFps}
-                    onChange={(e) => setExportFps(parseInt(e.target.value))}
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white"
-                  >
-                    <option value={15}>15 FPS</option>
-                    <option value={30}>30 FPS</option>
-                    <option value={60}>60 FPS</option>
-                  </select>
-                </div>
-              </div>
-
-              {exportType === 'zip' && (
-                <div>
-                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Image File Format</label>
-                  <div className="flex items-center gap-4 text-xs">
-                    <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="format"
-                        value="png"
-                        checked={exportFormat === 'png'}
-                        onChange={() => setExportFormat('png')}
-                        className="accent-indigo-500"
-                      />
-                      PNG (Lossless)
-                    </label>
-                    <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="format"
-                        value="jpeg"
-                        checked={exportFormat === 'jpeg'}
-                        onChange={() => setExportFormat('jpeg')}
-                        className="accent-indigo-500"
-                      />
-                      JPEG (Smaller ZIP)
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Exporting Progress bar */}
-              {exportJob && (
-                <div className="p-3 bg-gray-950 rounded-lg border border-gray-800 space-y-2">
-                  <div className="flex justify-between text-xs text-gray-300">
-                    <span>{exportJob.label}</span>
-                    <span>{Math.round(exportJob.percent)}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-indigo-500 transition-all duration-150"
-                      style={{ width: `${exportJob.percent}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-3 border-t border-gray-800 flex justify-end gap-2">
-                <button
-                  onClick={() => {
-                    isCancelExportRef.current = true;
-                    setShowExportModal(false);
-                  }}
-                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={startExport}
-                  disabled={exportJob !== null}
-                  className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold rounded-lg text-xs shadow-lg shadow-indigo-600/20 transition-all"
-                >
-                  {exportJob !== null && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Start Export
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
