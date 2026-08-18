@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers } from 'lucide-react';
+import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
@@ -7,8 +7,12 @@ import { isNative, openProjectViaDialog } from '../../lib/native';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import Segmented, { SegmentedOption } from '../controls/Segmented';
+import ResizeHandle from '../controls/ResizeHandle';
+import { usePanelState } from '../../hooks/usePanelState';
 import LayerRow from './LayerRow';
 import PolygonRow from './PolygonRow';
+
+const STACK_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:stack', defaultWidth: 264, minWidth: 200, maxWidth: 420, side: 'left' as const };
 
 type AppModeValue = 'symmetry' | 'polygon';
 
@@ -97,8 +101,24 @@ export default function StackPanel() {
   const isSceneActive = appMode === 'symmetry' ? !selectedLayerId : !selectedPolygonId;
   const selectScene = () => (appMode === 'symmetry' ? onSelectLayer(null) : onSelectPolygon(null));
 
+  const { width, collapsed, toggleCollapsed, startResize } = usePanelState(STACK_PANEL_DEFAULTS);
+
+  if (collapsed) {
+    return (
+      <div className="w-11 bg-gray-900 border-r border-gray-800 flex flex-col items-center h-screen shrink-0 pt-4">
+        <button
+          onClick={toggleCollapsed}
+          className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+          title="Expand Stack panel"
+        >
+          <PanelLeftOpen className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-66 bg-gray-900 border-r border-gray-800 flex flex-col h-screen text-gray-200 shrink-0">
+    <div className="relative bg-gray-900 border-r border-gray-800 flex flex-col h-screen text-gray-200 shrink-0" style={{ width }}>
       {/* Header & Mode Switcher */}
       <div className="p-4 border-b border-gray-800 shrink-0">
          <div className="flex items-start justify-between">
@@ -304,6 +324,8 @@ export default function StackPanel() {
           Scene
         </button>
       </div>
+
+      <ResizeHandle side="left" panelLabel="Stack panel" onResizeStart={startResize} onCollapse={toggleCollapsed} />
     </div>
   );
 }

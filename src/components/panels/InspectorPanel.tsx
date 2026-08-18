@@ -1,8 +1,10 @@
 import { useState, ReactNode } from 'react';
-import { Trash2, Copy, ChevronUp, ChevronDown, Eye, EyeOff, Download, Video, Loader2, Radio } from 'lucide-react';
+import { Trash2, Copy, ChevronUp, ChevronDown, Eye, EyeOff, Download, Video, Loader2, Radio, PanelRightOpen } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store';
 import Segmented, { SegmentedOption } from '../controls/Segmented';
+import ResizeHandle from '../controls/ResizeHandle';
+import { usePanelState } from '../../hooks/usePanelState';
 import ExportModal from '../modals/ExportModal';
 import LiveOutputModal from '../modals/LiveOutputModal';
 import { ExportApi } from '../../hooks/useExport';
@@ -14,6 +16,8 @@ import StyleTab from './inspector/StyleTab';
 import SymmetryTab from './inspector/SymmetryTab';
 import MotionTab from './inspector/MotionTab';
 import SceneTab from './inspector/SceneTab';
+
+const INSPECTOR_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:inspector', defaultWidth: 336, minWidth: 260, maxWidth: 480, side: 'right' as const };
 
 // The tab bar always has the same four positions for both selection kinds,
 // so switching Symmetry/Tiled-GIF mode never moves what's under your
@@ -57,8 +61,25 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
     { value: 'motion', label: 'Motion' }
   ];
 
+  const { width, collapsed, toggleCollapsed, startResize } = usePanelState(INSPECTOR_PANEL_DEFAULTS);
+
+  if (collapsed) {
+    return (
+      <div className="w-11 bg-gray-900 border-l border-gray-800 flex flex-col items-center h-screen shrink-0 pt-4">
+        <button
+          onClick={toggleCollapsed}
+          className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+          title="Expand Inspector panel"
+        >
+          <PanelRightOpen className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-84 bg-gray-900 border-l border-gray-800 flex flex-col h-screen text-gray-200 shrink-0">
+    <div className="relative bg-gray-900 border-l border-gray-800 flex flex-col h-screen text-gray-200 shrink-0" style={{ width }}>
+      <ResizeHandle side="right" panelLabel="Inspector panel" onResizeStart={startResize} onCollapse={toggleCollapsed} />
       <div className="flex-1 overflow-y-auto min-h-0">
         {subject ? (
           <div className="p-3 flex flex-col">
