@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
@@ -11,7 +11,9 @@ import ResizeHandle from '../controls/ResizeHandle';
 import { usePanelState } from '../../hooks/usePanelState';
 import LayerRow from './LayerRow';
 import PolygonRow from './PolygonRow';
+import Mesh3dRow from './Mesh3dRow';
 import { Mesh3dPrimitive } from '../../types';
+import { MESH3D_PRIMITIVE_EMOJI } from '../../lib/mesh3dUtils';
 
 const STACK_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:stack', defaultWidth: 264, minWidth: 200, maxWidth: 420, side: 'left' as const };
 
@@ -23,17 +25,19 @@ const MODE_OPTIONS: SegmentedOption<AppModeValue>[] = [
   { value: '3d', label: <><Box className="w-3.5 h-3.5" />3D Space</> }
 ];
 
-// [primitive, emoji, label] for the "Add Mesh" grid below. Kept as a plain
-// preset list (like the polygon shape presets above it) rather than a full
-// geometry picker UI, which belongs to the 3D inspector's Geometry tab.
-const MESH3D_PRESETS: [Mesh3dPrimitive, string, string][] = [
-  ['plane', '▭', 'Plane'],
-  ['box', '🧊', 'Box'],
-  ['cylinder', '🥫', 'Cylinder'],
-  ['torus', '🍩', 'Torus'],
-  ['sphere', '🔮', 'Sphere'],
-  ['ribbon', '🎀', 'Ribbon'],
-  ['extruded-polygon', '⬡', 'Extruded']
+// [primitive, label] for the "Add Mesh" grid below. Kept as a plain preset
+// list (like the polygon shape presets above it) rather than a full geometry
+// picker UI, which belongs to the 3D inspector's Geometry tab. Emoji come
+// from the shared MESH3D_PRIMITIVE_EMOJI map so this grid and Mesh3dRow's
+// thumbnail stay visually consistent.
+const MESH3D_PRESETS: [Mesh3dPrimitive, string][] = [
+  ['plane', 'Plane'],
+  ['box', 'Box'],
+  ['cylinder', 'Cylinder'],
+  ['torus', 'Torus'],
+  ['sphere', 'Sphere'],
+  ['ribbon', 'Ribbon'],
+  ['extruded-polygon', 'Extruded']
 ];
 
 export default function StackPanel() {
@@ -64,6 +68,9 @@ export default function StackPanel() {
   const onAddMesh3dPreset = useStore(s => s.addMesh3dPreset);
   const onUpdateMesh3d = useStore(s => s.updateMesh3d);
   const onDeleteMesh3d = useStore(s => s.deleteMesh3d);
+  const onDuplicateMesh3d = useStore(s => s.duplicateMesh3d);
+  const onReorderMesh3d = useStore(s => s.reorderMesh3d);
+  const onUploadMesh3dTexture = useStore(s => s.uploadMesh3dTexture);
 
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -98,6 +105,22 @@ export default function StackPanel() {
     if (over && active.id !== over.id) {
       onReorderPolygons(active.id as string, over.id as string);
     }
+  };
+
+  const handleDragEndMesh3d = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      onReorderMesh3d(active.id as string, over.id as string);
+    }
+  };
+
+  // Selecting is a synchronous store write, so by the time the async
+  // uploadMesh3dTexture reads selectedMesh3dId back out of the store (after
+  // the file read and GIF parse), it sees this row's id rather than
+  // whatever was selected when the file dialog opened.
+  const handleMesh3dRowTextureUpload = (id: string, file: File) => {
+    onSelectMesh3d(id);
+    onUploadMesh3dTexture(file);
   };
 
   const handleSymmetryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -332,25 +355,21 @@ export default function StackPanel() {
         </>
       )}
 
-      {/* MODE 3: 3D MESH SPACE. This is a minimal preset-add + select/hide/
-          delete list to make the renderer reachable and smoke-testable;
-          the full row (drag reorder, duplicate, texture upload per-row) and
-          the 3D inspector tabs are Component 4 of the 3D mode plan, not yet
-          built. */}
+      {/* MODE 3: 3D MESH SPACE */}
       {appMode === '3d' && (
         <>
           <div className="p-3 border-b border-gray-800 space-y-3 shrink-0">
             <div>
               <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Add Mesh</label>
               <div className="grid grid-cols-4 gap-1">
-                {MESH3D_PRESETS.map(([primitive, emoji, label]) => (
+                {MESH3D_PRESETS.map(([primitive, label]) => (
                   <button
                     key={primitive}
                     onClick={() => onAddMesh3dPreset(primitive)}
                     className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
                     title={label}
                   >
-                    <span className="text-xs">{emoji}</span>
+                    <span className="text-xs">{MESH3D_PRIMITIVE_EMOJI[primitive]}</span>
                     {label}
                   </button>
                 ))}
@@ -364,32 +383,26 @@ export default function StackPanel() {
             </div>
 
             <div className="p-2 space-y-1">
-              {mesh3dLayers.map((mesh) => (
-                <div
-                  key={mesh.id}
-                  onClick={() => onSelectMesh3d(mesh.id)}
-                  className={cn(
-                    "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs cursor-pointer border",
-                    selectedMesh3dId === mesh.id ? "bg-indigo-900/30 border-indigo-700 text-indigo-200" : "border-transparent hover:bg-gray-800 text-gray-300"
-                  )}
-                >
-                  <span className="flex-1 truncate">{mesh.name}</span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onUpdateMesh3d(mesh.id, { hidden: !mesh.hidden }); }}
-                    className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
-                    title={mesh.hidden ? 'Show' : 'Hide'}
-                  >
-                    {mesh.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onDeleteMesh3d(mesh.id); }}
-                    className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEndMesh3d}
+              >
+                <SortableContext items={mesh3dLayers.map(m => m.id)} strategy={verticalListSortingStrategy}>
+                  {mesh3dLayers.map((mesh) => (
+                    <Mesh3dRow
+                      key={mesh.id}
+                      mesh={mesh}
+                      selectedMesh3dId={selectedMesh3dId}
+                      onSelectMesh3d={onSelectMesh3d}
+                      onUpdateMesh3d={onUpdateMesh3d}
+                      onDeleteMesh3d={onDeleteMesh3d}
+                      onDuplicateMesh3d={onDuplicateMesh3d}
+                      onUploadTexture={handleMesh3dRowTextureUpload}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
               {mesh3dLayers.length === 0 && (
                 <div className="p-4 text-center text-xs text-gray-500">No meshes yet. Add a primitive above to start.</div>
               )}

@@ -16,6 +16,11 @@ import StyleTab from './inspector/StyleTab';
 import SymmetryTab from './inspector/SymmetryTab';
 import MotionTab from './inspector/MotionTab';
 import SceneTab from './inspector/SceneTab';
+import Transform3dTab from './inspector/Transform3dTab';
+import Geometry3dTab from './inspector/Geometry3dTab';
+import Texture3dTab from './inspector/Texture3dTab';
+import Deform3dTab from './inspector/Deform3dTab';
+import Symmetry3dTab from './inspector/Symmetry3dTab';
 
 const INSPECTOR_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:inspector', defaultWidth: 336, minWidth: 260, maxWidth: 480, side: 'right' as const };
 
@@ -25,6 +30,13 @@ const INSPECTOR_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:inspector', defau
 // everything a polygon's own geometry needs is edited on canvas via its
 // points, not sliders, so that slot holds its texture transform instead.
 type InspectorTab = 'primary' | 'style' | 'symmetry' | 'motion';
+
+// 3D mode's mesh selection gets its own tab set entirely (see
+// inspector/types.ts) rather than reusing InspectorTab — its five tabs
+// don't map onto Transform/Style/Symmetry/Motion's field groupings, and the
+// mesh's shared document-wide Camera controls live in SceneTab instead of a
+// sixth per-mesh tab.
+type Mesh3dTab = 'transform' | 'geometry' | 'texture' | 'deform' | 'symmetry';
 
 export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi: ExportApi; liveOutputApi: LiveOutputApi }) {
   const appMode = useStore(s => s.appMode);
@@ -42,11 +54,21 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
   const onDuplicatePolygon = useStore(s => s.duplicatePolygon);
   const onMovePolygonUp = useStore(s => s.movePolygonUp);
   const onMovePolygonDown = useStore(s => s.movePolygonDown);
+  const mesh3dLayers = useStore(s => s.mesh3dLayers);
+  const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
+  const onUpdateMesh3d = useStore(s => s.updateMesh3d);
+  const onDeleteMesh3d = useStore(s => s.deleteMesh3d);
+  const onDuplicateMesh3d = useStore(s => s.duplicateMesh3d);
+  const onMoveMesh3dUp = useStore(s => s.moveMesh3dUp);
+  const onMoveMesh3dDown = useStore(s => s.moveMesh3dDown);
+  const onUploadMesh3dTexture = useStore(s => s.uploadMesh3dTexture);
 
   const [tab, setTab] = useState<InspectorTab>('primary');
+  const [mesh3dTab, setMesh3dTab] = useState<Mesh3dTab>('transform');
 
   const selectedLayer = layers.find(l => l.id === selectedLayerId);
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
+  const selectedMesh = mesh3dLayers.find(m => m.id === selectedMesh3dId);
 
   const subject: InspectorSubject | null = appMode === 'symmetry'
     ? (selectedLayer ? { kind: 'layer', layer: selectedLayer, onChange: (updates) => onUpdateLayer(selectedLayer.id, updates) } : null)
@@ -59,6 +81,14 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
     { value: 'style', label: 'Style' },
     { value: 'symmetry', label: 'Symmetry' },
     { value: 'motion', label: 'Motion' }
+  ];
+
+  const mesh3dTabOptions: SegmentedOption<Mesh3dTab>[] = [
+    { value: 'transform', label: 'Transform' },
+    { value: 'geometry', label: 'Geometry' },
+    { value: 'texture', label: 'Texture' },
+    { value: 'deform', label: 'Deform' },
+    { value: 'symmetry', label: 'Symmetry' }
   ];
 
   const { width, collapsed, toggleCollapsed, startResize } = usePanelState(INSPECTOR_PANEL_DEFAULTS);
@@ -81,7 +111,40 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
     <div className="relative bg-gray-900 border-l border-gray-800 flex flex-col h-screen text-gray-200 shrink-0" style={{ width }}>
       <ResizeHandle side="right" panelLabel="Inspector panel" onResizeStart={startResize} onCollapse={toggleCollapsed} />
       <div className="flex-1 overflow-y-auto min-h-0">
-        {subject ? (
+        {appMode === '3d' ? (
+          selectedMesh ? (
+            <div className="p-3 flex flex-col">
+              <SubjectHeader
+                name={selectedMesh.name}
+                hidden={selectedMesh.hidden}
+                onRename={(name) => onUpdateMesh3d(selectedMesh.id, { name })}
+                onToggleHidden={() => onUpdateMesh3d(selectedMesh.id, { hidden: !selectedMesh.hidden })}
+                onDuplicate={() => onDuplicateMesh3d(selectedMesh.id)}
+                onMoveUp={() => onMoveMesh3dUp(selectedMesh.id)}
+                onMoveDown={() => onMoveMesh3dDown(selectedMesh.id)}
+                onDelete={() => onDeleteMesh3d(selectedMesh.id)}
+              />
+
+              <Segmented
+                label="Mesh properties"
+                className="mb-3 border-b border-gray-800 pb-2"
+                value={mesh3dTab}
+                onChange={setMesh3dTab}
+                options={mesh3dTabOptions}
+              />
+
+              <div>
+                {mesh3dTab === 'transform' && <Transform3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} />}
+                {mesh3dTab === 'geometry' && <Geometry3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} />}
+                {mesh3dTab === 'texture' && <Texture3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} onUploadTexture={onUploadMesh3dTexture} />}
+                {mesh3dTab === 'deform' && <Deform3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} />}
+                {mesh3dTab === 'symmetry' && <Symmetry3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} />}
+              </div>
+            </div>
+          ) : (
+            <SceneTab />
+          )
+        ) : subject ? (
           <div className="p-3 flex flex-col">
             <SubjectHeader
               name={subject.kind === 'layer' ? subject.layer.name : subject.polygon.name}

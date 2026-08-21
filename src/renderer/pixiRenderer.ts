@@ -275,7 +275,11 @@ export class PixiSceneRenderer {
     this.mesh3dSprite.position.set(width / 2, height / 2);
     this.mesh3dSprite.width = width;
     this.mesh3dSprite.height = height;
-    this.mesh3dSprite.scale.y *= -1;
+    // Assign the flip absolutely, never as `*= -1`: Pixi's width/height
+    // setters preserve the existing scale sign, so a relative flip toggles
+    // on and off once per sync and makes the composite alternate between
+    // upright and mirrored frames.
+    this.mesh3dSprite.scale.y = -Math.abs(this.mesh3dSprite.scale.y);
   }
 
   private syncMasterFx(t: number, state: RenderState, width: number, height: number) {

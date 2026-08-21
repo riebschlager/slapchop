@@ -244,6 +244,7 @@ export class ThreeSceneRenderer {
       node.geometry.setAttribute('normal', new THREE.BufferAttribute(node.baseGeometry.normals.slice(), 3));
       node.geometry.setAttribute('uv', new THREE.BufferAttribute(node.baseGeometry.uvs, 2));
       node.geometry.setIndex(new THREE.BufferAttribute(node.baseGeometry.indices, 1));
+      node.geometry.computeBoundingSphere();
       node.geometryKey = geometryKey;
     }
 
@@ -253,6 +254,11 @@ export class ThreeSceneRenderer {
       (node.geometry.attributes.normal as THREE.BufferAttribute).set(deformed.normals);
       node.geometry.attributes.position.needsUpdate = true;
       node.geometry.attributes.normal.needsUpdate = true;
+      // Three only derives a bounding sphere lazily, and never re-derives it
+      // when an attribute's contents change; without this, frustum culling
+      // keeps testing the undeformed bounds and pops deformed meshes in and
+      // out of view as they animate.
+      node.geometry.computeBoundingSphere();
     }
 
     const texture = this.resolveTexture(layer, t);
@@ -278,7 +284,11 @@ export class ThreeSceneRenderer {
       mesh.visible = true;
       mesh.material = node.material;
       anchor.position.set(inst.x + layer.pivotX, inst.y + layer.pivotY, inst.z + layer.pivotZ);
-      anchor.rotation.set(inst.rotationXDeg * DEG, inst.rotationYDeg * DEG, inst.rotationZDeg * DEG, 'XYZ');
+      // 'ZYX' is the Euler order whose matrix is Rz*Ry*Rx, matching
+      // mat4.ts's buildMeshWorldMatrix exactly; Three's default 'XYZ' is
+      // Rx*Ry*Rz, which orients differently as soon as two of the three
+      // angles are non-zero and breaks parity with the Canvas 2D path.
+      anchor.rotation.set(inst.rotationXDeg * DEG, inst.rotationYDeg * DEG, inst.rotationZDeg * DEG, 'ZYX');
       anchor.scale.set(inst.scaleX, inst.scaleY, inst.scaleZ);
       mesh.position.set(-layer.pivotX, -layer.pivotY, -layer.pivotZ);
     }

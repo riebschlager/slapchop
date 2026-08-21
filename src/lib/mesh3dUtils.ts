@@ -72,3 +72,17 @@ export function createMesh3dPresetName(primitive: Mesh3dPrimitive, existingCount
   const label = primitive === 'extruded-polygon' ? 'Extruded Polygon' : primitive === 'custom-mesh' ? 'Custom Mesh' : primitive;
   return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${existingCount + 1}`;
 }
+
+// Shared between StackPanel's "Add Mesh" preset grid and Mesh3dRow's list
+// thumbnail, so the two stay visually consistent without importing one
+// component from the other.
+export const MESH3D_PRIMITIVE_EMOJI: Record<Mesh3dPrimitive, string> = {
+  plane: '▭',
+  box: '🧊',
+  cylinder: '🥫',
+  torus: '🍩',
+  sphere: '🔮',
+  ribbon: '🎀',
+  'extruded-polygon': '⬡',
+  'custom-mesh': '🧩'
+};

@@ -114,8 +114,12 @@ export function generateBoxGeometry(
     { w: width, h: height, rotate: ([x, y, z]) => [-x, y, -z], translate: [0, 0, -halfD] }, // -Z back
     { w: depth, h: height, rotate: ([x, y, z]) => [z, y, -x], translate: [halfW, 0, 0] }, // +X right
     { w: depth, h: height, rotate: ([x, y, z]) => [-z, y, x], translate: [-halfW, 0, 0] }, // -X left
-    { w: width, h: depth, rotate: ([x, y, z]) => [x, -z, y], translate: [0, halfH, 0] }, // +Y bottom (canvas y-down)
-    { w: width, h: depth, rotate: ([x, y, z]) => [x, z, -y], translate: [0, -halfH, 0] } // -Y top
+    // These two were swapped: both mapped the canonical +Z normal to point
+    // *into* the box (bottom's normal came out -Y, top's came out +Y)
+    // instead of outward, since each face needs the OTHER's rotation to
+    // land its outward normal on its own translate axis.
+    { w: width, h: depth, rotate: ([x, y, z]) => [x, z, -y], translate: [0, halfH, 0] }, // +Y bottom (canvas y-down)
+    { w: width, h: depth, rotate: ([x, y, z]) => [x, -z, y], translate: [0, -halfH, 0] } // -Y top
   ];
 
   const positions: number[] = [];

@@ -111,3 +111,38 @@ describe('vec helpers', () => {
     expect(vecNormalize([3, 4, 0])).toEqual([0.6, 0.8, 0]);
   });
 });
+
+describe('renderer parity: buildMeshWorldMatrix vs Three Object3D', () => {
+  // threeRenderer.ts builds the same transform out of Three's own
+  // Group/Mesh nodes rather than this module, so the Euler order it picks
+  // has to be the one whose matrix equals buildMeshWorldMatrix's
+  // Rz*Ry*Rx composition. Anything else silently diverges the GPU and CPU
+  // 3D paths as soon as two rotation axes are in play at once.
+  it('matches Three ZYX Euler rotation about a pivot, with scale', async () => {
+    const THREE = await import('three');
+
+    const position: [number, number, number] = [120, -40, 30];
+    const pivot: [number, number, number] = [25, 60, -10];
+    const rot: [number, number, number] = [0.4, -0.9, 1.3];
+    const scale: [number, number, number] = [1.4, 0.7, -1.1];
+
+    const world = buildMeshWorldMatrix(position, pivot, rot[0], rot[1], rot[2], scale).world;
+
+    const anchor = new THREE.Group();
+    anchor.position.set(position[0] + pivot[0], position[1] + pivot[1], position[2] + pivot[2]);
+    anchor.rotation.set(rot[0], rot[1], rot[2], 'ZYX');
+    anchor.scale.set(scale[0], scale[1], scale[2]);
+    const mesh = new THREE.Mesh();
+    mesh.position.set(-pivot[0], -pivot[1], -pivot[2]);
+    anchor.add(mesh);
+    anchor.updateMatrixWorld(true);
+
+    for (const local of [[0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100], [-70, 45, 15]] as const) {
+      const cpu = mat4TransformPoint(world, local as unknown as [number, number, number]);
+      const gpu = new THREE.Vector3(local[0], local[1], local[2]).applyMatrix4(mesh.matrixWorld);
+      expect(cpu[0]).toBeCloseTo(gpu.x, 6);
+      expect(cpu[1]).toBeCloseTo(gpu.y, 6);
+      expect(cpu[2]).toBeCloseTo(gpu.z, 6);
+    }
+  });
+});

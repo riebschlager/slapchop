@@ -222,7 +222,7 @@ export function deformGeometry(geometry: Mesh3dGeometry, layer: Mesh3dLayer, t: 
   // dimensions are a reasonable proxy for every primitive except
   // extruded-polygon (whose contour size isn't width/height/depth), which
   // is an accepted approximation for this deformer.
-  const twistExtent = layer.twistDeformer
+  const twistExtent = layer.twistDeformer?.enabled
     ? (layer.twistDeformer.axis === 'x' ? layer.width : layer.twistDeformer.axis === 'y' ? layer.height : layer.depth)
     : 0;
 
@@ -232,18 +232,23 @@ export function deformGeometry(geometry: Mesh3dGeometry, layer: Mesh3dLayer, t: 
     const nx = normals[pi], ny = normals[pi + 1], nz = normals[pi + 2];
     const u = uvs[i * 2];
 
-    if (layer.twistDeformer) {
+    // Each check must gate on .enabled, not just the config object's
+    // existence: a deformer the user has touched and then switched off
+    // still carries its config object (see Deform3dTab's enable-toggle),
+    // and hasActiveDeformer above only guarantees *some* deformer is on,
+    // not this one.
+    if (layer.twistDeformer?.enabled) {
       [x, y, z] = applyTwistDeformer(x, y, z, t, layer.twistDeformer, twistExtent);
     }
-    if (layer.sineWaveDeformer) {
+    if (layer.sineWaveDeformer?.enabled) {
       const [dx, dy, dz] = applySineWaveDeformer(x, y, z, nx, ny, nz, u, t, layer.sineWaveDeformer);
       x += dx; y += dy; z += dz;
     }
-    if (layer.noiseDeformer) {
+    if (layer.noiseDeformer?.enabled) {
       const [dx, dy, dz] = applyNoiseDeformer(x, y, z, nx, ny, nz, t, layer.noiseDeformer);
       x += dx; y += dy; z += dz;
     }
-    if (layer.vertexJelly) {
+    if (layer.vertexJelly?.enabled) {
       const [dx, dy, dz] = applyVertexJelly(nx, ny, nz, i, t, layer.vertexJelly);
       x += dx; y += dy; z += dz;
     }

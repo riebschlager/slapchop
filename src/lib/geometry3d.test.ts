@@ -91,6 +91,24 @@ describe('generateBoxGeometry', () => {
       expect(Math.abs(geo.positions[i + 2])).toBeLessThanOrEqual(25 + 1e-4);
     }
   });
+
+  // Regression test: the +Y/-Y (top/bottom) faces once had their per-face
+  // rotation swapped, which left their normals pointing into the box
+  // instead of away from it — a bug `expectValidGeometry`'s unit-length
+  // check can't catch, since an inward normal is still unit length. Every
+  // vertex sits on a single face of a box centered at the origin, so its
+  // normal and its own position vector should point into the same
+  // half-space (a strictly positive dot product); an inward-facing normal
+  // fails this for every vertex on that face.
+  it('every vertex normal points away from the box center, not into it', () => {
+    const geo = generateBoxGeometry(200, 150, 100, 1, 1);
+    for (let i = 0; i < geo.positions.length; i += 3) {
+      const px = geo.positions[i], py = geo.positions[i + 1], pz = geo.positions[i + 2];
+      const nx = geo.normals[i], ny = geo.normals[i + 1], nz = geo.normals[i + 2];
+      const dot = px * nx + py * ny + pz * nz;
+      expect(dot).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('generateCylinderGeometry', () => {
