@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BlendMode, Camera3dConfig, GifData, Mesh3dLayer } from '../types';
-import { generateMesh3dGeometry, Mesh3dGeometry } from '../lib/geometry3d';
+import { generateMesh3dGeometry, Mesh3dGeometry, reverseTriangleWinding } from '../lib/geometry3d';
 import { deformGeometry } from '../lib/deformation3d';
 import { getMesh3dInstances, resolveCameraPose } from '../lib/motion3d';
 import { getGifFrameIndexAtTime } from '../lib/gifUtils';
@@ -243,7 +243,14 @@ export class ThreeSceneRenderer {
       node.geometry.setAttribute('position', new THREE.BufferAttribute(node.baseGeometry.positions.slice(), 3));
       node.geometry.setAttribute('normal', new THREE.BufferAttribute(node.baseGeometry.normals.slice(), 3));
       node.geometry.setAttribute('uv', new THREE.BufferAttribute(node.baseGeometry.uvs, 2));
-      node.geometry.setIndex(new THREE.BufferAttribute(node.baseGeometry.indices, 1));
+      // Three culls by its own counter-clockwise-is-front rule, but the
+      // composited output is flipped vertically (see the module comment), and
+      // that reflection reverses apparent winding. Without this, Three keeps
+      // the faces pointing *away* from the camera: the silhouette still looks
+      // right for a convex mesh, but every visible surface is lit by ambient
+      // light alone because its normal faces backwards, which reads as a flat,
+      // unshaded blob.
+      node.geometry.setIndex(new THREE.BufferAttribute(reverseTriangleWinding(node.baseGeometry.indices), 1));
       node.geometry.computeBoundingSphere();
       node.geometryKey = geometryKey;
     }

@@ -524,6 +524,28 @@ export function generateMesh3dGeometry(layer: Mesh3dLayer): Mesh3dGeometry {
 }
 
 /**
+ * Reverses each triangle's vertex order, flipping which side of every face a
+ * renderer considers front-facing without touching a single vertex position.
+ *
+ * Needed because this app's 3D geometry is authored for a mirrored
+ * presentation: render2d.ts maps NDC straight to canvas pixels (no top/bottom
+ * flip) and pixiRenderer.ts flips the composited Three.js output vertically,
+ * both of which reflect the image. A reflection reverses apparent winding, so a
+ * renderer that culls by standard counter-clockwise-is-front rules — Three.js —
+ * needs the opposite winding from what the generators emit. See
+ * threeRenderer.ts, the only caller.
+ */
+export function reverseTriangleWinding(indices: Uint32Array): Uint32Array {
+  const flipped = new Uint32Array(indices.length);
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    flipped[i] = indices[i];
+    flipped[i + 1] = indices[i + 2];
+    flipped[i + 2] = indices[i + 1];
+  }
+  return flipped;
+}
+
+/**
  * Recomputes vertex normals from scratch via face-normal accumulation.
  * Used after vertex deformation, where analytic normals no longer apply.
  */

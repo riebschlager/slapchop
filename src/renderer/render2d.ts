@@ -1,10 +1,11 @@
 import { AppMode, Camera3dConfig, Layer, MasterFxConfig, Mesh3dLayer, PolygonLayer, PolygonPoint } from '../types';
 import { getGifFrameAtTime } from '../lib/gifUtils';
 import { applyMotion, getDeformedPoints, getInstances, getModulatedLayer, getPolygonSymmetryTransforms, resolveSymmetryParams } from '../lib/motion';
-import { getMesh3dInstances, resolveCameraPose } from '../lib/motion3d';
+import { getMesh3dInstances } from '../lib/motion3d';
 import { generateMesh3dGeometry } from '../lib/geometry3d';
 import { deformGeometry } from '../lib/deformation3d';
-import { buildMeshWorldMatrix, mat4LookAt, mat4TransformPoint, Vec3, vecCross, vecNormalize, vecSub } from '../lib/mat4';
+import { buildMeshWorldMatrix, mat4TransformPoint, Vec3, vecCross, vecNormalize, vecSub } from '../lib/mat4';
+import { createScreen3dProjector, ScreenPoint } from '../lib/project3d';
 import { getVoronoiCells } from '../lib/voronoi';
 
 export const CANVAS_WIDTH = 1080;
@@ -422,10 +423,11 @@ interface ProjectedTri3d {
  * so it exists to keep the scene legible without a GPU, not for visual
  * parity with threeRenderer.ts.
  *
- * Uses a plain up=(0,1,0) camera (see mat4LookAt) and maps NDC directly to
- * canvas pixels without the usual top/bottom flip, which is what makes
- * world +Y land toward the bottom of the canvas here — consistent with the
- * rest of the app's Y-down convention despite the "standard" camera math.
+ * Projection itself lives in project3d.ts (shared with the interactive
+ * viewport): a plain up=(0,1,0) camera whose NDC maps directly to canvas
+ * pixels without the usual top/bottom flip, which is what makes world +Y land
+ * toward the bottom of the canvas here — consistent with the rest of the app's
+ * Y-down convention despite the "standard" camera math.
  */
 function renderMesh3dScene(
   ctx: CanvasRenderingContext2D,
@@ -435,29 +437,7 @@ function renderMesh3dScene(
   width: number,
   height: number
 ) {
-  const pose = resolveCameraPose(camera3dRaw, t);
-  const eye: Vec3 = [pose.eyeX, pose.eyeY, pose.eyeZ];
-  const target: Vec3 = [pose.targetX, pose.targetY, pose.targetZ];
-  const view = mat4LookAt(eye, target, pose.rollRad);
-  const fovRad = (pose.fovDeg * Math.PI) / 180;
-  const aspect = width / height;
-  const tanHalfFov = Math.tan(fovRad / 2);
-  const halfHeightWorld = pose.distance * tanHalfFov;
-
-  const project = (world: Vec3): { x: number; y: number; viewZ: number } | null => {
-    const v = mat4TransformPoint(view, world);
-    let ndcX: number, ndcY: number;
-    if (pose.projection === 'orthographic') {
-      ndcX = v[0] / (halfHeightWorld * aspect);
-      ndcY = v[1] / halfHeightWorld;
-    } else {
-      const denom = -v[2];
-      if (denom <= 1e-3) return null; // behind or at the camera; dropped rather than clipped
-      ndcX = v[0] / denom / tanHalfFov / aspect;
-      ndcY = v[1] / denom / tanHalfFov;
-    }
-    return { x: (ndcX * 0.5 + 0.5) * width, y: (ndcY * 0.5 + 0.5) * height, viewZ: v[2] };
-  };
+  const { eye, project } = createScreen3dProjector(camera3dRaw, t, width, height);
 
   const triangles: ProjectedTri3d[] = [];
 
@@ -479,7 +459,7 @@ function renderMesh3dScene(
       );
 
       const worldPositions: Vec3[] = new Array(vertexCount);
-      const projected: ({ x: number; y: number; viewZ: number } | null)[] = new Array(vertexCount);
+      const projected: (ScreenPoint | null)[] = new Array(vertexCount);
       for (let i = 0; i < vertexCount; i++) {
         const local: Vec3 = [deformed.positions[i * 3], deformed.positions[i * 3 + 1], deformed.positions[i * 3 + 2]];
         const world = mat4TransformPoint(worldMatrix, local);

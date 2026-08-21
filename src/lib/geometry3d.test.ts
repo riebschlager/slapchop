@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  reverseTriangleWinding,
   generateBoxGeometry,
   generateCylinderGeometry,
   generateExtrudedPolygonGeometry,
@@ -248,5 +249,40 @@ describe('generateMesh3dGeometry', () => {
     const expected = generatePlaneGeometry(200, 300, 3, 2);
     expect(geo.positions).toEqual(expected.positions);
     expect(geo.indices).toEqual(expected.indices);
+  });
+});
+
+describe('reverseTriangleWinding', () => {
+  it('reverses each triangle independently, keeping the first vertex fixed', () => {
+    const out = reverseTriangleWinding(new Uint32Array([0, 1, 2, 3, 4, 5]));
+    expect(Array.from(out)).toEqual([0, 2, 1, 3, 5, 4]);
+  });
+
+  it('round-trips: reversing twice restores the original winding', () => {
+    const original = new Uint32Array([7, 1, 4, 9, 2, 0, 5, 5, 8]);
+    expect(Array.from(reverseTriangleWinding(reverseTriangleWinding(original)))).toEqual(Array.from(original));
+  });
+
+  it('flips the sign of every triangle\'s signed area, which is what culling reads', () => {
+    // A single triangle in the XY plane; the shoelace sign is exactly what a
+    // rasterizer uses to decide front vs back facing.
+    const positions = [0, 0, 10, 0, 0, 10];
+    const signedArea = (idx: Uint32Array) => {
+      const [a, b, c] = [idx[0], idx[1], idx[2]];
+      const ax = positions[a * 2], ay = positions[a * 2 + 1];
+      const bx = positions[b * 2], by = positions[b * 2 + 1];
+      const cx = positions[c * 2], cy = positions[c * 2 + 1];
+      return ax * (by - cy) + bx * (cy - ay) + cx * (ay - by);
+    };
+    const original = new Uint32Array([0, 1, 2]);
+    expect(Math.sign(signedArea(reverseTriangleWinding(original)))).toBe(-Math.sign(signedArea(original)));
+  });
+
+  it('leaves the geometry itself intact — every index still refers to a real vertex', () => {
+    const geo = generateBoxGeometry(200, 200, 200, 2, 2);
+    const flipped = reverseTriangleWinding(geo.indices);
+    expect(flipped.length).toBe(geo.indices.length);
+    expect(new Set(flipped).size).toBe(new Set(geo.indices).size);
+    for (const i of flipped) expect(i).toBeLessThan(geo.positions.length / 3);
   });
 });
