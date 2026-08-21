@@ -1,4 +1,4 @@
-import { PolygonPoint } from '../types';
+import { Mesh3dLayer, PolygonPoint } from '../types';
 
 // Parametric mesh generators for 3D Mesh Mode. Every generator is a pure
 // function of its numeric/shape arguments so a given (primitive, params)
@@ -486,6 +486,37 @@ export function generateExtrudedPolygonGeometry(contour: PolygonPoint[], depth: 
   }
 
   return buildGeometry(positions, normals, uvs, indices);
+}
+
+/**
+ * Dispatches a Mesh3dLayer's authored geometry fields to the matching
+ * generator above. The single entry point both renderers (threeRenderer.ts,
+ * render2d.ts's 3D fallback) call for a layer's undeformed base geometry, so
+ * "which fields mean what for which primitive" lives in one place.
+ *
+ * 'custom-mesh' has no dedicated generator yet (importing an external mesh
+ * file is out of scope for this pass, see the 3D mode implementation plan);
+ * it falls back to a box using the layer's own dimensions as a visible
+ * placeholder rather than silently rendering nothing.
+ */
+export function generateMesh3dGeometry(layer: Mesh3dLayer): Mesh3dGeometry {
+  switch (layer.primitive) {
+    case 'plane':
+      return generatePlaneGeometry(layer.width, layer.height, layer.subdivisionX, layer.subdivisionY);
+    case 'ribbon':
+      return generateRibbonGeometry(layer.width, layer.height, layer.subdivisionX);
+    case 'box':
+    case 'custom-mesh':
+      return generateBoxGeometry(layer.width, layer.height, layer.depth, layer.subdivisionX, layer.subdivisionY);
+    case 'cylinder':
+      return generateCylinderGeometry(layer.width / 2, layer.width / 2, layer.height, layer.subdivisionX, layer.subdivisionY, false);
+    case 'torus':
+      return generateTorusGeometry(layer.width / 2, layer.depth / 2, layer.subdivisionX, layer.subdivisionY);
+    case 'sphere':
+      return generateSphereGeometry(layer.width / 2, layer.subdivisionX, layer.subdivisionY);
+    case 'extruded-polygon':
+      return generateExtrudedPolygonGeometry(layer.contour ?? [], layer.depth);
+  }
 }
 
 /**

@@ -1,6 +1,10 @@
-import { AppMode, Layer, MasterFxConfig, PolygonLayer, PolygonPoint } from '../types';
+import { AppMode, Camera3dConfig, Layer, MasterFxConfig, Mesh3dLayer, PolygonLayer, PolygonPoint } from '../types';
 import { getGifFrameAtTime } from '../lib/gifUtils';
 import { applyMotion, getDeformedPoints, getInstances, getModulatedLayer, getPolygonSymmetryTransforms, resolveSymmetryParams } from '../lib/motion';
+import { getMesh3dInstances, resolveCameraPose } from '../lib/motion3d';
+import { generateMesh3dGeometry } from '../lib/geometry3d';
+import { deformGeometry } from '../lib/deformation3d';
+import { buildMeshWorldMatrix, mat4LookAt, mat4TransformPoint, Vec3, vecCross, vecNormalize, vecSub } from '../lib/mat4';
 import { getVoronoiCells } from '../lib/voronoi';
 
 export const CANVAS_WIDTH = 1080;
@@ -10,6 +14,8 @@ export interface RenderState {
   appMode: AppMode;
   layers: Layer[];
   polygonLayers: PolygonLayer[];
+  mesh3dLayers: Mesh3dLayer[];
+  camera3d: Camera3dConfig;
   canvasBg: string;
   masterFx?: MasterFxConfig;
 }
@@ -388,11 +394,155 @@ export function renderFrame(
       if (polygon.hidden) return;
       renderPolygon(ctx, polygon, t, width, height);
     });
+  } else if (state.appMode === '3d') {
+    renderMesh3dScene(ctx, t, state.mesh3dLayers, state.camera3d, width, height);
   }
 
   if (state.masterFx?.enabled) {
     applyMasterFx2D(ctx, t, state.masterFx, width, height);
   }
+}
+
+interface ProjectedTri3d {
+  points: [[number, number], [number, number], [number, number]];
+  depth: number; // view-space z (more negative = farther); sort ascending for painter's algorithm
+  fillColor: string;
+  strokeColor?: string;
+  strokeWidth: number;
+  wireframeOnly: boolean;
+}
+
+/**
+ * Software fallback for 3D Mesh Mode (`?renderer=2d`): projects every mesh's
+ * deformed geometry per symmetry instance, depth-sorts every resulting
+ * triangle across the whole scene (Painter's algorithm), and fills each
+ * with a flat, single-headlight-shaded color. Unlike the rest of this file's
+ * 2D fallback, this intentionally doesn't attempt texture mapping or smooth
+ * shading — see the 3D mode implementation plan's scope for render2d.ts —
+ * so it exists to keep the scene legible without a GPU, not for visual
+ * parity with threeRenderer.ts.
+ *
+ * Uses a plain up=(0,1,0) camera (see mat4LookAt) and maps NDC directly to
+ * canvas pixels without the usual top/bottom flip, which is what makes
+ * world +Y land toward the bottom of the canvas here — consistent with the
+ * rest of the app's Y-down convention despite the "standard" camera math.
+ */
+function renderMesh3dScene(
+  ctx: CanvasRenderingContext2D,
+  t: number,
+  mesh3dLayers: Mesh3dLayer[],
+  camera3dRaw: Camera3dConfig,
+  width: number,
+  height: number
+) {
+  const pose = resolveCameraPose(camera3dRaw, t);
+  const eye: Vec3 = [pose.eyeX, pose.eyeY, pose.eyeZ];
+  const target: Vec3 = [pose.targetX, pose.targetY, pose.targetZ];
+  const view = mat4LookAt(eye, target, pose.rollRad);
+  const fovRad = (pose.fovDeg * Math.PI) / 180;
+  const aspect = width / height;
+  const tanHalfFov = Math.tan(fovRad / 2);
+  const halfHeightWorld = pose.distance * tanHalfFov;
+
+  const project = (world: Vec3): { x: number; y: number; viewZ: number } | null => {
+    const v = mat4TransformPoint(view, world);
+    let ndcX: number, ndcY: number;
+    if (pose.projection === 'orthographic') {
+      ndcX = v[0] / (halfHeightWorld * aspect);
+      ndcY = v[1] / halfHeightWorld;
+    } else {
+      const denom = -v[2];
+      if (denom <= 1e-3) return null; // behind or at the camera; dropped rather than clipped
+      ndcX = v[0] / denom / tanHalfFov / aspect;
+      ndcY = v[1] / denom / tanHalfFov;
+    }
+    return { x: (ndcX * 0.5 + 0.5) * width, y: (ndcY * 0.5 + 0.5) * height, viewZ: v[2] };
+  };
+
+  const triangles: ProjectedTri3d[] = [];
+
+  for (const layer of mesh3dLayers) {
+    if (layer.hidden) continue;
+    const base = generateMesh3dGeometry(layer);
+    const deformed = deformGeometry(base, layer, t);
+    const vertexCount = deformed.positions.length / 3;
+    const fillColor = layer.fillColor || '#6366f1';
+
+    for (const inst of getMesh3dInstances(layer, t)) {
+      const { world: worldMatrix } = buildMeshWorldMatrix(
+        [inst.x, inst.y, inst.z],
+        [layer.pivotX, layer.pivotY, layer.pivotZ],
+        (inst.rotationXDeg * Math.PI) / 180,
+        (inst.rotationYDeg * Math.PI) / 180,
+        (inst.rotationZDeg * Math.PI) / 180,
+        [inst.scaleX, inst.scaleY, inst.scaleZ]
+      );
+
+      const worldPositions: Vec3[] = new Array(vertexCount);
+      const projected: ({ x: number; y: number; viewZ: number } | null)[] = new Array(vertexCount);
+      for (let i = 0; i < vertexCount; i++) {
+        const local: Vec3 = [deformed.positions[i * 3], deformed.positions[i * 3 + 1], deformed.positions[i * 3 + 2]];
+        const world = mat4TransformPoint(worldMatrix, local);
+        worldPositions[i] = world;
+        projected[i] = project(world);
+      }
+
+      for (let idx = 0; idx < deformed.indices.length; idx += 3) {
+        const ia = deformed.indices[idx], ib = deformed.indices[idx + 1], ic = deformed.indices[idx + 2];
+        const pa = projected[ia], pb = projected[ib], pc = projected[ic];
+        if (!pa || !pb || !pc) continue;
+
+        // Screen-space shoelace: a front-facing triangle (as wound by
+        // geometry3d.ts, seen by a camera at rest) comes out negative under
+        // this projection. Mirrored instances flip winding naturally here
+        // since this reads the actual post-transform screen positions, not
+        // the source topology, so culling stays correct for them too.
+        const signedArea = pa.x * (pb.y - pc.y) + pb.x * (pc.y - pa.y) + pc.x * (pa.y - pb.y);
+        if (!layer.doubleSided && signedArea > 0) continue;
+
+        const wa = worldPositions[ia], wb = worldPositions[ib], wc = worldPositions[ic];
+        const faceNormal = vecNormalize(vecCross(vecSub(wb, wa), vecSub(wc, wa)));
+        const toEye = vecNormalize(vecSub(eye, wa));
+        const facing = Math.max(
+          0.2,
+          Math.abs(faceNormal[0] * toEye[0] + faceNormal[1] * toEye[1] + faceNormal[2] * toEye[2])
+        );
+
+        triangles.push({
+          points: [[pa.x, pa.y], [pb.x, pb.y], [pc.x, pc.y]],
+          depth: (pa.viewZ + pb.viewZ + pc.viewZ) / 3,
+          fillColor: shadeColor(fillColor, facing),
+          strokeColor: layer.wireframe ? layer.wireframeColor : undefined,
+          strokeWidth: layer.wireframeWidth,
+          wireframeOnly: layer.wireframe
+        });
+      }
+    }
+  }
+
+  triangles.sort((a, b) => a.depth - b.depth);
+
+  for (const tri of triangles) {
+    ctx.beginPath();
+    ctx.moveTo(tri.points[0][0], tri.points[0][1]);
+    ctx.lineTo(tri.points[1][0], tri.points[1][1]);
+    ctx.lineTo(tri.points[2][0], tri.points[2][1]);
+    ctx.closePath();
+    if (tri.wireframeOnly) {
+      ctx.lineWidth = tri.strokeWidth;
+      ctx.strokeStyle = tri.strokeColor!;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = tri.fillColor;
+      ctx.fill();
+    }
+  }
+}
+
+function shadeColor(hex: string, factor: number): string {
+  const [r, g, b] = parseHexColor(hex);
+  const f = Math.max(0, Math.min(1, factor));
+  return `rgb(${Math.round(r * f)}, ${Math.round(g * f)}, ${Math.round(b * f)})`;
 }
 
 function parseHexColor(hex: string): [number, number, number] {

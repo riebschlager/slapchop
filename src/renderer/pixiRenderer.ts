@@ -1,6 +1,7 @@
 import {
   autoDetectRenderer,
   BlurFilter,
+  CanvasSource,
   ColorMatrixFilter,
   Container,
   Filter,
@@ -31,6 +32,7 @@ import {
 } from '../lib/motion';
 import { getVoronoiCells, VoronoiCell } from '../lib/voronoi';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage, getLayerSize } from './render2d';
+import type { ThreeSceneRenderer } from './threeRenderer';
 
 // The app's BlendMode strings are identical to Pixi's names. The advanced set
 // ('color-dodge', 'color-burn', 'saturation', 'color', 'luminosity') comes from
@@ -112,6 +114,19 @@ export class PixiSceneRenderer {
   private root = new Container();
   private symContainer = new Container();
   private polyContainer = new Container();
+  private mesh3dSprite = new Sprite();
+
+  // Lazily created (and lazily *imported* — three.js is a ~600KB dependency
+  // that only users who touch 3D mode should ever download) on first use.
+  // The 3D scene renders to its own offscreen canvas (see threeRenderer.ts);
+  // mesh3dTexture wraps that canvas as a Pixi texture so the 3D output
+  // composites through the same Master FX stack.
+  private three: ThreeSceneRenderer | null = null;
+  private threeLoading: Promise<void> | null = null;
+  private destroyed = false;
+  private mesh3dTexture: Texture<CanvasSource> | null = null;
+  private mesh3dTexW = 0;
+  private mesh3dTexH = 0;
 
   private symNodes = new Map<string, SymmetryNode>();
   private polyNodes = new Map<string, PolygonNode>();
@@ -134,8 +149,9 @@ export class PixiSceneRenderer {
 
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
-    this.stage.addChild(this.bg, this.root);
+    this.stage.addChild(this.bg, this.root, this.mesh3dSprite);
     this.root.addChild(this.symContainer, this.polyContainer);
+    this.mesh3dSprite.visible = false;
   }
 
   static async create(canvas: HTMLCanvasElement): Promise<PixiSceneRenderer> {
@@ -175,10 +191,13 @@ export class PixiSceneRenderer {
   }
 
   destroy() {
+    this.destroyed = true;
     for (const arr of this.gifTextures.values()) arr.forEach((tx) => tx.destroy(true));
     this.gifTextures.clear();
     for (const tx of this.staticTextures.values()) tx.destroy(true);
     this.staticTextures.clear();
+    this.three?.destroy();
+    this.mesh3dTexture?.destroy(true);
     this.rgbSplitFilter.destroy();
     this.duotoneFilter.destroy();
     this.scanlinesFilter.destroy();
@@ -195,15 +214,19 @@ export class PixiSceneRenderer {
     this.layout(width, height, state.canvasBg);
 
     const symVisible = state.appMode === 'symmetry';
+    const mesh3dVisible = state.appMode === '3d';
     this.symContainer.visible = symVisible;
-    this.polyContainer.visible = !symVisible;
+    this.polyContainer.visible = !symVisible && !mesh3dVisible;
+    this.mesh3dSprite.visible = mesh3dVisible;
 
-    // Node membership tracks the document in both modes so deletions (and
-    // undo of deletions) are handled even while the other mode is active.
+    // Node membership tracks the document in every mode so deletions (and
+    // undo of deletions) are handled even while another mode is active.
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (symVisible) {
+    if (mesh3dVisible) {
+      this.syncMesh3d(t, state, width, height);
+    } else if (symVisible) {
       state.layers.forEach((layer) => this.syncSymmetryLayer(this.symNodes.get(layer.id)!, layer, t));
     } else {
       state.polygonLayers.forEach((poly) => this.syncPolygon(this.polyNodes.get(poly.id)!, poly, t));
@@ -211,6 +234,48 @@ export class PixiSceneRenderer {
 
     this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  // -------------------------------------------------------------------- 3D mode
+
+  /**
+   * Renders the 3D scene into its own offscreen canvas (threeRenderer.ts)
+   * and composites that canvas as a single full-frame sprite, so the 3D
+   * output still passes through the Master FX filter stack below. The
+   * sprite is flipped vertically because Three renders with a standard
+   * Y-up camera while the rest of this app treats +Y as down — see
+   * threeRenderer.ts's module comment for why the flip lives here instead
+   * of inside the 3D scene's own transforms.
+   */
+  private syncMesh3d(t: number, state: RenderState, width: number, height: number) {
+    if (!this.three) {
+      if (!this.threeLoading) {
+        this.threeLoading = import('./threeRenderer').then((mod) => {
+          if (this.destroyed) return;
+          this.three = mod.ThreeSceneRenderer.create();
+        });
+      }
+      // Still loading three.js: nothing to composite yet this frame, the
+      // sprite just keeps showing nothing (Texture.EMPTY) until it resolves.
+      return;
+    }
+    const canvas = this.three.renderToCanvas(t, state.mesh3dLayers, state.camera3d, width, height);
+
+    if (!this.mesh3dTexture) {
+      this.mesh3dTexture = new Texture({ source: new CanvasSource({ resource: canvas, width, height }) });
+      this.mesh3dSprite.texture = this.mesh3dTexture;
+    } else if (this.mesh3dTexW !== width || this.mesh3dTexH !== height) {
+      this.mesh3dTexture.source.resize(width, height, 1);
+    }
+    this.mesh3dTexW = width;
+    this.mesh3dTexH = height;
+    this.mesh3dTexture.source.update();
+
+    this.mesh3dSprite.anchor.set(0.5);
+    this.mesh3dSprite.position.set(width / 2, height / 2);
+    this.mesh3dSprite.width = width;
+    this.mesh3dSprite.height = height;
+    this.mesh3dSprite.scale.y *= -1;
   }
 
   private syncMasterFx(t: number, state: RenderState, width: number, height: number) {

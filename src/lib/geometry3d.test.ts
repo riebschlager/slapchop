@@ -3,6 +3,7 @@ import {
   generateBoxGeometry,
   generateCylinderGeometry,
   generateExtrudedPolygonGeometry,
+  generateMesh3dGeometry,
   generatePlaneGeometry,
   generateRibbonGeometry,
   generateSphereGeometry,
@@ -10,6 +11,8 @@ import {
   recomputeNormals,
   triangulatePolygon
 } from './geometry3d';
+import { createMesh3dLayer } from './mesh3dUtils';
+import { Mesh3dPrimitive } from '../types';
 
 function expectValidGeometry(geo: { positions: Float32Array; normals: Float32Array; uvs: Float32Array; indices: Uint32Array }) {
   const vertexCount = geo.positions.length / 3;
@@ -206,5 +209,26 @@ describe('recomputeNormals', () => {
     }
     // Triangle lies in the XY plane, so its normal should point along +/-Z.
     expect(Math.abs(normals[2])).toBeCloseTo(1, 4);
+  });
+});
+
+describe('generateMesh3dGeometry', () => {
+  const primitives: Mesh3dPrimitive[] = ['plane', 'box', 'cylinder', 'torus', 'sphere', 'ribbon', 'extruded-polygon', 'custom-mesh'];
+
+  it('produces valid, non-empty geometry for every primitive using its preset defaults', () => {
+    for (const primitive of primitives) {
+      const layer = createMesh3dLayer('Test', primitive);
+      const geo = generateMesh3dGeometry(layer);
+      expect(geo.positions.length).toBeGreaterThan(0);
+      expectValidGeometry(geo);
+    }
+  });
+
+  it('matches the dedicated generator for a plane', () => {
+    const layer = createMesh3dLayer('Plane', 'plane', { width: 200, height: 300, subdivisionX: 3, subdivisionY: 2 });
+    const geo = generateMesh3dGeometry(layer);
+    const expected = generatePlaneGeometry(200, 300, 3, 2);
+    expect(geo.positions).toEqual(expected.positions);
+    expect(geo.indices).toEqual(expected.indices);
   });
 });

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen } from 'lucide-react';
+import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
@@ -11,14 +11,29 @@ import ResizeHandle from '../controls/ResizeHandle';
 import { usePanelState } from '../../hooks/usePanelState';
 import LayerRow from './LayerRow';
 import PolygonRow from './PolygonRow';
+import { Mesh3dPrimitive } from '../../types';
 
 const STACK_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:stack', defaultWidth: 264, minWidth: 200, maxWidth: 420, side: 'left' as const };
 
-type AppModeValue = 'symmetry' | 'polygon';
+type AppModeValue = 'symmetry' | 'polygon' | '3d';
 
 const MODE_OPTIONS: SegmentedOption<AppModeValue>[] = [
   { value: 'symmetry', label: <><Sparkles className="w-3.5 h-3.5" />Symmetry</> },
-  { value: 'polygon', label: <><Shapes className="w-3.5 h-3.5" />Tiled GIF</> }
+  { value: 'polygon', label: <><Shapes className="w-3.5 h-3.5" />Tiled GIF</> },
+  { value: '3d', label: <><Box className="w-3.5 h-3.5" />3D Space</> }
+];
+
+// [primitive, emoji, label] for the "Add Mesh" grid below. Kept as a plain
+// preset list (like the polygon shape presets above it) rather than a full
+// geometry picker UI, which belongs to the 3D inspector's Geometry tab.
+const MESH3D_PRESETS: [Mesh3dPrimitive, string, string][] = [
+  ['plane', '▭', 'Plane'],
+  ['box', '🧊', 'Box'],
+  ['cylinder', '🥫', 'Cylinder'],
+  ['torus', '🍩', 'Torus'],
+  ['sphere', '🔮', 'Sphere'],
+  ['ribbon', '🎀', 'Ribbon'],
+  ['extruded-polygon', '⬡', 'Extruded']
 ];
 
 export default function StackPanel() {
@@ -43,6 +58,12 @@ export default function StackPanel() {
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
   const onToggleDrawPolygon = useStore(s => s.toggleDrawPolygon);
   const onUploadPolygonTexture = useStore(s => s.uploadPolygonTexture);
+  const mesh3dLayers = useStore(s => s.mesh3dLayers);
+  const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
+  const onSelectMesh3d = useStore(s => s.selectMesh3d);
+  const onAddMesh3dPreset = useStore(s => s.addMesh3dPreset);
+  const onUpdateMesh3d = useStore(s => s.updateMesh3d);
+  const onDeleteMesh3d = useStore(s => s.deleteMesh3d);
 
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -98,8 +119,12 @@ export default function StackPanel() {
   };
 
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
-  const isSceneActive = appMode === 'symmetry' ? !selectedLayerId : !selectedPolygonId;
-  const selectScene = () => (appMode === 'symmetry' ? onSelectLayer(null) : onSelectPolygon(null));
+  const isSceneActive = appMode === 'symmetry' ? !selectedLayerId : appMode === 'polygon' ? !selectedPolygonId : !selectedMesh3dId;
+  const selectScene = () => {
+    if (appMode === 'symmetry') onSelectLayer(null);
+    else if (appMode === 'polygon') onSelectPolygon(null);
+    else onSelectMesh3d(null);
+  };
 
   const { width, collapsed, toggleCollapsed, startResize } = usePanelState(STACK_PANEL_DEFAULTS);
 
@@ -301,6 +326,72 @@ export default function StackPanel() {
                 <div className="p-4 text-center text-xs text-gray-500">
                   No polygons created. Click "Draw Custom Polygon" or pick a shape preset above!
                 </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* MODE 3: 3D MESH SPACE. This is a minimal preset-add + select/hide/
+          delete list to make the renderer reachable and smoke-testable;
+          the full row (drag reorder, duplicate, texture upload per-row) and
+          the 3D inspector tabs are Component 4 of the 3D mode plan, not yet
+          built. */}
+      {appMode === '3d' && (
+        <>
+          <div className="p-3 border-b border-gray-800 space-y-3 shrink-0">
+            <div>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Add Mesh</label>
+              <div className="grid grid-cols-4 gap-1">
+                {MESH3D_PRESETS.map(([primitive, emoji, label]) => (
+                  <button
+                    key={primitive}
+                    onClick={() => onAddMesh3dPreset(primitive)}
+                    className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                    title={label}
+                  >
+                    <span className="text-xs">{emoji}</span>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto min-h-0 relative">
+            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-4 py-2 border-b border-gray-800 z-10 flex items-center justify-between">
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Meshes ({mesh3dLayers.length})</label>
+            </div>
+
+            <div className="p-2 space-y-1">
+              {mesh3dLayers.map((mesh) => (
+                <div
+                  key={mesh.id}
+                  onClick={() => onSelectMesh3d(mesh.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs cursor-pointer border",
+                    selectedMesh3dId === mesh.id ? "bg-indigo-900/30 border-indigo-700 text-indigo-200" : "border-transparent hover:bg-gray-800 text-gray-300"
+                  )}
+                >
+                  <span className="flex-1 truncate">{mesh.name}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onUpdateMesh3d(mesh.id, { hidden: !mesh.hidden }); }}
+                    className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                    title={mesh.hidden ? 'Show' : 'Hide'}
+                  >
+                    {mesh.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeleteMesh3d(mesh.id); }}
+                    className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              {mesh3dLayers.length === 0 && (
+                <div className="p-4 text-center text-xs text-gray-500">No meshes yet. Add a primitive above to start.</div>
               )}
             </div>
           </div>
