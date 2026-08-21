@@ -1,12 +1,26 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
-import { AppMode, DEFAULT_MASTER_FX, Layer, MasterFxConfig, PolygonLayer, PolygonPoint } from './types';
+import {
+  AppMode,
+  Camera3dConfig,
+  DEFAULT_CAMERA3D,
+  DEFAULT_MASTER_FX,
+  Layer,
+  MasterFxConfig,
+  Mesh3dLayer,
+  Mesh3dPrimitive,
+  PolygonLayer,
+  PolygonPoint
+} from './types';
 import { parseGifFile } from './lib/gifUtils';
 import { createNewPolygonLayer, createPresetPolygonPoints } from './lib/polygonUtils';
+import { createMesh3dLayer, createMesh3dPresetName } from './lib/mesh3dUtils';
 
 export interface DocumentState {
   layers: Layer[];
   polygonLayers: PolygonLayer[];
+  mesh3dLayers: Mesh3dLayer[];
+  camera3d: Camera3dConfig;
   canvasBg: string;
   masterFx: MasterFxConfig;
 }
@@ -15,6 +29,7 @@ export interface AppState extends DocumentState {
   appMode: AppMode;
   selectedLayerId: string | null;
   selectedPolygonId: string | null;
+  selectedMesh3dId: string | null;
   isDrawingPolygon: boolean;
 
   setAppMode: (mode: AppMode) => void;
@@ -48,6 +63,18 @@ export interface AppState extends DocumentState {
   movePolygonUp: (id: string) => void;
   movePolygonDown: (id: string) => void;
   toggleDrawPolygon: () => void;
+
+  // 3D mesh layers
+  addMesh3dPreset: (primitive: Mesh3dPrimitive) => void;
+  uploadMesh3dTexture: (file: File) => Promise<void>;
+  selectMesh3d: (id: string | null) => void;
+  updateMesh3d: (id: string, updates: Partial<Mesh3dLayer>) => void;
+  deleteMesh3d: (id: string) => void;
+  duplicateMesh3d: (id: string) => void;
+  reorderMesh3d: (activeId: string, overId: string) => void;
+  moveMesh3dUp: (id: string) => void;
+  moveMesh3dDown: (id: string) => void;
+  updateCamera3d: (updates: Partial<Camera3dConfig>) => void;
 }
 
 function reorder<T extends { id: string }>(items: T[], activeId: string, overId: string): T[] {
@@ -77,11 +104,14 @@ export const useStore = create<AppState>()(
     (set, get) => ({
       layers: [],
       polygonLayers: [INITIAL_POLYGON],
+      mesh3dLayers: [],
+      camera3d: { ...DEFAULT_CAMERA3D },
       canvasBg: '#000000',
       masterFx: { ...DEFAULT_MASTER_FX },
       appMode: 'symmetry',
       selectedLayerId: null,
       selectedPolygonId: INITIAL_POLYGON.id,
+      selectedMesh3dId: null,
       isDrawingPolygon: false,
 
       setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false }),
@@ -89,10 +119,13 @@ export const useStore = create<AppState>()(
       loadDocument: (doc) => set({
         layers: doc.layers,
         polygonLayers: doc.polygonLayers,
+        mesh3dLayers: doc.mesh3dLayers ?? [],
+        camera3d: doc.camera3d ? { ...DEFAULT_CAMERA3D, ...doc.camera3d } : { ...DEFAULT_CAMERA3D },
         canvasBg: doc.canvasBg,
         masterFx: doc.masterFx ? { ...DEFAULT_MASTER_FX, ...doc.masterFx } : { ...DEFAULT_MASTER_FX },
         selectedLayerId: null,
         selectedPolygonId: null,
+        selectedMesh3dId: null,
         isDrawingPolygon: false
       }),
 
@@ -224,14 +257,73 @@ export const useStore = create<AppState>()(
         const i = s.polygonLayers.findIndex(p => p.id === id);
         return i === -1 || i >= s.polygonLayers.length - 1 ? s : { polygonLayers: swap(s.polygonLayers, i, i + 1) };
       }),
-      toggleDrawPolygon: () => set(s => ({ isDrawingPolygon: !s.isDrawingPolygon }))
+      toggleDrawPolygon: () => set(s => ({ isDrawingPolygon: !s.isDrawingPolygon })),
+
+      addMesh3dPreset: (primitive) => {
+        const name = createMesh3dPresetName(primitive, get().mesh3dLayers.length);
+        const newMesh = createMesh3dLayer(name, primitive);
+        set(s => ({ mesh3dLayers: [...s.mesh3dLayers, newMesh], selectedMesh3dId: newMesh.id }));
+      },
+      uploadMesh3dTexture: async (file) => {
+        const url = URL.createObjectURL(file);
+        const gifData = await parseGifFile(file);
+        const selectedId = get().selectedMesh3dId;
+        if (selectedId) {
+          set(s => ({
+            mesh3dLayers: s.mesh3dLayers.map(m => m.id === selectedId
+              ? { ...m, src: url, gifData: gifData || undefined }
+              : m)
+          }));
+        } else {
+          const newMesh = createMesh3dLayer(file.name, 'plane', { src: url, gifData: gifData || undefined });
+          set(s => ({ mesh3dLayers: [...s.mesh3dLayers, newMesh], selectedMesh3dId: newMesh.id }));
+        }
+      },
+      selectMesh3d: (id) => set({ selectedMesh3dId: id }),
+      updateMesh3d: (id, updates) => set(s => ({
+        mesh3dLayers: s.mesh3dLayers.map(m => m.id === id ? { ...m, ...updates } : m)
+      })),
+      deleteMesh3d: (id) => set(s => ({
+        mesh3dLayers: s.mesh3dLayers.filter(m => m.id !== id),
+        selectedMesh3dId: s.selectedMesh3dId === id ? null : s.selectedMesh3dId
+      })),
+      duplicateMesh3d: (id) => {
+        const mesh = get().mesh3dLayers.find(m => m.id === id);
+        if (!mesh) return;
+        const clone: Mesh3dLayer = {
+          ...mesh,
+          id: crypto.randomUUID(),
+          name: `${mesh.name} (Copy)`,
+          x: mesh.x + 40,
+          y: mesh.y + 40
+        };
+        set(s => ({ mesh3dLayers: [...s.mesh3dLayers, clone], selectedMesh3dId: clone.id }));
+      },
+      reorderMesh3d: (activeId, overId) => set(s => ({ mesh3dLayers: reorder(s.mesh3dLayers, activeId, overId) })),
+      moveMesh3dUp: (id) => set(s => {
+        const i = s.mesh3dLayers.findIndex(m => m.id === id);
+        return i <= 0 ? s : { mesh3dLayers: swap(s.mesh3dLayers, i, i - 1) };
+      }),
+      moveMesh3dDown: (id) => set(s => {
+        const i = s.mesh3dLayers.findIndex(m => m.id === id);
+        return i === -1 || i >= s.mesh3dLayers.length - 1 ? s : { mesh3dLayers: swap(s.mesh3dLayers, i, i + 1) };
+      }),
+      updateCamera3d: (updates) => set(s => ({ camera3d: { ...s.camera3d, ...updates } }))
     }),
     {
       // Undo history tracks the document only — selection, mode, and drawing
       // state stay outside so undo never "jumps" the UI around.
-      partialize: (s) => ({ layers: s.layers, polygonLayers: s.polygonLayers, canvasBg: s.canvasBg, masterFx: s.masterFx }),
+      partialize: (s) => ({
+        layers: s.layers,
+        polygonLayers: s.polygonLayers,
+        mesh3dLayers: s.mesh3dLayers,
+        camera3d: s.camera3d,
+        canvasBg: s.canvasBg,
+        masterFx: s.masterFx
+      }),
       equality: (a, b) =>
-        a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
+        a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.mesh3dLayers === b.mesh3dLayers
+        && a.camera3d === b.camera3d && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
       limit: 100,
       // Coalesce rapid bursts (slider scrubs) into few history entries.
       handleSet: (handleSet) => {
@@ -249,8 +341,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, canvasBg, masterFx } = useStore.getState();
-  return { layers, polygonLayers, canvasBg, masterFx };
+  const { layers, polygonLayers, mesh3dLayers, camera3d, canvasBg, masterFx } = useStore.getState();
+  return { layers, polygonLayers, mesh3dLayers, camera3d, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();

@@ -1,0 +1,210 @@
+import { describe, expect, it } from 'vitest';
+import {
+  generateBoxGeometry,
+  generateCylinderGeometry,
+  generateExtrudedPolygonGeometry,
+  generatePlaneGeometry,
+  generateRibbonGeometry,
+  generateSphereGeometry,
+  generateTorusGeometry,
+  recomputeNormals,
+  triangulatePolygon
+} from './geometry3d';
+
+function expectValidGeometry(geo: { positions: Float32Array; normals: Float32Array; uvs: Float32Array; indices: Uint32Array }) {
+  const vertexCount = geo.positions.length / 3;
+  expect(geo.positions.length % 3).toBe(0);
+  expect(geo.normals.length).toBe(geo.positions.length);
+  expect(geo.uvs.length).toBe(vertexCount * 2);
+  expect(geo.indices.length % 3).toBe(0);
+  for (const idx of geo.indices) {
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(idx).toBeLessThan(vertexCount);
+  }
+  // Every normal should be finite and roughly unit length.
+  for (let i = 0; i < geo.normals.length; i += 3) {
+    const len = Math.hypot(geo.normals[i], geo.normals[i + 1], geo.normals[i + 2]);
+    expect(Number.isFinite(len)).toBe(true);
+    expect(len).toBeGreaterThan(0.9);
+    expect(len).toBeLessThan(1.1);
+  }
+}
+
+describe('generatePlaneGeometry', () => {
+  it('produces the expected vertex and triangle counts for a subdivision grid', () => {
+    const geo = generatePlaneGeometry(400, 400, 4, 4);
+    expect(geo.positions.length / 3).toBe(5 * 5);
+    expect(geo.indices.length / 3).toBe(4 * 4 * 2);
+    expectValidGeometry(geo);
+  });
+
+  it('is centered at the origin and spans the requested width/height', () => {
+    const geo = generatePlaneGeometry(200, 100, 1, 1);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < geo.positions.length; i += 3) {
+      minX = Math.min(minX, geo.positions[i]);
+      maxX = Math.max(maxX, geo.positions[i]);
+      minY = Math.min(minY, geo.positions[i + 1]);
+      maxY = Math.max(maxY, geo.positions[i + 1]);
+    }
+    expect(minX).toBeCloseTo(-100);
+    expect(maxX).toBeCloseTo(100);
+    expect(minY).toBeCloseTo(-50);
+    expect(maxY).toBeCloseTo(50);
+  });
+
+  it('clamps degenerate subdivisions to at least 1', () => {
+    const geo = generatePlaneGeometry(100, 100, 0, -3);
+    expect(geo.positions.length / 3).toBe(2 * 2);
+  });
+
+  it('is deterministic', () => {
+    const a = generatePlaneGeometry(300, 150, 6, 3);
+    const b = generatePlaneGeometry(300, 150, 6, 3);
+    expect(a).toEqual(b);
+  });
+});
+
+describe('generateRibbonGeometry', () => {
+  it('is a single-row strip along its length', () => {
+    const geo = generateRibbonGeometry(600, 80, 10);
+    expect(geo.positions.length / 3).toBe(11 * 2);
+    expectValidGeometry(geo);
+  });
+});
+
+describe('generateBoxGeometry', () => {
+  it('produces six faces worth of vertices with outward unit normals', () => {
+    const geo = generateBoxGeometry(200, 200, 200, 1, 1);
+    expect(geo.positions.length / 3).toBe(6 * 4);
+    expectValidGeometry(geo);
+  });
+
+  it('keeps every vertex on the box surface (within half-extent bounds)', () => {
+    const geo = generateBoxGeometry(200, 100, 50, 2, 2);
+    for (let i = 0; i < geo.positions.length; i += 3) {
+      expect(Math.abs(geo.positions[i])).toBeLessThanOrEqual(100 + 1e-4);
+      expect(Math.abs(geo.positions[i + 1])).toBeLessThanOrEqual(50 + 1e-4);
+      expect(Math.abs(geo.positions[i + 2])).toBeLessThanOrEqual(25 + 1e-4);
+    }
+  });
+});
+
+describe('generateCylinderGeometry', () => {
+  it('produces a closed side wall with caps', () => {
+    const geo = generateCylinderGeometry(100, 100, 300, 12, 4, false);
+    expectValidGeometry(geo);
+  });
+
+  it('omits caps when openEnded is true', () => {
+    const capped = generateCylinderGeometry(100, 100, 300, 12, 4, false);
+    const open = generateCylinderGeometry(100, 100, 300, 12, 4, true);
+    expect(open.positions.length).toBeLessThan(capped.positions.length);
+    expectValidGeometry(open);
+  });
+
+  it('supports a truncated cone via differing radii', () => {
+    const geo = generateCylinderGeometry(0, 100, 200, 16, 4, false);
+    // Top ring (radiusTop=0) should collapse toward the axis.
+    let minRadiusAtTop = Infinity;
+    for (let i = 0; i < geo.positions.length; i += 3) {
+      const y = geo.positions[i + 1];
+      if (y < -99) {
+        minRadiusAtTop = Math.min(minRadiusAtTop, Math.hypot(geo.positions[i], geo.positions[i + 2]));
+      }
+    }
+    expect(minRadiusAtTop).toBeCloseTo(0, 4);
+    expectValidGeometry(geo);
+  });
+});
+
+describe('generateTorusGeometry', () => {
+  it('produces a valid closed ring', () => {
+    const geo = generateTorusGeometry(200, 60, 12, 24);
+    expectValidGeometry(geo);
+  });
+
+  it('keeps every vertex within [radius - tube, radius + tube] of the center axis', () => {
+    const geo = generateTorusGeometry(200, 60, 12, 24);
+    for (let i = 0; i < geo.positions.length; i += 3) {
+      const dist = Math.hypot(geo.positions[i], geo.positions[i + 2]);
+      expect(dist).toBeGreaterThanOrEqual(200 - 60 - 1e-3);
+      expect(dist).toBeLessThanOrEqual(200 + 60 + 1e-3);
+    }
+  });
+});
+
+describe('generateSphereGeometry', () => {
+  it('places every vertex at the sphere radius from the origin', () => {
+    const geo = generateSphereGeometry(150, 16, 12);
+    for (let i = 0; i < geo.positions.length; i += 3) {
+      const dist = Math.hypot(geo.positions[i], geo.positions[i + 1], geo.positions[i + 2]);
+      expect(dist).toBeCloseTo(150, 3);
+    }
+    expectValidGeometry(geo);
+  });
+});
+
+describe('triangulatePolygon', () => {
+  it('triangulates a convex quad into two triangles covering all vertices', () => {
+    const square = [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }];
+    const tris = triangulatePolygon(square);
+    expect(tris.length).toBe(6);
+    expect(new Set(tris)).toEqual(new Set([0, 1, 2, 3]));
+  });
+
+  it('triangulates a non-convex (star-like) polygon without throwing', () => {
+    const points = [];
+    for (let i = 0; i < 10; i++) {
+      const angle = (i * Math.PI) / 5 - Math.PI / 2;
+      const r = i % 2 === 0 ? 100 : 45;
+      points.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r });
+    }
+    const tris = triangulatePolygon(points);
+    expect(tris.length).toBe((points.length - 2) * 3);
+  });
+
+  it('handles clockwise-wound input the same as counter-clockwise', () => {
+    const ccw = [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }];
+    const cw = [...ccw].reverse();
+    expect(triangulatePolygon(cw).length).toBe(triangulatePolygon(ccw).length);
+  });
+
+  it('returns nothing for fewer than 3 points', () => {
+    expect(triangulatePolygon([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toEqual([]);
+  });
+});
+
+describe('generateExtrudedPolygonGeometry', () => {
+  it('produces front cap, back cap, and side walls for a triangle', () => {
+    const contour = [{ x: 0, y: -50 }, { x: 43, y: 25 }, { x: -43, y: 25 }];
+    const geo = generateExtrudedPolygonGeometry(contour, 40);
+    // 2 caps of 3 verts + 3 side-wall quads of 4 verts each.
+    expect(geo.positions.length / 3).toBe(3 * 2 + 3 * 4);
+    expectValidGeometry(geo);
+  });
+
+  it('keeps cap vertices at +-depth/2', () => {
+    const contour = [{ x: -10, y: -10 }, { x: 10, y: -10 }, { x: 10, y: 10 }, { x: -10, y: 10 }];
+    const geo = generateExtrudedPolygonGeometry(contour, 60);
+    const zValues = new Set<number>();
+    for (let i = 0; i < contour.length * 2; i++) {
+      zValues.add(Math.round(geo.positions[i * 3 + 2]));
+    }
+    expect(zValues.has(30)).toBe(true);
+    expect(zValues.has(-30)).toBe(true);
+  });
+});
+
+describe('recomputeNormals', () => {
+  it('produces unit-length normals for a simple triangle', () => {
+    const positions = Float32Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const indices = Uint32Array.from([0, 1, 2]);
+    const normals = recomputeNormals(positions, indices);
+    for (let i = 0; i < normals.length; i += 3) {
+      expect(Math.hypot(normals[i], normals[i + 1], normals[i + 2])).toBeCloseTo(1, 4);
+    }
+    // Triangle lies in the XY plane, so its normal should point along +/-Z.
+    expect(Math.abs(normals[2])).toBeCloseTo(1, 4);
+  });
+});

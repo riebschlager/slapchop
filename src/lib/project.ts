@@ -1,6 +1,6 @@
 import { DocumentState, clearHistory, getDocumentSnapshot, useStore } from '../store';
 import { saveBlob } from './native';
-import { DEFAULT_MASTER_FX, Layer, MasterFxConfig, PolygonLayer } from '../types';
+import { Camera3dConfig, DEFAULT_CAMERA3D, DEFAULT_MASTER_FX, Layer, MasterFxConfig, Mesh3dLayer, PolygonLayer } from '../types';
 import { parseGifFile } from './gifUtils';
 
 // .slapchop project file: the document state as JSON, with every image/GIF
@@ -14,6 +14,7 @@ interface ProjectAsset {
 
 type SerializedLayer = Omit<Layer, 'src' | 'gifData'> & { assetId: string };
 type SerializedPolygon = Omit<PolygonLayer, 'src' | 'gifData'> & { assetId?: string };
+type SerializedMesh3d = Omit<Mesh3dLayer, 'src' | 'gifData'> & { assetId?: string };
 
 interface ProjectFileV1 {
   app: 'slapchop';
@@ -25,6 +26,24 @@ interface ProjectFileV1 {
   polygonLayers: SerializedPolygon[];
   assets: Record<string, ProjectAsset>;
 }
+
+// V2 adds 3D Mesh Mode's layers and camera. Reading a V1 file simply treats
+// it as V2 with an empty mesh3dLayers array and the default camera — no
+// migration step needed since the new fields are purely additive.
+interface ProjectFileV2 {
+  app: 'slapchop';
+  version: 2;
+  savedAt: string;
+  canvasBg: string;
+  masterFx?: MasterFxConfig;
+  layers: SerializedLayer[];
+  polygonLayers: SerializedPolygon[];
+  mesh3dLayers: SerializedMesh3d[];
+  camera3d?: Camera3dConfig;
+  assets: Record<string, ProjectAsset>;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2;
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -73,14 +92,26 @@ export async function saveProject(): Promise<void> {
     });
   }
 
-  const payload: ProjectFileV1 = {
+  const mesh3dLayers: SerializedMesh3d[] = [];
+  for (const mesh of doc.mesh3dLayers) {
+    const { src, gifData, ...rest } = mesh;
+    void gifData;
+    mesh3dLayers.push({
+      ...rest,
+      assetId: src ? await assetIdFor(src, mesh.name) : undefined
+    });
+  }
+
+  const payload: ProjectFileV2 = {
     app: 'slapchop',
-    version: 1,
+    version: 2,
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
     masterFx: doc.masterFx,
     layers,
     polygonLayers,
+    mesh3dLayers,
+    camera3d: doc.camera3d,
     assets
   };
 
@@ -89,8 +120,8 @@ export async function saveProject(): Promise<void> {
 }
 
 export async function openProject(file: File): Promise<void> {
-  const payload = JSON.parse(await file.text()) as ProjectFileV1;
-  if (payload.app !== 'slapchop' || payload.version !== 1) {
+  const payload = JSON.parse(await file.text()) as ProjectFile;
+  if (payload.app !== 'slapchop' || (payload.version !== 1 && payload.version !== 2)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -116,6 +147,19 @@ export async function openProject(file: File): Promise<void> {
     return { ...rest, src: asset?.src, gifData: asset?.gifData };
   });
 
+  // V1 files predate 3D Mesh Mode entirely: no mesh3dLayers key, default camera.
+  const mesh3dLayers: Mesh3dLayer[] = payload.version === 2
+    ? payload.mesh3dLayers.map((sm) => {
+      const { assetId, ...rest } = sm;
+      const asset = assetId ? materialized.get(assetId) : undefined;
+      return { ...rest, src: asset?.src, gifData: asset?.gifData };
+    })
+    : [];
+
+  const camera3d: Camera3dConfig = payload.version === 2 && payload.camera3d
+    ? { ...DEFAULT_CAMERA3D, ...payload.camera3d }
+    : { ...DEFAULT_CAMERA3D };
+
   const masterFx: MasterFxConfig = payload.masterFx
     ? { ...DEFAULT_MASTER_FX, ...payload.masterFx }
     : { ...DEFAULT_MASTER_FX };
@@ -123,6 +167,8 @@ export async function openProject(file: File): Promise<void> {
   const doc: DocumentState = {
     layers,
     polygonLayers,
+    mesh3dLayers,
+    camera3d,
     canvasBg: payload.canvasBg,
     masterFx
   };
