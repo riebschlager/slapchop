@@ -6,23 +6,21 @@ import { openProject, saveProject } from '../../lib/project';
 import { isNative, openProjectViaDialog } from '../../lib/native';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import Segmented, { SegmentedOption } from '../controls/Segmented';
+import ModePicker, { ModeOption } from '../controls/ModePicker';
 import ResizeHandle from '../controls/ResizeHandle';
 import { usePanelState } from '../../hooks/usePanelState';
 import LayerRow from './LayerRow';
 import PolygonRow from './PolygonRow';
 import Mesh3dRow from './Mesh3dRow';
-import { Mesh3dPrimitive } from '../../types';
+import { AppMode, Mesh3dPrimitive } from '../../types';
 import { MESH3D_PRIMITIVE_EMOJI } from '../../lib/mesh3dUtils';
 
 const STACK_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:stack', defaultWidth: 264, minWidth: 200, maxWidth: 420, side: 'left' as const };
 
-type AppModeValue = 'symmetry' | 'polygon' | '3d';
-
-const MODE_OPTIONS: SegmentedOption<AppModeValue>[] = [
-  { value: 'symmetry', label: <><Sparkles className="w-3.5 h-3.5" />Symmetry</> },
-  { value: 'polygon', label: <><Shapes className="w-3.5 h-3.5" />Tiled GIF</> },
-  { value: '3d', label: <><Box className="w-3.5 h-3.5" />3D Space</> }
+const MODE_OPTIONS: ModeOption<AppMode>[] = [
+  { value: 'symmetry', label: 'Symmetry', description: 'Layered mirrors & radial repeats', icon: Sparkles },
+  { value: 'polygon', label: 'Tiled GIF', description: 'Texture-filled polygon mosaics', icon: Shapes },
+  { value: '3d', label: '3D Space', description: 'Textured meshes & camera depth', icon: Box }
 ];
 
 // [primitive, label] for the "Add Mesh" grid below. Kept as a plain preset
@@ -197,9 +195,7 @@ export default function StackPanel() {
            </div>
          </div>
 
-         {/* Mode Switcher Buttons */}
-         <Segmented
-           variant="mode"
+         <ModePicker
            label="Editing mode"
            className="mt-3"
            value={appMode}
