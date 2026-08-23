@@ -23,6 +23,7 @@ Do not edit generated or vendored output in `dist/`, `node_modules/`, `src-tauri
 
 ## Architectural invariants
 
+- Treat each creative mode as an independent product surface. Modes share the 1080 x 1920 output platform, not a required feature set, inspector shape, or document model. Do not add a concept to another mode for parity or generalize unlike concepts to force reuse; see `docs/architecture/mode-independence.md`.
 - Keep the 1080 x 1920 design coordinate system and center-origin layer/polygon coordinates. Scale only at the render or interaction boundary.
 - Live playback and offline export must use the same rendering semantics. Rendering should remain a deterministic function of `(time, document state)`; never base exported frames on wall-clock timing or React render cadence.
 - Keep PixiJS and Canvas 2D behavior aligned when changing geometry, motion, opacity, visibility, ordering, textures, or blend modes. Test the fallback with `?renderer=2d`.
@@ -35,16 +36,18 @@ Do not edit generated or vendored output in `dist/`, `node_modules/`, `src-tauri
 ## Implementation conventions
 
 - Follow the existing TypeScript style: ES modules, single quotes, semicolons, two-space indentation, functional React components, and explicit shared types.
-- Put shared domain models in `src/types.ts`, document mutations in `src/store.ts`, and reusable or testable logic in `src/lib/`.
+- Keep platform-wide domain models in `src/types.ts` while the current aggregate architecture remains. As mode modules are extracted, put mode-owned models and mutations with their mode; use `src/lib/` for reusable or testable logic whose semantics are genuinely shared.
 - Keep pure calculations separate from DOM, PixiJS, Tauri, and encoding side effects. Add or update a colocated `*.test.ts` when changing pure behavior or fixing a regression.
 - Build inspector controls from the `src/components/controls/` primitives instead of hand-rolling range or select markup, so density, focus styling, and label association stay tunable in one place. `Slider` covers the three existing densities via `size`; reach for its `*ClassName` overrides only for a genuinely emphasized control.
 - Use existing Tailwind utilities and `cn()` for UI styling, and Lucide for interface icons. Preserve the compact dark desktop-tool aesthetic and keyboard accessibility.
 - Do not paper over failures with broad catches, unchecked casts, or silent fallbacks. Include useful context in user-visible errors and keep intentional fallback behavior narrow.
 - Comments should explain timing, coordinate, compatibility, or lifecycle constraints—not restate the code.
 
-When adding or changing a document feature, trace the whole path as applicable:
+When adding or changing a document feature, trace the whole path within the
+owning mode as applicable. Do not mirror the feature into other modes without a
+separate product reason:
 
-1. shared type and defaults;
+1. mode-owned type and defaults;
 2. store mutation and undo behavior;
 3. UI control and interaction;
 4. PixiJS and Canvas 2D rendering;

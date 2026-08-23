@@ -44,6 +44,7 @@ interface ProjectFileV2 {
 }
 
 type ProjectFile = ProjectFileV1 | ProjectFileV2;
+type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -126,7 +127,7 @@ export async function openProject(file: File): Promise<void> {
   }
 
   // Materialize each asset once: data URL -> object URL (+ re-parsed GIF data)
-  const materialized = new Map<string, { src: string; gifData?: Layer['gifData'] }>();
+  const materialized = new Map<string, MaterializedAsset>();
   for (const [id, asset] of Object.entries(payload.assets)) {
     const blob = await (await fetch(asset.dataUrl)).blob();
     const assetFile = new File([blob], asset.name, { type: asset.type });
@@ -135,6 +136,18 @@ export async function openProject(file: File): Promise<void> {
     materialized.set(id, { src, gifData: gifData || undefined });
   }
 
+  const doc = restoreProjectDocument(payload, materialized);
+  useStore.getState().loadDocument(doc);
+  clearHistory();
+}
+
+// Pure compatibility boundary: asset I/O happens before this function, while
+// persisted mode fields are copied without reinterpretation. Keeping it pure
+// makes legacy-format behavior testable as mode UIs begin to diverge.
+export function restoreProjectDocument(
+  payload: ProjectFile,
+  materialized: ReadonlyMap<string, MaterializedAsset> = new Map()
+): DocumentState {
   const layers: Layer[] = payload.layers.map((sl) => {
     const { assetId, ...rest } = sl;
     const asset = materialized.get(assetId);
@@ -164,7 +177,7 @@ export async function openProject(file: File): Promise<void> {
     ? { ...DEFAULT_MASTER_FX, ...payload.masterFx }
     : { ...DEFAULT_MASTER_FX };
 
-  const doc: DocumentState = {
+  return {
     layers,
     polygonLayers,
     mesh3dLayers,
@@ -172,6 +185,4 @@ export async function openProject(file: File): Promise<void> {
     canvasBg: payload.canvasBg,
     masterFx
   };
-  useStore.getState().loadDocument(doc);
-  clearHistory();
 }

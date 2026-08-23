@@ -2,18 +2,6 @@ import { SymmetryType, SymmetryParams, WallpaperLattice, DEFAULT_SYMMETRY_PARAMS
 import Select, { SelectOption } from './Select';
 import Slider from './Slider';
 
-const SYMMETRY_OPTIONS: SelectOption<SymmetryType>[] = [
-  { value: 'none', label: 'None' },
-  { value: 'mirror-x', label: 'Horizontal Mirror' },
-  { value: 'mirror-y', label: 'Vertical Mirror' },
-  { value: 'quad', label: 'Quadrant' },
-  { value: 'radial', label: 'Radial (Kaleidoscope)' },
-  { value: 'spiral', label: 'Spiral (Droste)' },
-  { value: 'wallpaper', label: 'Wallpaper Tiling' },
-  { value: 'poincare', label: 'Poincaré Disk' },
-  { value: 'voronoi', label: 'Voronoi Shards' },
-];
-
 const WALLPAPER_LATTICE_OPTIONS: SelectOption<WallpaperLattice>[] = [
   { value: 'p3', label: 'P3 — Triangular' },
   { value: 'p4m', label: 'P4M — Square + Mirror' },
@@ -21,17 +9,19 @@ const WALLPAPER_LATTICE_OPTIONS: SelectOption<WallpaperLattice>[] = [
 ];
 
 /**
- * Shared symmetry controls, reused by both the Layer and PolygonLayer
- * inspectors — same field names on both document types (see types.ts), so
- * one editor + one onChange shape works for either via updateLayer/
- * updatePolygon. Each mode's extra knobs live in symmetryParams.
+ * Parameter editor for the repeat/partition implementation the two current
+ * 2D modes still share. Each owning mode supplies its own product vocabulary
+ * and available choices; sharing this control does not imply feature parity.
  */
 export default function SymmetryEditor({
-  symmetry, radialSegments, symmetryParams, onChange
+  symmetry, radialSegments, symmetryParams, options, selectLabel, originHint, onChange
 }: {
   symmetry: SymmetryType;
   radialSegments: number;
   symmetryParams?: SymmetryParams;
+  options: readonly SelectOption<SymmetryType>[];
+  selectLabel: string;
+  originHint: string;
   onChange: (updates: Partial<{ symmetry: SymmetryType; radialSegments: number; symmetryParams: SymmetryParams }>) => void;
 }) {
   const params = { ...DEFAULT_SYMMETRY_PARAMS, ...symmetryParams };
@@ -40,9 +30,9 @@ export default function SymmetryEditor({
   return (
     <>
       <Select
-        label="Symmetry Engine"
+        label={selectLabel}
         value={symmetry}
-        options={SYMMETRY_OPTIONS}
+        options={options}
         onChange={(v) => onChange({ symmetry: v })}
       />
 
@@ -148,7 +138,7 @@ export default function SymmetryEditor({
 
       {symmetry !== 'none' && symmetry !== 'voronoi' && (
         <div className="pt-1 text-[10px] text-gray-500">
-          Drag the amber origin handle on canvas to re-center this symmetry.
+          {originHint}
         </div>
       )}
     </>

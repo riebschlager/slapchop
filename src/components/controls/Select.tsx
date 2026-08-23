@@ -4,6 +4,7 @@ import { cn } from '../../lib/utils';
 export interface SelectOption<T extends string> {
   value: T;
   label: string;
+  disabled?: boolean;
 }
 
 export interface SelectProps<T extends string> {
@@ -29,7 +30,7 @@ export default function Select<T extends string>({ label, value, options, onChan
           'outline-none focus:ring-1 focus:ring-indigo-500'
         )}
       >
-        {options.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+        {options.map((opt) => <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.label}</option>)}
       </select>
     </div>
   );

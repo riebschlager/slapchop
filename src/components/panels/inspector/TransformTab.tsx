@@ -1,9 +1,8 @@
 import Slider from '../../controls/Slider';
 import { Layer } from '../../../types';
 
-// Layer-only: occupies the Inspector's first tab position for Symmetry-mode
-// selections. Symmetry itself now lives in the shared SymmetryTab rather
-// than buried here, so this holds only the two true transform sliders.
+// Symmetry-mode layer transform controls. Mode composition lives in
+// SymmetryModeInspector; this leaf stays focused on the two transform fields.
 export default function TransformTab({ layer, onChange }: { layer: Layer; onChange: (updates: Partial<Layer>) => void }) {
   return (
     <div className="space-y-3">

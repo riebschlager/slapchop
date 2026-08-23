@@ -1,6 +1,9 @@
 # slapchop
 
-A generative art canvas for layering images and animated GIFs with symmetry, blend modes, and motion modulation — plus a polygon tiler that fills arbitrary shapes with repeating (animated) textures. Renders to a 1080×1920 canvas and exports still images, frame sequences, and video.
+A local-first generative motion studio made of independent creative modes. Each
+mode can use the tools and concepts that fit its workflow while sharing a
+1080×1920 output surface and still-image, frame-sequence, video, and live-output
+pipelines.
 
 ## Run locally
 
@@ -37,9 +40,20 @@ lives at `src-tauri/binaries/ffmpeg-aarch64-apple-darwin` (a static arm64 build)
 
 ## Modes
 
+Modes are peer tools, not variations of one common scene model. They do not need
+feature parity, matching inspectors, or equivalent document fields. Shared code
+is reserved for platform capabilities and concepts whose behavior is genuinely
+the same. See [Independent creative modes](docs/architecture/mode-independence.md)
+for the product decision and incremental architecture direction.
+
 - **Symmetry canvas** — drop images/GIFs as layers; each layer has position/rotation/scale, mirror/quad/radial symmetry, blend mode, opacity, and sine/noise motion modulators.
-- **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture with animatable scale, rotation, and offset.
-- **Master FX & Shader pipeline** — real-time post-processing shaders including chromatic aberration (RGB split), duotone/gradient mapping, CRT scanlines, film grain, bloom/glow, and color grading with motion modulation and one-click aesthetic presets.
+- **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture, mode-owned repeat patterns and Voronoi partitioning, and animatable scale, rotation, and offset.
+- **3D space** — textured meshes, camera depth, 3D deformation, spatial symmetry, and animated transforms.
+
+Modes may opt into shared output effects. The current **Master FX & Shader
+pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,
+CRT scanlines, film grain, bloom/glow, and color grading with motion modulation
+and one-click aesthetic presets.
 
 ## Rendering
 

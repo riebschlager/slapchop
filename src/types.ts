@@ -26,10 +26,10 @@ export interface PolygonLayer {
   motionTextureRotation?: MotionConfig;
   motionTextureOffsetX?: MotionConfig;
   motionTextureOffsetY?: MotionConfig;
-  // Symmetry is shared with Layer: same field names/shapes so a single
-  // <SymmetryEditor> UI and the shared getSymmetryTransforms() engine work
-  // for both. Optional so old saved polygons (which predate this feature)
-  // default cleanly to 'none' instead of requiring a file migration.
+  // Legacy persisted name for Polygon mode's repeat/partition pattern. The
+  // current renderer still reuses transform math with Layer where semantics
+  // match, while Voronoi is polygon-owned product behavior. Optional so old
+  // saved polygons default cleanly to 'none' without a file migration.
   symmetry?: SymmetryType;
   radialSegments?: number;
   symmetryParams?: SymmetryParams;
@@ -46,10 +46,10 @@ export type SymmetryType =
 
 export type WallpaperLattice = 'p3' | 'p4m' | 'p6';
 
-// Extra per-mode knobs shared by every symmetry type on both Layer and
-// PolygonLayer. originX/originY re-center all modes on a draggable anchor
-// instead of the canvas origin. Fields are grouped by the mode that reads
-// them; unused fields for the active mode are simply ignored.
+// Compatibility shape for the current Layer symmetry and Polygon pattern
+// renderers. Fields are grouped by the operation that reads them; unused
+// fields are ignored. A later project migration may split this shape once the
+// mode-owned schemas no longer need to read V1/V2 data directly.
 export interface SymmetryParams {
   originX: number;
   originY: number;
@@ -439,4 +439,3 @@ export const DEFAULT_CAMERA3D: Camera3dConfig = {
   targetZ: 0,
   projection: 'perspective'
 };
-

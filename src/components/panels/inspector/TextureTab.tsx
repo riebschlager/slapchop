@@ -6,10 +6,8 @@ import { PolygonLayer } from '../../../types';
 const TEXTURE_SCALE_PRESETS = [0.25, 0.5, 1.0, 2.0, 4.0];
 const GIF_SPEED_PRESETS = [0.25, 0.5, 1.0, 2.0, 3.0];
 
-// Polygon-only: occupies the same first tab position TransformTab uses for
-// Symmetry-mode layers, since a polygon's own geometry is edited on canvas
-// via its points rather than scale/rotation sliders — what this tab exposes
-// is the fill texture's transform instead.
+// Polygon-mode texture controls. A polygon's geometry is edited on canvas via
+// its points, so this tab owns only its fill texture transform and playback.
 export default function TextureTab({ polygon, onChange }: { polygon: PolygonLayer; onChange: (updates: Partial<PolygonLayer>) => void }) {
   return (
     <div className="space-y-3">
