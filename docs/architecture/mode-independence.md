@@ -96,7 +96,7 @@ large plugin framework immediately.
 | 2D inspector | `InspectorSubject` and shared tabs align Layer and Polygon concepts | Prefer dedicated mode inspectors; reuse leaf controls such as sliders or blend selectors where semantics match |
 | Rendering | `RenderState` contains every mode and renderers switch on `appMode` | Dispatch a mode-specific render snapshot through a small renderer contract |
 | Export | Export snapshots the entire aggregate document | Snapshot only the active mode and pass its frame producer to the shared encoders |
-| Persistence | Project V2 has top-level arrays/config for all modes | Evolve toward independently versioned mode payloads inside a backward-compatible workspace envelope |
+| Persistence | Project V3 has top-level arrays/config for all modes | Evolve toward independently versioned mode payloads inside a backward-compatible workspace envelope |
 | Cross-mode reuse | Shared fields make behavior appear automatically portable | Use explicit adapters for intentional copy/import flows; document unsupported or lossy mappings |
 
 ## Incremental migration path
@@ -116,7 +116,7 @@ large plugin framework immediately.
    another mode.
 5. **Version mode payloads.** Add a new project-file version only when the
    internal separation provides enough value to justify migration code. Read V1
-   and V2 through compatibility adapters and preserve assets.
+   through V3 through compatibility adapters and preserve assets.
 6. **Retire accidental abstractions.** Once compatibility paths exist, split
    the global symmetry model. Polygon Voronoi can become a polygon operation,
    while Symmetry keeps only transformations that fit its layer workflow.
@@ -145,6 +145,12 @@ tab composition and choice lists. Voronoi is offered as a Polygon pattern and
 is unavailable for new Symmetry layers. Existing Symmetry layers with persisted
 Voronoi settings remain visible as legacy content and continue to load, render,
 and save without a project-version change.
+
+GIF Flythrough was subsequently added as a separate folder-library mode with a
+mode-owned seeded particle model and Three.js renderer. It shares deterministic
+time, export, Master FX, and native/browser file boundaries, but not the 3D mesh
+mode's editable mesh or camera schemas. Project V3 embeds its GIF source library
+without persisting local folder paths; V1 and V2 remain readable.
 
 ## Guardrails
 

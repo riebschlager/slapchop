@@ -118,6 +118,16 @@ export async function imageFilesFromPaths(paths: string[]): Promise<File[]> {
   return Promise.all(imagePaths.map(fileFromPath));
 }
 
+/** Pick one folder and return its top-level GIF files in stable name order. */
+export async function pickGifFolder(): Promise<File[] | null> {
+  if (!isNative()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const path = await open({ multiple: false, directory: true });
+  if (typeof path !== 'string') return null;
+  const files = await imageFilesFromPaths([path]);
+  return files.filter(file => file.name.toLowerCase().endsWith('.gif'));
+}
+
 function isEditingText(): boolean {
   const el = document.activeElement;
   return el instanceof HTMLInputElement

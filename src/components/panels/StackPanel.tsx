@@ -1,9 +1,9 @@
-import React, { useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2 } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
-import { isNative, openProjectViaDialog } from '../../lib/native';
+import { isNative, openProjectViaDialog, pickGifFolder } from '../../lib/native';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import ModePicker, { ModeOption } from '../controls/ModePicker';
@@ -20,7 +20,8 @@ const STACK_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:stack', defaultWidth:
 const MODE_OPTIONS: ModeOption<AppMode>[] = [
   { value: 'symmetry', label: 'Symmetry', description: 'Layered mirrors & radial repeats', icon: Sparkles },
   { value: 'polygon', label: 'Tiled GIF', description: 'Texture-filled polygon mosaics', icon: Shapes },
-  { value: '3d', label: '3D Space', description: 'Textured meshes & camera depth', icon: Box }
+  { value: '3d', label: '3D Space', description: 'Textured meshes & camera depth', icon: Box },
+  { value: 'flythrough', label: 'GIF Flythrough', description: 'Folder-fed planes rushing through space', icon: Rocket }
 ];
 
 // [primitive, label] for the "Add Mesh" grid below. Kept as a plain preset
@@ -69,8 +70,21 @@ export default function StackPanel() {
   const onDuplicateMesh3d = useStore(s => s.duplicateMesh3d);
   const onReorderMesh3d = useStore(s => s.reorderMesh3d);
   const onUploadMesh3dTexture = useStore(s => s.uploadMesh3dTexture);
+  const flythroughAssets = useStore(s => s.flythroughAssets);
+  const onReplaceFlythroughAssets = useStore(s => s.replaceFlythroughAssets);
+  const onRemoveFlythroughAsset = useStore(s => s.removeFlythroughAsset);
+  const onClearFlythroughAssets = useStore(s => s.clearFlythroughAssets);
 
   const projectFileInputRef = useRef<HTMLInputElement>(null);
+  const flythroughFolderInputRef = useRef<HTMLInputElement>(null);
+  const flythroughFilesInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const input = flythroughFolderInputRef.current;
+    if (!input) return;
+    input.setAttribute('webkitdirectory', '');
+    input.setAttribute('directory', '');
+  }, []);
 
   const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -139,12 +153,31 @@ export default function StackPanel() {
     }
   };
 
+  const handleFlythroughFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length > 0) void onReplaceFlythroughAssets(files);
+  };
+
+  const handleChooseFlythroughFolder = async () => {
+    if (!isNative()) {
+      flythroughFolderInputRef.current?.click();
+      return;
+    }
+    const files = await pickGifFolder();
+    if (files) await onReplaceFlythroughAssets(files);
+  };
+
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
-  const isSceneActive = appMode === 'symmetry' ? !selectedLayerId : appMode === 'polygon' ? !selectedPolygonId : !selectedMesh3dId;
+  const isSceneActive = appMode === 'symmetry'
+    ? !selectedLayerId
+    : appMode === 'polygon'
+      ? !selectedPolygonId
+      : appMode === '3d' ? !selectedMesh3dId : true;
   const selectScene = () => {
     if (appMode === 'symmetry') onSelectLayer(null);
     else if (appMode === 'polygon') onSelectPolygon(null);
-    else onSelectMesh3d(null);
+    else if (appMode === '3d') onSelectMesh3d(null);
   };
 
   const { width, collapsed, toggleCollapsed, startResize } = usePanelState(STACK_PANEL_DEFAULTS);
@@ -401,6 +434,73 @@ export default function StackPanel() {
               </DndContext>
               {mesh3dLayers.length === 0 && (
                 <div className="p-4 text-center text-xs text-gray-500">No meshes yet. Add a primitive above to start.</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* MODE 4: GIF FLYTHROUGH */}
+      {appMode === 'flythrough' && (
+        <>
+          <div className="p-3 border-b border-cyan-950/80 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.1),transparent_62%)] shrink-0">
+            <button
+              type="button"
+              onClick={() => void handleChooseFlythroughFolder()}
+              className="group relative w-full overflow-hidden rounded-lg border border-cyan-800/70 bg-cyan-950/35 px-3 py-3 text-left hover:bg-cyan-950/55 hover:border-cyan-600/80 transition-all"
+            >
+              <div className="absolute inset-y-0 left-0 w-0.5 bg-cyan-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded bg-cyan-400/10 text-cyan-300 group-hover:text-cyan-200">
+                  <FolderInput className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-cyan-100">Choose GIF folder</div>
+                  <div className="text-[10px] text-cyan-700 mt-0.5">Replaces the current flight library</div>
+                </div>
+              </div>
+            </button>
+            <input ref={flythroughFolderInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleFlythroughFolderChange} />
+            <button
+              type="button"
+              onClick={() => flythroughFilesInputRef.current?.click()}
+              className="w-full mt-2 py-1 text-[10px] text-gray-500 hover:text-cyan-300 transition-colors"
+            >
+              Or choose individual GIF files
+            </button>
+            <input ref={flythroughFilesInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleFlythroughFolderChange} />
+          </div>
+
+          <div className="flex-1 overflow-y-auto min-h-0 relative">
+            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-4 py-2 border-b border-gray-800 z-10 flex items-center justify-between">
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Flight Library ({flythroughAssets.length})</label>
+              {flythroughAssets.length > 0 && (
+                <button type="button" onClick={onClearFlythroughAssets} className="text-[10px] text-gray-500 hover:text-red-300 transition-colors">Clear</button>
+              )}
+            </div>
+            <div className="p-2 space-y-1">
+              {flythroughAssets.map((asset, index) => (
+                <div key={asset.id} className="group flex items-center gap-2 p-1.5 rounded border border-transparent hover:border-gray-700 hover:bg-gray-800/60">
+                  <div className="relative w-10 h-10 rounded bg-black overflow-hidden border border-gray-800 shrink-0">
+                    <img src={asset.src} alt="" className="w-full h-full object-contain" />
+                    <span className="absolute bottom-0 right-0 px-1 bg-black/80 text-[8px] font-mono text-cyan-300">{String(index + 1).padStart(2, '0')}</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] text-gray-200 truncate" title={asset.name}>{asset.name}</div>
+                    <div className="text-[9px] font-mono text-gray-600">
+                      {asset.width ?? asset.gifData?.width ?? '?'}×{asset.height ?? asset.gifData?.height ?? '?'}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => onRemoveFlythroughAsset(asset.id)} className="p-1 text-gray-600 hover:text-red-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all" title={`Remove ${asset.name}`}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              {flythroughAssets.length === 0 && (
+                <div className="px-4 py-8 text-center">
+                  <Rocket className="w-6 h-6 mx-auto text-cyan-900 mb-2" />
+                  <p className="text-xs text-gray-500">Point Slapchop at a folder of GIFs to launch the field.</p>
+                </div>
               )}
             </div>
           </div>

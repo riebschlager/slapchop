@@ -4,7 +4,10 @@ import {
   AppMode,
   Camera3dConfig,
   DEFAULT_CAMERA3D,
+  DEFAULT_FLYTHROUGH,
   DEFAULT_MASTER_FX,
+  FlythroughAsset,
+  FlythroughConfig,
   Layer,
   MasterFxConfig,
   Mesh3dLayer,
@@ -21,6 +24,8 @@ export interface DocumentState {
   polygonLayers: PolygonLayer[];
   mesh3dLayers: Mesh3dLayer[];
   camera3d: Camera3dConfig;
+  flythroughAssets: FlythroughAsset[];
+  flythrough: FlythroughConfig;
   canvasBg: string;
   masterFx: MasterFxConfig;
 }
@@ -75,6 +80,13 @@ export interface AppState extends DocumentState {
   moveMesh3dUp: (id: string) => void;
   moveMesh3dDown: (id: string) => void;
   updateCamera3d: (updates: Partial<Camera3dConfig>) => void;
+
+  // GIF flythrough library and scene
+  replaceFlythroughAssets: (files: File[]) => Promise<void>;
+  removeFlythroughAsset: (id: string) => void;
+  clearFlythroughAssets: () => void;
+  updateFlythrough: (updates: Partial<FlythroughConfig>) => void;
+  reseedFlythrough: () => void;
 }
 
 function reorder<T extends { id: string }>(items: T[], activeId: string, overId: string): T[] {
@@ -106,6 +118,8 @@ export const useStore = create<AppState>()(
       polygonLayers: [INITIAL_POLYGON],
       mesh3dLayers: [],
       camera3d: { ...DEFAULT_CAMERA3D },
+      flythroughAssets: [],
+      flythrough: { ...DEFAULT_FLYTHROUGH },
       canvasBg: '#000000',
       masterFx: { ...DEFAULT_MASTER_FX },
       appMode: 'symmetry',
@@ -121,6 +135,8 @@ export const useStore = create<AppState>()(
         polygonLayers: doc.polygonLayers,
         mesh3dLayers: doc.mesh3dLayers ?? [],
         camera3d: doc.camera3d ? { ...DEFAULT_CAMERA3D, ...doc.camera3d } : { ...DEFAULT_CAMERA3D },
+        flythroughAssets: doc.flythroughAssets ?? [],
+        flythrough: doc.flythrough ? { ...DEFAULT_FLYTHROUGH, ...doc.flythrough } : { ...DEFAULT_FLYTHROUGH },
         canvasBg: doc.canvasBg,
         masterFx: doc.masterFx ? { ...DEFAULT_MASTER_FX, ...doc.masterFx } : { ...DEFAULT_MASTER_FX },
         selectedLayerId: null,
@@ -308,7 +324,46 @@ export const useStore = create<AppState>()(
         const i = s.mesh3dLayers.findIndex(m => m.id === id);
         return i === -1 || i >= s.mesh3dLayers.length - 1 ? s : { mesh3dLayers: swap(s.mesh3dLayers, i, i + 1) };
       }),
-      updateCamera3d: (updates) => set(s => ({ camera3d: { ...s.camera3d, ...updates } }))
+      updateCamera3d: (updates) => set(s => ({ camera3d: { ...s.camera3d, ...updates } })),
+
+      replaceFlythroughAssets: async (files) => {
+        const gifs = files.filter(file => file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif'));
+        const assets = await Promise.all(gifs.map(async (file): Promise<FlythroughAsset> => {
+          const gifData = await parseGifFile(file);
+          let width = gifData?.width;
+          let height = gifData?.height;
+          if (!width || !height) {
+            try {
+              const bitmap = await createImageBitmap(file);
+              width = bitmap.width;
+              height = bitmap.height;
+              bitmap.close();
+            } catch {
+              // The renderer can still load the object URL; square is the
+              // narrow fallback only when the platform cannot inspect it.
+            }
+          }
+          return {
+            id: crypto.randomUUID(),
+            name: file.name,
+            src: URL.createObjectURL(file),
+            gifData: gifData || undefined,
+            width,
+            height
+          };
+        }));
+        set({ flythroughAssets: assets });
+      },
+      removeFlythroughAsset: (id) => set(s => {
+        // Keep the source alive while zundo can still restore this document
+        // entry. GPU textures are released immediately by the mode renderer.
+        return { flythroughAssets: s.flythroughAssets.filter(item => item.id !== id) };
+      }),
+      clearFlythroughAssets: () => set({ flythroughAssets: [] }),
+      updateFlythrough: (updates) => set(s => ({ flythrough: { ...s.flythrough, ...updates } })),
+      reseedFlythrough: () => set(s => ({
+        flythrough: { ...s.flythrough, seed: (s.flythrough.seed + 1) % 100000 }
+      }))
     }),
     {
       // Undo history tracks the document only — selection, mode, and drawing
@@ -318,12 +373,15 @@ export const useStore = create<AppState>()(
         polygonLayers: s.polygonLayers,
         mesh3dLayers: s.mesh3dLayers,
         camera3d: s.camera3d,
+        flythroughAssets: s.flythroughAssets,
+        flythrough: s.flythrough,
         canvasBg: s.canvasBg,
         masterFx: s.masterFx
       }),
       equality: (a, b) =>
         a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.mesh3dLayers === b.mesh3dLayers
-        && a.camera3d === b.camera3d && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
+        && a.camera3d === b.camera3d && a.flythroughAssets === b.flythroughAssets
+        && a.flythrough === b.flythrough && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
       limit: 100,
       // Coalesce rapid bursts (slider scrubs) into few history entries.
       handleSet: (handleSet) => {
@@ -341,8 +399,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, mesh3dLayers, camera3d, canvasBg, masterFx } = useStore.getState();
-  return { layers, polygonLayers, mesh3dLayers, camera3d, canvasBg, masterFx };
+  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, canvasBg, masterFx } = useStore.getState();
+  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();

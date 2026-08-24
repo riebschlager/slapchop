@@ -49,6 +49,10 @@ for the product decision and incremental architecture direction.
 - **Symmetry canvas** — drop images/GIFs as layers; each layer has position/rotation/scale, mirror/quad/radial symmetry, blend mode, opacity, and sine/noise motion modulators.
 - **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture, mode-owned repeat patterns and Voronoi partitioning, and animatable scale, rotation, and offset.
 - **3D space** — textured meshes, camera depth, 3D deformation, spatial symmetry, and animated transforms.
+- **GIF flythrough** — point the app at a folder of GIFs to build a seeded,
+  deterministic Three.js particle field that rushes past the camera. GIFs
+  retain their source aspect ratios, with camera-facing, XY, XZ, and YZ plane
+  orientations plus speed, drift, spin, and scale modulation.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

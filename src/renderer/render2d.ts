@@ -1,4 +1,14 @@
-import { AppMode, Camera3dConfig, Layer, MasterFxConfig, Mesh3dLayer, PolygonLayer, PolygonPoint } from '../types';
+import {
+  AppMode,
+  Camera3dConfig,
+  FlythroughAsset,
+  FlythroughConfig,
+  Layer,
+  MasterFxConfig,
+  Mesh3dLayer,
+  PolygonLayer,
+  PolygonPoint
+} from '../types';
 import { getGifFrameAtTime } from '../lib/gifUtils';
 import { applyMotion, getDeformedPoints, getInstances, getModulatedLayer, getPolygonSymmetryTransforms, resolveSymmetryParams } from '../lib/motion';
 import { getMesh3dInstances } from '../lib/motion3d';
@@ -7,6 +17,7 @@ import { deformGeometry } from '../lib/deformation3d';
 import { buildMeshWorldMatrix, mat4TransformPoint, Vec3, vecCross, vecNormalize, vecSub } from '../lib/mat4';
 import { createScreen3dProjector, ScreenPoint } from '../lib/project3d';
 import { getVoronoiCells } from '../lib/voronoi';
+import { resolveFlythroughParticles } from '../lib/flythrough';
 
 export const CANVAS_WIDTH = 1080;
 export const CANVAS_HEIGHT = 1920;
@@ -17,6 +28,8 @@ export interface RenderState {
   polygonLayers: PolygonLayer[];
   mesh3dLayers: Mesh3dLayer[];
   camera3d: Camera3dConfig;
+  flythroughAssets: FlythroughAsset[];
+  flythrough: FlythroughConfig;
   canvasBg: string;
   masterFx?: MasterFxConfig;
 }
@@ -397,11 +410,129 @@ export function renderFrame(
     });
   } else if (state.appMode === '3d') {
     renderMesh3dScene(ctx, t, state.mesh3dLayers, state.camera3d, width, height);
+  } else if (state.appMode === 'flythrough') {
+    renderFlythroughScene(ctx, t, state.flythroughAssets, state.flythrough, width, height);
   }
 
   if (state.masterFx?.enabled) {
     applyMasterFx2D(ctx, t, state.masterFx, width, height);
   }
+}
+
+type Point3 = [number, number, number];
+
+function normalize3([x, y, z]: Point3): Point3 {
+  const length = Math.hypot(x, y, z) || 1;
+  return [x / length, y / length, z / length];
+}
+
+function cross3(a: Point3, b: Point3): Point3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
+function renderFlythroughScene(
+  ctx: CanvasRenderingContext2D,
+  t: number,
+  assets: FlythroughAsset[],
+  config: FlythroughConfig,
+  width: number,
+  height: number
+) {
+  const tanHalfFov = Math.tan((config.fov * Math.PI) / 360);
+  const aspect = width / height;
+  const particles = resolveFlythroughParticles(assets, config, t).sort((a, b) => a.z - b.z);
+
+  const project = ([x, y, z]: Point3): [number, number] | null => {
+    if (z >= -1) return null;
+    const ndcX = (x / -z) / (tanHalfFov * aspect);
+    const ndcY = (y / -z) / tanHalfFov;
+    return [(ndcX + 1) * width / 2, (1 - ndcY) * height / 2];
+  };
+
+  for (const particle of particles) {
+    const source = particle.asset.gifData
+      ? getGifFrameAtTime(particle.asset.gifData, t, 1)
+      : getCachedImage(particle.asset.src);
+    if (!source) continue;
+
+    let right: Point3 = [1, 0, 0];
+    let up: Point3 = [0, 1, 0];
+    if (config.plane === 'billboard') {
+      const normal = normalize3([-particle.x, -particle.y, -particle.z]);
+      right = normalize3(cross3([0, 1, 0], normal));
+      up = normalize3(cross3(normal, right));
+    } else if (config.plane === 'xz') {
+      up = [0, 0, 1];
+    } else if (config.plane === 'yz') {
+      right = [0, 0, -1];
+    }
+
+    const angle = particle.rotation * Math.PI / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const rotatedRight: Point3 = [
+      right[0] * cos + up[0] * sin,
+      right[1] * cos + up[1] * sin,
+      right[2] * cos + up[2] * sin
+    ];
+    const rotatedUp: Point3 = [
+      -right[0] * sin + up[0] * cos,
+      -right[1] * sin + up[1] * cos,
+      -right[2] * sin + up[2] * cos
+    ];
+    const center: Point3 = [particle.x, particle.y, particle.z];
+    const corner = (rx: number, uy: number): Point3 => [
+      center[0] + rotatedRight[0] * rx + rotatedUp[0] * uy,
+      center[1] + rotatedRight[1] * rx + rotatedUp[1] * uy,
+      center[2] + rotatedRight[2] * rx + rotatedUp[2] * uy
+    ];
+    const hw = particle.width / 2;
+    const hh = particle.height / 2;
+    const projected = [
+      project(corner(-hw, hh)),
+      project(corner(hw, hh)),
+      project(corner(hw, -hh)),
+      project(corner(-hw, -hh))
+    ];
+    if (projected.some(point => point === null)) continue;
+
+    const sourceWidth = particle.asset.gifData?.width ?? particle.asset.width ?? 1;
+    const sourceHeight = particle.asset.gifData?.height ?? particle.asset.height ?? 1;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, config.opacity));
+    drawImageTriangle(ctx, source, [[0, 0], [sourceWidth, 0], [sourceWidth, sourceHeight]], [projected[0]!, projected[1]!, projected[2]!]);
+    drawImageTriangle(ctx, source, [[0, 0], [sourceWidth, sourceHeight], [0, sourceHeight]], [projected[0]!, projected[2]!, projected[3]!]);
+    ctx.restore();
+  }
+}
+
+function drawImageTriangle(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  src: [[number, number], [number, number], [number, number]],
+  dst: [[number, number], [number, number], [number, number]]
+) {
+  const [s0, s1, s2] = src;
+  const [d0, d1, d2] = dst;
+  const denominator = s0[0] * (s1[1] - s2[1]) + s1[0] * (s2[1] - s0[1]) + s2[0] * (s0[1] - s1[1]);
+  if (Math.abs(denominator) < 1e-8) return;
+  const a = (d0[0] * (s1[1] - s2[1]) + d1[0] * (s2[1] - s0[1]) + d2[0] * (s0[1] - s1[1])) / denominator;
+  const c = (d0[0] * (s2[0] - s1[0]) + d1[0] * (s0[0] - s2[0]) + d2[0] * (s1[0] - s0[0])) / denominator;
+  const e = (d0[0] * (s1[0] * s2[1] - s2[0] * s1[1]) + d1[0] * (s2[0] * s0[1] - s0[0] * s2[1]) + d2[0] * (s0[0] * s1[1] - s1[0] * s0[1])) / denominator;
+  const b = (d0[1] * (s1[1] - s2[1]) + d1[1] * (s2[1] - s0[1]) + d2[1] * (s0[1] - s1[1])) / denominator;
+  const d = (d0[1] * (s2[0] - s1[0]) + d1[1] * (s0[0] - s2[0]) + d2[1] * (s1[0] - s0[0])) / denominator;
+  const f = (d0[1] * (s1[0] * s2[1] - s2[0] * s1[1]) + d1[1] * (s2[0] * s0[1] - s0[0] * s2[1]) + d2[1] * (s0[0] * s1[1] - s1[0] * s0[1])) / denominator;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(d0[0], d0[1]);
+  ctx.lineTo(d1[0], d1[1]);
+  ctx.lineTo(d2[0], d2[1]);
+  ctx.closePath();
+  ctx.clip();
+  ctx.transform(a, b, c, d, e, f);
+  ctx.drawImage(source, 0, 0);
+  ctx.restore();
 }
 
 interface ProjectedTri3d {

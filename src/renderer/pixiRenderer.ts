@@ -33,6 +33,7 @@ import {
 import { getVoronoiCells, VoronoiCell } from '../lib/voronoi';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage, getLayerSize } from './render2d';
 import type { ThreeSceneRenderer } from './threeRenderer';
+import type { FlythroughRenderer } from './flythroughRenderer';
 
 // The app's BlendMode strings are identical to Pixi's names. The advanced set
 // ('color-dodge', 'color-burn', 'saturation', 'color', 'luminosity') comes from
@@ -115,6 +116,7 @@ export class PixiSceneRenderer {
   private symContainer = new Container();
   private polyContainer = new Container();
   private mesh3dSprite = new Sprite();
+  private flythroughSprite = new Sprite();
 
   // Lazily created (and lazily *imported* — three.js is a ~600KB dependency
   // that only users who touch 3D mode should ever download) on first use.
@@ -127,6 +129,11 @@ export class PixiSceneRenderer {
   private mesh3dTexture: Texture<CanvasSource> | null = null;
   private mesh3dTexW = 0;
   private mesh3dTexH = 0;
+  private flythroughRenderer: FlythroughRenderer | null = null;
+  private flythroughLoading: Promise<void> | null = null;
+  private flythroughTexture: Texture<CanvasSource> | null = null;
+  private flythroughTexW = 0;
+  private flythroughTexH = 0;
 
   private symNodes = new Map<string, SymmetryNode>();
   private polyNodes = new Map<string, PolygonNode>();
@@ -149,9 +156,10 @@ export class PixiSceneRenderer {
 
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
-    this.stage.addChild(this.bg, this.root, this.mesh3dSprite);
+    this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite);
     this.root.addChild(this.symContainer, this.polyContainer);
     this.mesh3dSprite.visible = false;
+    this.flythroughSprite.visible = false;
   }
 
   static async create(canvas: HTMLCanvasElement): Promise<PixiSceneRenderer> {
@@ -197,7 +205,9 @@ export class PixiSceneRenderer {
     for (const tx of this.staticTextures.values()) tx.destroy(true);
     this.staticTextures.clear();
     this.three?.destroy();
+    this.flythroughRenderer?.destroy();
     this.mesh3dTexture?.destroy(true);
+    this.flythroughTexture?.destroy(true);
     this.rgbSplitFilter.destroy();
     this.duotoneFilter.destroy();
     this.scanlinesFilter.destroy();
@@ -215,16 +225,20 @@ export class PixiSceneRenderer {
 
     const symVisible = state.appMode === 'symmetry';
     const mesh3dVisible = state.appMode === '3d';
+    const flythroughVisible = state.appMode === 'flythrough';
     this.symContainer.visible = symVisible;
-    this.polyContainer.visible = !symVisible && !mesh3dVisible;
+    this.polyContainer.visible = state.appMode === 'polygon';
     this.mesh3dSprite.visible = mesh3dVisible;
+    this.flythroughSprite.visible = flythroughVisible;
 
     // Node membership tracks the document in every mode so deletions (and
     // undo of deletions) are handled even while another mode is active.
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (mesh3dVisible) {
+    if (flythroughVisible) {
+      this.syncFlythrough(t, state, width, height);
+    } else if (mesh3dVisible) {
       this.syncMesh3d(t, state, width, height);
     } else if (symVisible) {
       state.layers.forEach((layer) => this.syncSymmetryLayer(this.symNodes.get(layer.id)!, layer, t));
@@ -234,6 +248,40 @@ export class PixiSceneRenderer {
 
     this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  // ----------------------------------------------------------- flythrough mode
+
+  private syncFlythrough(t: number, state: RenderState, width: number, height: number) {
+    if (!this.flythroughRenderer) {
+      if (!this.flythroughLoading) {
+        this.flythroughLoading = import('./flythroughRenderer').then((mod) => {
+          if (this.destroyed) return;
+          this.flythroughRenderer = mod.FlythroughRenderer.create();
+        });
+      }
+      return;
+    }
+
+    const canvas = this.flythroughRenderer.renderToCanvas(
+      t,
+      state.flythroughAssets,
+      state.flythrough,
+      width,
+      height
+    );
+    if (!this.flythroughTexture) {
+      this.flythroughTexture = new Texture({ source: new CanvasSource({ resource: canvas, width, height }) });
+      this.flythroughSprite.texture = this.flythroughTexture;
+    } else if (this.flythroughTexW !== width || this.flythroughTexH !== height) {
+      this.flythroughTexture.source.resize(width, height, 1);
+    }
+    this.flythroughTexW = width;
+    this.flythroughTexH = height;
+    this.flythroughTexture.source.update();
+    this.flythroughSprite.position.set(0, 0);
+    this.flythroughSprite.width = width;
+    this.flythroughSprite.height = height;
   }
 
   // -------------------------------------------------------------------- 3D mode

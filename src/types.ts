@@ -1,4 +1,4 @@
-export type AppMode = 'symmetry' | 'polygon' | '3d';
+export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough';
 
 export interface PolygonPoint {
   x: number;
@@ -438,4 +438,53 @@ export const DEFAULT_CAMERA3D: Camera3dConfig = {
   targetY: 0,
   targetZ: 0,
   projection: 'perspective'
+};
+
+// ---------------------------------------------------------- GIF flythrough mode
+
+// GIF Flythrough owns a source library rather than editable scene objects.
+// Particle instances are derived deterministically from this library and the
+// config below, so playback and offline export always agree at the same time.
+export interface FlythroughAsset {
+  id: string;
+  name: string;
+  src: string;
+  gifData?: GifData;
+  width?: number;
+  height?: number;
+}
+
+export type FlythroughPlane = 'billboard' | 'xy' | 'xz' | 'yz';
+
+export interface FlythroughConfig {
+  particleCount: number;
+  speed: number;
+  depth: number;
+  spreadX: number;
+  spreadY: number;
+  minSize: number;
+  maxSize: number;
+  fov: number;
+  plane: FlythroughPlane;
+  opacity: number;
+  seed: number;
+  motionSpeed?: MotionConfig;
+  motionDriftX?: MotionConfig;
+  motionDriftY?: MotionConfig;
+  motionRotation?: MotionConfig;
+  motionScale?: MotionConfig;
+}
+
+export const DEFAULT_FLYTHROUGH: FlythroughConfig = {
+  particleCount: 42,
+  speed: 720,
+  depth: 7200,
+  spreadX: 4400,
+  spreadY: 7600,
+  minSize: 180,
+  maxSize: 760,
+  fov: 68,
+  plane: 'billboard',
+  opacity: 1,
+  seed: 1
 };

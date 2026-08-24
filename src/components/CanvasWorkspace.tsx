@@ -81,6 +81,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const selectedLayerId = useStore(s => s.selectedLayerId);
   const selectedPolygonId = useStore(s => s.selectedPolygonId);
   const mesh3dLayers = useStore(s => s.mesh3dLayers);
+  const flythroughAssets = useStore(s => s.flythroughAssets);
   const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
   const canvasBg = useStore(s => s.canvasBg);
@@ -95,6 +96,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const onSelectMesh3d = useStore(s => s.selectMesh3d);
   const onUpdateMesh3d = useStore(s => s.updateMesh3d);
   const onUpdateCamera3d = useStore(s => s.updateCamera3d);
+  const onReplaceFlythroughAssets = useStore(s => s.replaceFlythroughAssets);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -184,6 +186,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         try {
           const files = await imageFilesFromPaths(payload.paths);
           if (files.length === 0) return;
+          if (useStore.getState().appMode === 'flythrough') {
+            await useStore.getState().replaceFlythroughAssets(files);
+            return;
+          }
           // Physical (device px) position → CSS px → canvas coords
           const dpr = window.devicePixelRatio || 1;
           const coords = canvasCoordsFromClient(payload.position.x / dpr, payload.position.y / dpr) ?? { x: 0, y: 0 };
@@ -800,6 +806,11 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     if (!coords) return;
 
     const files: File[] = Array.from(e.dataTransfer.files);
+    if (appMode === 'flythrough') {
+      const gifs = files.filter(file => file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif'));
+      if (gifs.length > 0) void onReplaceFlythroughAssets(gifs);
+      return;
+    }
     files.forEach((file: File) => {
       if (file.type.startsWith('image/')) {
         onAddLayer(file, coords.x, coords.y);
@@ -829,7 +840,11 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         <div ref={statusPillRef} className="flex items-center gap-2 pointer-events-auto bg-gray-900/80 backdrop-blur border border-gray-800 px-3 py-1.5 rounded-full text-xs text-gray-300 shadow-lg">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="font-semibold text-white">
-            {appMode === 'symmetry' ? 'Symmetry Canvas' : appMode === 'polygon' ? 'Polygon GIF Tiler' : '3D Space'}
+            {appMode === 'symmetry'
+              ? 'Symmetry Canvas'
+              : appMode === 'polygon'
+                ? 'Polygon GIF Tiler'
+                : appMode === '3d' ? '3D Space' : 'GIF Flythrough'}
           </span>
           <span className="text-gray-500 font-mono">1080x1920</span>
           {appMode === '3d' && (
@@ -902,6 +917,15 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           height={CANVAS_HEIGHT}
           className="w-full h-full block"
         />
+
+        {appMode === 'flythrough' && flythroughAssets.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="px-4 py-3 rounded-lg border border-cyan-900/60 bg-black/65 backdrop-blur-sm text-center shadow-[0_0_40px_rgba(6,182,212,0.08)]">
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-500">No flight library</div>
+              <div className="mt-1 text-xs text-gray-500">Choose a GIF folder in the Stack panel</div>
+            </div>
+          </div>
+        )}
 
         {/* Polygon Interactive Handle Overlay */}
         {appMode === 'polygon' && (

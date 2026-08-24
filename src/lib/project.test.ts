@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_FLYTHROUGH } from '../types';
 import { restoreProjectDocument } from './project';
 
 describe('restoreProjectDocument', () => {
@@ -62,5 +63,36 @@ describe('restoreProjectDocument', () => {
     expect(document.polygonLayers[0].symmetry).toBe('voronoi');
     expect(document.layers[0].src).toBe('');
     expect(document.mesh3dLayers).toEqual([]);
+    expect(document.flythroughAssets).toEqual([]);
+    expect(document.flythrough.particleCount).toBeGreaterThan(0);
+  });
+
+  it('restores a V3 flythrough library and its mode-owned config', () => {
+    const payload = {
+      app: 'slapchop' as const,
+      version: 3 as const,
+      savedAt: '2026-08-23T00:00:00.000Z',
+      canvasBg: '#000000',
+      layers: [],
+      polygonLayers: [],
+      mesh3dLayers: [],
+      flythroughAssets: [{ id: 'source-1', name: 'comet.gif', width: 320, height: 180, assetId: 'gif-asset' }],
+      flythrough: { ...DEFAULT_FLYTHROUGH, particleCount: 88, speed: 900, plane: 'xz' as const },
+      assets: {}
+    };
+
+    const document = restoreProjectDocument(payload);
+
+    expect(document.flythroughAssets[0]).toMatchObject({
+      id: 'source-1',
+      name: 'comet.gif',
+      width: 320,
+      height: 180,
+      src: ''
+    });
+    expect(document.flythrough.particleCount).toBe(88);
+    expect(document.flythrough.speed).toBe(900);
+    expect(document.flythrough.plane).toBe('xz');
+    expect(document.flythrough.depth).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,17 @@
 import { DocumentState, clearHistory, getDocumentSnapshot, useStore } from '../store';
 import { saveBlob } from './native';
-import { Camera3dConfig, DEFAULT_CAMERA3D, DEFAULT_MASTER_FX, Layer, MasterFxConfig, Mesh3dLayer, PolygonLayer } from '../types';
+import {
+  Camera3dConfig,
+  DEFAULT_CAMERA3D,
+  DEFAULT_FLYTHROUGH,
+  DEFAULT_MASTER_FX,
+  FlythroughAsset,
+  FlythroughConfig,
+  Layer,
+  MasterFxConfig,
+  Mesh3dLayer,
+  PolygonLayer
+} from '../types';
 import { parseGifFile } from './gifUtils';
 
 // .slapchop project file: the document state as JSON, with every image/GIF
@@ -15,6 +26,7 @@ interface ProjectAsset {
 type SerializedLayer = Omit<Layer, 'src' | 'gifData'> & { assetId: string };
 type SerializedPolygon = Omit<PolygonLayer, 'src' | 'gifData'> & { assetId?: string };
 type SerializedMesh3d = Omit<Mesh3dLayer, 'src' | 'gifData'> & { assetId?: string };
+type SerializedFlythroughAsset = Omit<FlythroughAsset, 'src' | 'gifData'> & { assetId: string };
 
 interface ProjectFileV1 {
   app: 'slapchop';
@@ -28,7 +40,7 @@ interface ProjectFileV1 {
 }
 
 // V2 adds 3D Mesh Mode's layers and camera. Reading a V1 file simply treats
-// it as V2 with an empty mesh3dLayers array and the default camera — no
+// it as a workspace with an empty mesh3dLayers array and the default camera — no
 // migration step needed since the new fields are purely additive.
 interface ProjectFileV2 {
   app: 'slapchop';
@@ -43,7 +55,25 @@ interface ProjectFileV2 {
   assets: Record<string, ProjectAsset>;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2;
+// V3 adds GIF Flythrough's source library and scene configuration. Folder
+// paths are intentionally not persisted; every GIF is embedded like the
+// assets in the other modes so projects remain local and self-contained.
+interface ProjectFileV3 {
+  app: 'slapchop';
+  version: 3;
+  savedAt: string;
+  canvasBg: string;
+  masterFx?: MasterFxConfig;
+  layers: SerializedLayer[];
+  polygonLayers: SerializedPolygon[];
+  mesh3dLayers: SerializedMesh3d[];
+  camera3d?: Camera3dConfig;
+  flythroughAssets: SerializedFlythroughAsset[];
+  flythrough?: FlythroughConfig;
+  assets: Record<string, ProjectAsset>;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -103,9 +133,19 @@ export async function saveProject(): Promise<void> {
     });
   }
 
-  const payload: ProjectFileV2 = {
+  const flythroughAssets: SerializedFlythroughAsset[] = [];
+  for (const source of doc.flythroughAssets) {
+    const { src, gifData, ...rest } = source;
+    void gifData;
+    flythroughAssets.push({
+      ...rest,
+      assetId: await assetIdFor(src, source.name)
+    });
+  }
+
+  const payload: ProjectFileV3 = {
     app: 'slapchop',
-    version: 2,
+    version: 3,
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
     masterFx: doc.masterFx,
@@ -113,6 +153,8 @@ export async function saveProject(): Promise<void> {
     polygonLayers,
     mesh3dLayers,
     camera3d: doc.camera3d,
+    flythroughAssets,
+    flythrough: doc.flythrough,
     assets
   };
 
@@ -122,7 +164,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || (payload.version !== 1 && payload.version !== 2)) {
+  if (payload.app !== 'slapchop' || (payload.version !== 1 && payload.version !== 2 && payload.version !== 3)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -161,7 +203,7 @@ export function restoreProjectDocument(
   });
 
   // V1 files predate 3D Mesh Mode entirely: no mesh3dLayers key, default camera.
-  const mesh3dLayers: Mesh3dLayer[] = payload.version === 2
+  const mesh3dLayers: Mesh3dLayer[] = payload.version !== 1
     ? payload.mesh3dLayers.map((sm) => {
       const { assetId, ...rest } = sm;
       const asset = assetId ? materialized.get(assetId) : undefined;
@@ -169,7 +211,7 @@ export function restoreProjectDocument(
     })
     : [];
 
-  const camera3d: Camera3dConfig = payload.version === 2 && payload.camera3d
+  const camera3d: Camera3dConfig = payload.version !== 1 && payload.camera3d
     ? { ...DEFAULT_CAMERA3D, ...payload.camera3d }
     : { ...DEFAULT_CAMERA3D };
 
@@ -177,11 +219,25 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_MASTER_FX, ...payload.masterFx }
     : { ...DEFAULT_MASTER_FX };
 
+  const flythroughAssets: FlythroughAsset[] = payload.version === 3
+    ? payload.flythroughAssets.map((source) => {
+      const { assetId, ...rest } = source;
+      const asset = materialized.get(assetId);
+      return { ...rest, src: asset?.src ?? '', gifData: asset?.gifData };
+    })
+    : [];
+
+  const flythrough: FlythroughConfig = payload.version === 3 && payload.flythrough
+    ? { ...DEFAULT_FLYTHROUGH, ...payload.flythrough }
+    : { ...DEFAULT_FLYTHROUGH };
+
   return {
     layers,
     polygonLayers,
     mesh3dLayers,
     camera3d,
+    flythroughAssets,
+    flythrough,
     canvasBg: payload.canvasBg,
     masterFx
   };

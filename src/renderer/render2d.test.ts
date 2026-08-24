@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAMERA3D, DEFAULT_MASTER_FX, Layer, PolygonLayer } from '../types';
+import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_MASTER_FX, Layer, PolygonLayer } from '../types';
 import { renderFrame, RenderState } from './render2d';
 
 function createRecordingCanvas() {
@@ -63,6 +63,8 @@ function state(appMode: RenderState['appMode'], layers: Layer[] = []): RenderSta
     polygonLayers: [polygon],
     mesh3dLayers: [],
     camera3d: DEFAULT_CAMERA3D,
+    flythroughAssets: [],
+    flythrough: DEFAULT_FLYTHROUGH,
     canvasBg: '#000000',
     masterFx: DEFAULT_MASTER_FX
   };
@@ -87,5 +89,33 @@ describe('renderFrame mode boundary', () => {
     expect(symmetryTrace.some(entry => entry.startsWith('beginPath:'))).toBe(false);
     expect(polygonTrace.some(entry => entry.startsWith('beginPath:'))).toBe(true);
     expect(polygonWithInactiveLayer).toEqual(polygonTrace);
+  });
+
+  it('renders flythrough GIF planes deterministically in the fallback', () => {
+    const flythroughState: RenderState = {
+      ...state('flythrough'),
+      flythroughAssets: [{
+        id: 'fly-gif',
+        name: 'wide.gif',
+        src: '',
+        gifData: {
+          width: 320,
+          height: 180,
+          totalDurationMs: 1000,
+          frames: [{
+            image: {} as CanvasImageSource,
+            delayMs: 1000,
+            startTimeMs: 0,
+            endTimeMs: 1000
+          }]
+        }
+      }],
+      flythrough: { ...DEFAULT_FLYTHROUGH, particleCount: 3 }
+    };
+
+    const first = renderTrace(flythroughState, 0.5);
+    const second = renderTrace(flythroughState, 0.5);
+    expect(first).toEqual(second);
+    expect(first.some(entry => entry.startsWith('drawImage:'))).toBe(true);
   });
 });
