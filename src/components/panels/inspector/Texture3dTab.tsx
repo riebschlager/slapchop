@@ -1,4 +1,5 @@
 import { cn } from '../../../lib/utils';
+import { formatRate } from '../../../lib/sliderScale';
 import { BLEND_MODES } from '../../../lib/blendModes';
 import { Mesh3dLayer, ShadingModel } from '../../../types';
 import Select, { SelectOption } from '../../controls/Select';
@@ -55,9 +56,10 @@ export default function Texture3dTab({ mesh, onChange, onUploadTexture }: {
             headerClassName="mb-2"
             labelClassName="font-semibold text-indigo-400 flex items-center gap-1"
             displayClassName="text-gray-300"
-            display={`${(mesh.gifSpeed ?? 1).toFixed(2)}x`}
+            display={`${formatRate(mesh.gifSpeed ?? 1)}x`}
             value={mesh.gifSpeed ?? 1}
-            min={0} max={5} step={0.1}
+            min={0} max={5} step={0.001}
+            scale="log" minPositive={0.001}
             onChange={(gifSpeed) => onChange({ gifSpeed })}
           />
           <div className="grid grid-cols-5 gap-1">

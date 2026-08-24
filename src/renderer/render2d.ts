@@ -884,7 +884,7 @@ function applyMasterFx2D(
     // Film Grain / Noise
     if (hasNoise) {
       const amt = fx.noiseAmount * 255;
-      const seed = Math.floor((t * (fx.noiseSpeed || 1) * 10) % 1000);
+      const seed = Math.floor((t * (fx.noiseSpeed ?? 1) * 10) % 1000);
       for (let i = 0; i < len; i += 4) {
         if (data[i + 3] === 0) continue;
         const n = ((Math.sin((i + seed) * 12.9898) * 43758.5453) % 1) - 0.5;

@@ -1,4 +1,5 @@
 import { cn } from '../../../lib/utils';
+import { formatRate } from '../../../lib/sliderScale';
 import Slider from '../../controls/Slider';
 import { Film } from 'lucide-react';
 import { PolygonLayer } from '../../../types';
@@ -45,9 +46,10 @@ export default function TextureTab({ polygon, onChange }: { polygon: PolygonLaye
           label={<><Film className="w-3.5 h-3.5 text-indigo-400" /> Animated GIF Speed</>}
           labelClassName="text-gray-300 flex items-center gap-1"
           displayClassName="text-gray-300"
-          display={`${(polygon.gifSpeed ?? 1).toFixed(2)}x`}
+          display={`${formatRate(polygon.gifSpeed ?? 1)}x`}
           value={polygon.gifSpeed ?? 1}
-          min={0} max={5} step={0.1}
+          min={0} max={5} step={0.001}
+          scale="log" minPositive={0.001}
           onChange={(gifSpeed) => onChange({ gifSpeed })}
         />
         <div className="grid grid-cols-5 gap-1 mt-1">

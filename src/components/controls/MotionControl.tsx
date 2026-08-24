@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { formatRate } from '../../lib/sliderScale';
 import { MotionConfig, MotionType } from '../../types';
 import Slider from './Slider';
 
@@ -17,7 +18,7 @@ export default function MotionControl({ label, config, onChange, maxAmplitude = 
              if (type === 'none') {
                onChange(undefined);
              } else {
-               onChange({ type, speed: config?.speed || 1, amplitude: config?.amplitude || (maxAmplitude / 10), phase: config?.phase || 0 });
+               onChange({ type, speed: config?.speed ?? 1, amplitude: config?.amplitude || (maxAmplitude / 10), phase: config?.phase || 0 });
              }
           }}
           className="bg-gray-900 text-[10px] text-gray-300 border border-gray-700 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-indigo-500"
@@ -32,9 +33,10 @@ export default function MotionControl({ label, config, onChange, maxAmplitude = 
            <Slider
              size="xs"
              label="Spd"
-             display={config!.speed.toFixed(1)}
+             display={formatRate(config!.speed)}
              value={config!.speed}
-             min={0.1} max={10} step={0.1}
+             min={0} max={10} step={0.001}
+             scale="log" minPositive={0.001}
              onChange={(speed) => onChange({ ...config!, speed })}
            />
            <Slider

@@ -58,6 +58,13 @@ for the product decision and incremental architecture direction.
   ring detail, pane occupancy, palette/transparent gaps, UV crop, camera,
   synchronized or phase-shifted playback, fog, twist, and path modulation.
 
+## Inspector controls
+
+Slider readouts can be clicked to enter an exact numeric value. Rate controls
+such as motion, GIF playback, deformation, and animated effects use a
+slow-focused logarithmic track with a distinct zero stop and values down to
+`0.001`, while retaining their full upper range.
+
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,
 CRT scanlines, film grain, bloom/glow, and color grading with motion modulation

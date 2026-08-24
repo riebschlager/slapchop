@@ -3,6 +3,7 @@ import { ChevronUp, ChevronDown, Wand2, RotateCcw } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store';
 import { FX_PRESETS } from '../../lib/fxPresets';
+import { formatRate } from '../../lib/sliderScale';
 import MotionControl from '../controls/MotionControl';
 import Slider from '../controls/Slider';
 import Toggle from '../controls/Toggle';
@@ -292,9 +293,10 @@ export default function MasterFxPanel() {
                 <Slider
                   size="sm"
                   label="Roll Speed"
-                  display={`${masterFx.scanlinesSpeed.toFixed(1)}x`}
+                  display={`${formatRate(masterFx.scanlinesSpeed)}x`}
                   value={masterFx.scanlinesSpeed}
-                  min={0} max={3} step={0.1}
+                  min={0} max={3} step={0.001}
+                  scale="log" minPositive={0.001}
                   onChange={(scanlinesSpeed) => onUpdateFx({ scanlinesSpeed })}
                 />
               </div>
@@ -333,9 +335,10 @@ export default function MasterFxPanel() {
                 <Slider
                   size="sm"
                   label="Animation Speed"
-                  display={`${masterFx.noiseSpeed.toFixed(1)}x`}
+                  display={`${formatRate(masterFx.noiseSpeed)}x`}
                   value={masterFx.noiseSpeed}
-                  min={0} max={5} step={0.2}
+                  min={0} max={5} step={0.001}
+                  scale="log" minPositive={0.001}
                   onChange={(noiseSpeed) => onUpdateFx({ noiseSpeed })}
                 />
               </div>

@@ -459,7 +459,7 @@ export class PixiSceneRenderer {
     // 6. Film Grain / Noise
     if (fx.noiseEnabled && fx.noiseAmount > 0) {
       this.noiseFilter.noise = fx.noiseAmount;
-      this.noiseFilter.seed = (t * (fx.noiseSpeed || 1) * 10) % 1000;
+      this.noiseFilter.seed = (t * (fx.noiseSpeed ?? 1) * 10) % 1000;
       activeFilters.push(this.noiseFilter);
     }
 

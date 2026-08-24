@@ -12,6 +12,7 @@ import {
 import Select, { SelectOption } from '../../controls/Select';
 import Slider from '../../controls/Slider';
 import Toggle from '../../controls/Toggle';
+import { formatRate } from '../../../lib/sliderScale';
 
 const SINE_AXIS_OPTIONS: SelectOption<SineWaveAxis>[] = [
   { value: 'x', label: 'X' }, { value: 'y', label: 'Y' }, { value: 'z', label: 'Z' },
@@ -42,7 +43,7 @@ export default function Deform3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; onC
           <Slider size="sm" label="Angle" display={`${Math.round(twist.angle)}°`} value={twist.angle} min={-720} max={720} step={5} onChange={(angle) => onChange({ twistDeformer: { ...twist, angle } })} />
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Slider size="sm" label="Speed" display={twist.speed.toFixed(1)} value={twist.speed} min={0} max={5} step={0.1} onChange={(speed) => onChange({ twistDeformer: { ...twist, speed } })} />
+          <Slider size="sm" label="Speed" display={formatRate(twist.speed)} value={twist.speed} min={0} max={5} step={0.001} scale="log" minPositive={0.001} onChange={(speed) => onChange({ twistDeformer: { ...twist, speed } })} />
           <Slider size="sm" label="Phase" display={twist.phase.toFixed(1)} value={twist.phase} min={0} max={Math.PI * 2} step={0.1} onChange={(phase) => onChange({ twistDeformer: { ...twist, phase } })} />
         </div>
       </DeformerSection>
@@ -52,7 +53,7 @@ export default function Deform3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; onC
         <div className="grid grid-cols-2 gap-2">
           <Slider size="sm" label="Amplitude" display={`${Math.round(sine.amplitude)}px`} value={sine.amplitude} min={0} max={300} step={5} onChange={(amplitude) => onChange({ sineWaveDeformer: { ...sine, amplitude } })} />
           <Slider size="sm" label="Frequency" display={sine.frequency.toFixed(2)} value={sine.frequency} min={0.05} max={10} step={0.05} onChange={(frequency) => onChange({ sineWaveDeformer: { ...sine, frequency } })} />
-          <Slider size="sm" label="Speed" display={sine.speed.toFixed(1)} value={sine.speed} min={0} max={5} step={0.1} onChange={(speed) => onChange({ sineWaveDeformer: { ...sine, speed } })} />
+          <Slider size="sm" label="Speed" display={formatRate(sine.speed)} value={sine.speed} min={0} max={5} step={0.001} scale="log" minPositive={0.001} onChange={(speed) => onChange({ sineWaveDeformer: { ...sine, speed } })} />
           <Slider size="sm" label="Phase" display={sine.phase.toFixed(1)} value={sine.phase} min={0} max={Math.PI * 2} step={0.1} onChange={(phase) => onChange({ sineWaveDeformer: { ...sine, phase } })} />
         </div>
         <Slider size="sm" label="Decay (falloff from origin)" display={sine.decay.toFixed(2)} value={sine.decay} min={0} max={1} step={0.05} onChange={(decay) => onChange({ sineWaveDeformer: { ...sine, decay } })} />
@@ -65,7 +66,7 @@ export default function Deform3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; onC
           <Slider size="sm" label="Scale" display={noise.scale.toFixed(2)} value={noise.scale} min={0.05} max={10} step={0.05} onChange={(scale) => onChange({ noiseDeformer: { ...noise, scale } })} />
           <Slider size="sm" label="Octaves" display={noise.octaves.toString()} value={noise.octaves} min={1} max={6} step={1} onChange={(octaves) => onChange({ noiseDeformer: { ...noise, octaves } })} />
           <Slider size="sm" label="Roughness" display={noise.roughness.toFixed(2)} value={noise.roughness} min={0} max={1} step={0.05} onChange={(roughness) => onChange({ noiseDeformer: { ...noise, roughness } })} />
-          <Slider size="sm" label="Speed" display={noise.speed.toFixed(1)} value={noise.speed} min={0} max={5} step={0.1} onChange={(speed) => onChange({ noiseDeformer: { ...noise, speed } })} />
+          <Slider size="sm" label="Speed" display={formatRate(noise.speed)} value={noise.speed} min={0} max={5} step={0.001} scale="log" minPositive={0.001} onChange={(speed) => onChange({ noiseDeformer: { ...noise, speed } })} />
           <Slider size="sm" label="Phase" display={noise.phase.toFixed(1)} value={noise.phase} min={0} max={Math.PI * 2} step={0.1} onChange={(phase) => onChange({ noiseDeformer: { ...noise, phase } })} />
         </div>
         <Slider size="sm" label="Seed" display={noise.seed.toString()} value={noise.seed} min={1} max={999} step={1} onChange={(seed) => onChange({ noiseDeformer: { ...noise, seed } })} />
@@ -74,7 +75,7 @@ export default function Deform3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; onC
       <DeformerSection title="Vertex Jelly" enabled={jelly.enabled} onToggle={(enabled) => onChange({ vertexJelly: { ...jelly, enabled } })}>
         <div className="grid grid-cols-2 gap-2">
           <Slider size="sm" label="Amplitude" display={`${Math.round(jelly.amplitude)}px`} value={jelly.amplitude} min={0} max={100} step={2} onChange={(amplitude) => onChange({ vertexJelly: { ...jelly, amplitude } })} />
-          <Slider size="sm" label="Speed" display={jelly.speed.toFixed(1)} value={jelly.speed} min={0} max={5} step={0.1} onChange={(speed) => onChange({ vertexJelly: { ...jelly, speed } })} />
+          <Slider size="sm" label="Speed" display={formatRate(jelly.speed)} value={jelly.speed} min={0} max={5} step={0.001} scale="log" minPositive={0.001} onChange={(speed) => onChange({ vertexJelly: { ...jelly, speed } })} />
           <Slider size="sm" label="Phase" display={jelly.phase.toFixed(1)} value={jelly.phase} min={0} max={Math.PI * 2} step={0.1} onChange={(phase) => onChange({ vertexJelly: { ...jelly, phase } })} />
           <Slider size="sm" label="Incoherence" display={`${Math.round(jelly.incoherence * 100)}%`} value={jelly.incoherence} min={0} max={1} step={0.05} onChange={(incoherence) => onChange({ vertexJelly: { ...jelly, incoherence } })} />
         </div>
