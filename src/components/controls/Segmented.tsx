@@ -10,7 +10,7 @@ export interface SegmentedOption<T extends string> {
 export interface SegmentedProps<T extends string> {
   options: readonly SegmentedOption<T>[];
   value: T;
-  onChange: (value: T) => void;
+  onChange: (value: NoInfer<T>) => void;
   /**
    * `mode` is the raised, bordered switch used for top-level modes; `tab`
    * is the flat inline row used inside an inspector.
