@@ -34,6 +34,7 @@ import { getVoronoiCells, VoronoiCell } from '../lib/voronoi';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage, getLayerSize } from './render2d';
 import type { ThreeSceneRenderer } from './threeRenderer';
 import type { FlythroughRenderer } from './flythroughRenderer';
+import type { TunnelRenderer } from './tunnelRenderer';
 
 // The app's BlendMode strings are identical to Pixi's names. The advanced set
 // ('color-dodge', 'color-burn', 'saturation', 'color', 'luminosity') comes from
@@ -117,6 +118,7 @@ export class PixiSceneRenderer {
   private polyContainer = new Container();
   private mesh3dSprite = new Sprite();
   private flythroughSprite = new Sprite();
+  private tunnelSprite = new Sprite();
 
   // Lazily created (and lazily *imported* — three.js is a ~600KB dependency
   // that only users who touch 3D mode should ever download) on first use.
@@ -134,6 +136,11 @@ export class PixiSceneRenderer {
   private flythroughTexture: Texture<CanvasSource> | null = null;
   private flythroughTexW = 0;
   private flythroughTexH = 0;
+  private tunnelRenderer: TunnelRenderer | null = null;
+  private tunnelLoading: Promise<void> | null = null;
+  private tunnelTexture: Texture<CanvasSource> | null = null;
+  private tunnelTexW = 0;
+  private tunnelTexH = 0;
 
   private symNodes = new Map<string, SymmetryNode>();
   private polyNodes = new Map<string, PolygonNode>();
@@ -156,10 +163,11 @@ export class PixiSceneRenderer {
 
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
-    this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite);
+    this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite, this.tunnelSprite);
     this.root.addChild(this.symContainer, this.polyContainer);
     this.mesh3dSprite.visible = false;
     this.flythroughSprite.visible = false;
+    this.tunnelSprite.visible = false;
   }
 
   static async create(canvas: HTMLCanvasElement): Promise<PixiSceneRenderer> {
@@ -206,8 +214,10 @@ export class PixiSceneRenderer {
     this.staticTextures.clear();
     this.three?.destroy();
     this.flythroughRenderer?.destroy();
+    this.tunnelRenderer?.destroy();
     this.mesh3dTexture?.destroy(true);
     this.flythroughTexture?.destroy(true);
+    this.tunnelTexture?.destroy(true);
     this.rgbSplitFilter.destroy();
     this.duotoneFilter.destroy();
     this.scanlinesFilter.destroy();
@@ -221,22 +231,35 @@ export class PixiSceneRenderer {
   // ---------------------------------------------------------------- scene sync
 
   private sync(t: number, state: RenderState, width: number, height: number) {
-    this.layout(width, height, state.canvasBg);
+    this.layout(width, height, state.appMode === 'tunnel' ? state.tunnel.voidColor : state.canvasBg);
 
     const symVisible = state.appMode === 'symmetry';
     const mesh3dVisible = state.appMode === '3d';
     const flythroughVisible = state.appMode === 'flythrough';
+    const tunnelVisible = state.appMode === 'tunnel';
     this.symContainer.visible = symVisible;
     this.polyContainer.visible = state.appMode === 'polygon';
     this.mesh3dSprite.visible = mesh3dVisible;
     this.flythroughSprite.visible = flythroughVisible;
+    this.tunnelSprite.visible = tunnelVisible;
+    if (!tunnelVisible && this.tunnelRenderer) {
+      this.tunnelRenderer.destroy();
+      this.tunnelRenderer = null;
+      this.tunnelTexture?.destroy(true);
+      this.tunnelTexture = null;
+      this.tunnelSprite.texture = Texture.EMPTY;
+      this.tunnelTexW = 0;
+      this.tunnelTexH = 0;
+    }
 
     // Node membership tracks the document in every mode so deletions (and
     // undo of deletions) are handled even while another mode is active.
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (flythroughVisible) {
+    if (tunnelVisible) {
+      this.syncTunnel(t, state, width, height);
+    } else if (flythroughVisible) {
       this.syncFlythrough(t, state, width, height);
     } else if (mesh3dVisible) {
       this.syncMesh3d(t, state, width, height);
@@ -248,6 +271,44 @@ export class PixiSceneRenderer {
 
     this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  // --------------------------------------------------------------- GIF tunnel
+
+  private syncTunnel(t: number, state: RenderState, width: number, height: number) {
+    if (!this.tunnelRenderer) {
+      if (!this.tunnelLoading) {
+        this.tunnelLoading = import('./tunnelRenderer')
+          .then((mod) => {
+            if (this.destroyed) return;
+            this.tunnelRenderer = mod.TunnelRenderer.create();
+          })
+          .finally(() => {
+            this.tunnelLoading = null;
+          });
+      }
+      return;
+    }
+
+    const canvas = this.tunnelRenderer.renderToCanvas(
+      t,
+      state.tunnelAssets,
+      state.tunnel,
+      width,
+      height
+    );
+    if (!this.tunnelTexture) {
+      this.tunnelTexture = new Texture({ source: new CanvasSource({ resource: canvas, width, height }) });
+      this.tunnelSprite.texture = this.tunnelTexture;
+    } else if (this.tunnelTexW !== width || this.tunnelTexH !== height) {
+      this.tunnelTexture.source.resize(width, height, 1);
+    }
+    this.tunnelTexW = width;
+    this.tunnelTexH = height;
+    this.tunnelTexture.source.update();
+    this.tunnelSprite.position.set(0, 0);
+    this.tunnelSprite.width = width;
+    this.tunnelSprite.height = height;
   }
 
   // ----------------------------------------------------------- flythrough mode

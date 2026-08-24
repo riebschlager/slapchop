@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2 } from 'lucide-react';
+import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
-import { isNative, openProjectViaDialog, pickGifFolder } from '../../lib/native';
+import { isNative, openProjectViaDialog, pickGifFolder, pickImageFolder } from '../../lib/native';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import ModePicker, { ModeOption } from '../controls/ModePicker';
@@ -12,6 +12,7 @@ import { usePanelState } from '../../hooks/usePanelState';
 import LayerRow from './LayerRow';
 import PolygonRow from './PolygonRow';
 import Mesh3dRow from './Mesh3dRow';
+import TunnelAssetRow from './TunnelAssetRow';
 import { AppMode, Mesh3dPrimitive } from '../../types';
 import { MESH3D_PRIMITIVE_EMOJI } from '../../lib/mesh3dUtils';
 
@@ -21,7 +22,8 @@ const MODE_OPTIONS: ModeOption<AppMode>[] = [
   { value: 'symmetry', label: 'Symmetry', description: 'Layered mirrors & radial repeats', icon: Sparkles },
   { value: 'polygon', label: 'Tiled GIF', description: 'Texture-filled polygon mosaics', icon: Shapes },
   { value: '3d', label: '3D Space', description: 'Textured meshes & camera depth', icon: Box },
-  { value: 'flythrough', label: 'GIF Flythrough', description: 'Folder-fed planes rushing through space', icon: Rocket }
+  { value: 'flythrough', label: 'GIF Flythrough', description: 'Folder-fed planes rushing through space', icon: Rocket },
+  { value: 'tunnel', label: 'GIF Tunnel', description: 'Procedural wallpapered infinite tunnel', icon: Circle }
 ];
 
 // [primitive, label] for the "Add Mesh" grid below. Kept as a plain preset
@@ -74,16 +76,27 @@ export default function StackPanel() {
   const onReplaceFlythroughAssets = useStore(s => s.replaceFlythroughAssets);
   const onRemoveFlythroughAsset = useStore(s => s.removeFlythroughAsset);
   const onClearFlythroughAssets = useStore(s => s.clearFlythroughAssets);
+  const tunnelAssets = useStore(s => s.tunnelAssets);
+  const onReplaceTunnelAssets = useStore(s => s.replaceTunnelAssets);
+  const onAddTunnelAssets = useStore(s => s.addTunnelAssets);
+  const onRemoveTunnelAsset = useStore(s => s.removeTunnelAsset);
+  const onClearTunnelAssets = useStore(s => s.clearTunnelAssets);
+  const onReorderTunnelAssets = useStore(s => s.reorderTunnelAssets);
 
   const projectFileInputRef = useRef<HTMLInputElement>(null);
   const flythroughFolderInputRef = useRef<HTMLInputElement>(null);
   const flythroughFilesInputRef = useRef<HTMLInputElement>(null);
+  const tunnelFolderInputRef = useRef<HTMLInputElement>(null);
+  const tunnelFilesInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const input = flythroughFolderInputRef.current;
     if (!input) return;
     input.setAttribute('webkitdirectory', '');
     input.setAttribute('directory', '');
+    const tunnelInput = tunnelFolderInputRef.current;
+    tunnelInput?.setAttribute('webkitdirectory', '');
+    tunnelInput?.setAttribute('directory', '');
   }, []);
 
   const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,6 +139,11 @@ export default function StackPanel() {
     }
   };
 
+  const handleDragEndTunnel = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) onReorderTunnelAssets(active.id as string, over.id as string);
+  };
+
   // Selecting is a synchronous store write, so by the time the async
   // uploadMesh3dTexture reads selectedMesh3dId back out of the store (after
   // the file read and GIF parse), it sees this row's id rather than
@@ -166,6 +184,27 @@ export default function StackPanel() {
     }
     const files = await pickGifFolder();
     if (files) await onReplaceFlythroughAssets(files);
+  };
+
+  const handleTunnelFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length > 0) void onReplaceTunnelAssets(files);
+  };
+
+  const handleTunnelFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length > 0) void onAddTunnelAssets(files);
+  };
+
+  const handleChooseTunnelFolder = async () => {
+    if (!isNative()) {
+      tunnelFolderInputRef.current?.click();
+      return;
+    }
+    const files = await pickImageFolder();
+    if (files) await onReplaceTunnelAssets(files);
   };
 
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
@@ -503,6 +542,57 @@ export default function StackPanel() {
                 </div>
               )}
             </div>
+          </div>
+        </>
+      )}
+
+      {/* MODE 5: GIF TUNNEL */}
+      {appMode === 'tunnel' && (
+        <>
+          <div className="shrink-0 border-b border-teal-950/80 bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_62%)] p-3">
+            <button
+              type="button"
+              onClick={() => void handleChooseTunnelFolder()}
+              className="group relative w-full overflow-hidden rounded-lg border border-teal-800/70 bg-teal-950/35 px-3 py-3 text-left transition-all hover:border-teal-600/80 hover:bg-teal-950/55"
+            >
+              <div className="absolute inset-y-0 left-0 w-0.5 bg-teal-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="rounded bg-teal-400/10 p-1.5 text-teal-300 group-hover:text-teal-200">
+                  <FolderInput className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-teal-100">Choose wallpaper folder</div>
+                  <div className="mt-0.5 text-[10px] text-teal-700">GIF, PNG, JPEG, or WebP · replaces library</div>
+                </div>
+              </div>
+            </button>
+            <input ref={tunnelFolderInputRef} type="file" multiple accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp" className="hidden" onChange={handleTunnelFolderChange} />
+            <button type="button" onClick={() => tunnelFilesInputRef.current?.click()} className="mt-2 w-full py-1 text-[10px] text-gray-500 transition-colors hover:text-teal-300">
+              Add individual images
+            </button>
+            <input ref={tunnelFilesInputRef} type="file" multiple accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp" className="hidden" onChange={handleTunnelFilesChange} />
+          </div>
+
+          <div className="relative min-h-0 flex-1 overflow-y-auto">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-800 bg-gray-900/95 px-4 py-2 backdrop-blur-sm">
+              <label className="text-xs font-semibold uppercase tracking-wider text-gray-400">Ring Sequence ({tunnelAssets.length})</label>
+              {tunnelAssets.length > 0 && <button type="button" onClick={onClearTunnelAssets} className="text-[10px] text-gray-500 transition-colors hover:text-red-300">Clear</button>}
+            </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndTunnel}>
+              <SortableContext items={tunnelAssets.map(asset => asset.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-1 p-2">
+                  {tunnelAssets.map((asset, index) => (
+                    <TunnelAssetRow key={asset.id} asset={asset} index={index} onRemove={onRemoveTunnelAsset} />
+                  ))}
+                  {tunnelAssets.length === 0 && (
+                    <div className="px-4 py-8 text-center">
+                      <Circle className="mx-auto mb-2 size-7 text-teal-950" />
+                      <p className="text-xs text-gray-500">The palette is live. Add images to wallpaper selected panes.</p>
+                    </div>
+                  )}
+                </div>
+              </SortableContext>
+            </DndContext>
           </div>
         </>
       )}

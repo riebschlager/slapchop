@@ -1,4 +1,4 @@
-export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough';
+export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough' | 'tunnel';
 
 export interface PolygonPoint {
   x: number;
@@ -487,4 +487,89 @@ export const DEFAULT_FLYTHROUGH: FlythroughConfig = {
   plane: 'billboard',
   opacity: 1,
   seed: 1
+};
+
+// --------------------------------------------------------------- GIF tunnel
+
+// GIF Tunnel owns its wallpaper library and procedural scene configuration.
+// Pane instances are derived from these values at an exact timestamp, so the
+// live viewport and every offline export use the same tunnel topology.
+export interface TunnelAsset {
+  id: string;
+  name: string;
+  src: string;
+  gifData?: GifData;
+  width?: number;
+  height?: number;
+}
+
+export type TunnelPaneFill = 'palette' | 'transparent';
+
+export interface TunnelConfig {
+  sides: number;
+  radius: number;
+  ringLength: number;
+  ringCount: number;
+  paneGap: number;
+  speed: number;
+  fov: number;
+  cameraOffsetX: number;
+  cameraOffsetY: number;
+  cameraRoll: number;
+  lookAhead: number;
+  bendX: number;
+  bendY: number;
+  bendWavelength: number;
+  twistPerRing: number;
+  textureScale: number;
+  textureOffsetX: number;
+  textureOffsetY: number;
+  gifEvery: number;
+  ringPatternOffset: number;
+  ringPhase: number;
+  nonGifFill: TunnelPaneFill;
+  palette: string[];
+  shuffle: boolean;
+  seed: number;
+  voidColor: string;
+  fogEnabled: boolean;
+  fogColor: string;
+  fogDensity: number;
+  motionSpeed?: MotionConfig;
+  motionBendX?: MotionConfig;
+  motionBendY?: MotionConfig;
+  motionTwist?: MotionConfig;
+  motionCameraRoll?: MotionConfig;
+}
+
+export const DEFAULT_TUNNEL: TunnelConfig = {
+  sides: 8,
+  radius: 760,
+  ringLength: 620,
+  ringCount: 28,
+  paneGap: 0,
+  speed: 1100,
+  fov: 74,
+  cameraOffsetX: 0,
+  cameraOffsetY: 0,
+  cameraRoll: 0,
+  lookAhead: 1200,
+  bendX: 520,
+  bendY: 300,
+  bendWavelength: 9000,
+  twistPerRing: 3,
+  textureScale: 1,
+  textureOffsetX: 0,
+  textureOffsetY: 0,
+  gifEvery: 1,
+  ringPatternOffset: 0,
+  ringPhase: 0,
+  nonGifFill: 'palette',
+  palette: ['#ff3d81', '#ffb000', '#16e0bd', '#2d7dff'],
+  shuffle: false,
+  seed: 1,
+  voidColor: '#03040a',
+  fogEnabled: true,
+  fogColor: '#03040a',
+  fogDensity: 0.00012
 };

@@ -6,6 +6,7 @@ import {
   DEFAULT_CAMERA3D,
   DEFAULT_FLYTHROUGH,
   DEFAULT_MASTER_FX,
+  DEFAULT_TUNNEL,
   FlythroughAsset,
   FlythroughConfig,
   Layer,
@@ -13,7 +14,9 @@ import {
   Mesh3dLayer,
   Mesh3dPrimitive,
   PolygonLayer,
-  PolygonPoint
+  PolygonPoint,
+  TunnelAsset,
+  TunnelConfig
 } from './types';
 import { parseGifFile } from './lib/gifUtils';
 import { createNewPolygonLayer, createPresetPolygonPoints } from './lib/polygonUtils';
@@ -26,6 +29,8 @@ export interface DocumentState {
   camera3d: Camera3dConfig;
   flythroughAssets: FlythroughAsset[];
   flythrough: FlythroughConfig;
+  tunnelAssets: TunnelAsset[];
+  tunnel: TunnelConfig;
   canvasBg: string;
   masterFx: MasterFxConfig;
 }
@@ -87,6 +92,15 @@ export interface AppState extends DocumentState {
   clearFlythroughAssets: () => void;
   updateFlythrough: (updates: Partial<FlythroughConfig>) => void;
   reseedFlythrough: () => void;
+
+  // GIF tunnel wallpaper library and procedural scene
+  replaceTunnelAssets: (files: File[]) => Promise<void>;
+  addTunnelAssets: (files: File[]) => Promise<void>;
+  removeTunnelAsset: (id: string) => void;
+  clearTunnelAssets: () => void;
+  reorderTunnelAssets: (activeId: string, overId: string) => void;
+  updateTunnel: (updates: Partial<TunnelConfig>) => void;
+  reseedTunnel: () => void;
 }
 
 function reorder<T extends { id: string }>(items: T[], activeId: string, overId: string): T[] {
@@ -105,6 +119,39 @@ function swap<T>(items: T[], i: number, j: number): T[] {
   return next;
 }
 
+const TUNNEL_IMAGE_EXTENSIONS = new Set(['gif', 'png', 'jpg', 'jpeg', 'webp']);
+
+async function tunnelAssetsFromFiles(files: File[]): Promise<TunnelAsset[]> {
+  const images = files.filter(file => {
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+    return file.type.startsWith('image/') || TUNNEL_IMAGE_EXTENSIONS.has(extension);
+  });
+  return Promise.all(images.map(async (file): Promise<TunnelAsset> => {
+    const gifData = await parseGifFile(file);
+    let width = gifData?.width;
+    let height = gifData?.height;
+    if (!width || !height) {
+      try {
+        const bitmap = await createImageBitmap(file);
+        width = bitmap.width;
+        height = bitmap.height;
+        bitmap.close();
+      } catch {
+        // Static textures can still load from the object URL. Unknown source
+        // dimensions use a square crop until the browser image is available.
+      }
+    }
+    return {
+      id: crypto.randomUUID(),
+      name: file.name,
+      src: URL.createObjectURL(file),
+      gifData: gifData || undefined,
+      width,
+      height
+    };
+  }));
+}
+
 const INITIAL_POLYGON = createNewPolygonLayer(
   'Hexagon Tile',
   createPresetPolygonPoints('hexagon', 220),
@@ -120,6 +167,8 @@ export const useStore = create<AppState>()(
       camera3d: { ...DEFAULT_CAMERA3D },
       flythroughAssets: [],
       flythrough: { ...DEFAULT_FLYTHROUGH },
+      tunnelAssets: [],
+      tunnel: { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] },
       canvasBg: '#000000',
       masterFx: { ...DEFAULT_MASTER_FX },
       appMode: 'symmetry',
@@ -137,6 +186,10 @@ export const useStore = create<AppState>()(
         camera3d: doc.camera3d ? { ...DEFAULT_CAMERA3D, ...doc.camera3d } : { ...DEFAULT_CAMERA3D },
         flythroughAssets: doc.flythroughAssets ?? [],
         flythrough: doc.flythrough ? { ...DEFAULT_FLYTHROUGH, ...doc.flythrough } : { ...DEFAULT_FLYTHROUGH },
+        tunnelAssets: doc.tunnelAssets ?? [],
+        tunnel: doc.tunnel
+          ? { ...DEFAULT_TUNNEL, ...doc.tunnel, palette: [...(doc.tunnel.palette ?? DEFAULT_TUNNEL.palette)] }
+          : { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] },
         canvasBg: doc.canvasBg,
         masterFx: doc.masterFx ? { ...DEFAULT_MASTER_FX, ...doc.masterFx } : { ...DEFAULT_MASTER_FX },
         selectedLayerId: null,
@@ -363,6 +416,25 @@ export const useStore = create<AppState>()(
       updateFlythrough: (updates) => set(s => ({ flythrough: { ...s.flythrough, ...updates } })),
       reseedFlythrough: () => set(s => ({
         flythrough: { ...s.flythrough, seed: (s.flythrough.seed + 1) % 100000 }
+      })),
+
+      replaceTunnelAssets: async (files) => set({ tunnelAssets: await tunnelAssetsFromFiles(files) }),
+      addTunnelAssets: async (files) => {
+        const assets = await tunnelAssetsFromFiles(files);
+        set(s => ({ tunnelAssets: [...s.tunnelAssets, ...assets] }));
+      },
+      removeTunnelAsset: (id) => set(s => ({
+        tunnelAssets: s.tunnelAssets.filter(asset => asset.id !== id)
+      })),
+      clearTunnelAssets: () => set({ tunnelAssets: [] }),
+      reorderTunnelAssets: (activeId, overId) => set(s => ({
+        tunnelAssets: reorder(s.tunnelAssets, activeId, overId)
+      })),
+      updateTunnel: (updates) => set(s => ({
+        tunnel: { ...s.tunnel, ...updates }
+      })),
+      reseedTunnel: () => set(s => ({
+        tunnel: { ...s.tunnel, seed: (s.tunnel.seed + 1) % 100000 }
       }))
     }),
     {
@@ -375,13 +447,16 @@ export const useStore = create<AppState>()(
         camera3d: s.camera3d,
         flythroughAssets: s.flythroughAssets,
         flythrough: s.flythrough,
+        tunnelAssets: s.tunnelAssets,
+        tunnel: s.tunnel,
         canvasBg: s.canvasBg,
         masterFx: s.masterFx
       }),
       equality: (a, b) =>
         a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.mesh3dLayers === b.mesh3dLayers
         && a.camera3d === b.camera3d && a.flythroughAssets === b.flythroughAssets
-        && a.flythrough === b.flythrough && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
+        && a.flythrough === b.flythrough && a.tunnelAssets === b.tunnelAssets
+        && a.tunnel === b.tunnel && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
       limit: 100,
       // Coalesce rapid bursts (slider scrubs) into few history entries.
       handleSet: (handleSet) => {
@@ -399,8 +474,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, canvasBg, masterFx } = useStore.getState();
-  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, canvasBg, masterFx };
+  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, canvasBg, masterFx } = useStore.getState();
+  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();

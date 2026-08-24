@@ -5,12 +5,15 @@ import {
   DEFAULT_CAMERA3D,
   DEFAULT_FLYTHROUGH,
   DEFAULT_MASTER_FX,
+  DEFAULT_TUNNEL,
   FlythroughAsset,
   FlythroughConfig,
   Layer,
   MasterFxConfig,
   Mesh3dLayer,
-  PolygonLayer
+  PolygonLayer,
+  TunnelAsset,
+  TunnelConfig
 } from '../types';
 import { parseGifFile } from './gifUtils';
 
@@ -27,6 +30,7 @@ type SerializedLayer = Omit<Layer, 'src' | 'gifData'> & { assetId: string };
 type SerializedPolygon = Omit<PolygonLayer, 'src' | 'gifData'> & { assetId?: string };
 type SerializedMesh3d = Omit<Mesh3dLayer, 'src' | 'gifData'> & { assetId?: string };
 type SerializedFlythroughAsset = Omit<FlythroughAsset, 'src' | 'gifData'> & { assetId: string };
+type SerializedTunnelAsset = Omit<TunnelAsset, 'src' | 'gifData'> & { assetId: string };
 
 interface ProjectFileV1 {
   app: 'slapchop';
@@ -73,7 +77,26 @@ interface ProjectFileV3 {
   assets: Record<string, ProjectAsset>;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3;
+// V4 adds GIF Tunnel's ordered mixed image/GIF wallpaper library and its
+// independently owned procedural configuration.
+interface ProjectFileV4 {
+  app: 'slapchop';
+  version: 4;
+  savedAt: string;
+  canvasBg: string;
+  masterFx?: MasterFxConfig;
+  layers: SerializedLayer[];
+  polygonLayers: SerializedPolygon[];
+  mesh3dLayers: SerializedMesh3d[];
+  camera3d?: Camera3dConfig;
+  flythroughAssets: SerializedFlythroughAsset[];
+  flythrough?: FlythroughConfig;
+  tunnelAssets: SerializedTunnelAsset[];
+  tunnel?: TunnelConfig;
+  assets: Record<string, ProjectAsset>;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -143,9 +166,19 @@ export async function saveProject(): Promise<void> {
     });
   }
 
-  const payload: ProjectFileV3 = {
+  const tunnelAssets: SerializedTunnelAsset[] = [];
+  for (const source of doc.tunnelAssets) {
+    const { src, gifData, ...rest } = source;
+    void gifData;
+    tunnelAssets.push({
+      ...rest,
+      assetId: await assetIdFor(src, source.name)
+    });
+  }
+
+  const payload: ProjectFileV4 = {
     app: 'slapchop',
-    version: 3,
+    version: 4,
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
     masterFx: doc.masterFx,
@@ -155,6 +188,8 @@ export async function saveProject(): Promise<void> {
     camera3d: doc.camera3d,
     flythroughAssets,
     flythrough: doc.flythrough,
+    tunnelAssets,
+    tunnel: doc.tunnel,
     assets
   };
 
@@ -164,7 +199,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || (payload.version !== 1 && payload.version !== 2 && payload.version !== 3)) {
+  if (payload.app !== 'slapchop' || ![1, 2, 3, 4].includes(payload.version)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -219,7 +254,8 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_MASTER_FX, ...payload.masterFx }
     : { ...DEFAULT_MASTER_FX };
 
-  const flythroughAssets: FlythroughAsset[] = payload.version === 3
+  const hasFlythrough = payload.version === 3 || payload.version === 4;
+  const flythroughAssets: FlythroughAsset[] = hasFlythrough
     ? payload.flythroughAssets.map((source) => {
       const { assetId, ...rest } = source;
       const asset = materialized.get(assetId);
@@ -227,9 +263,21 @@ export function restoreProjectDocument(
     })
     : [];
 
-  const flythrough: FlythroughConfig = payload.version === 3 && payload.flythrough
+  const flythrough: FlythroughConfig = hasFlythrough && payload.flythrough
     ? { ...DEFAULT_FLYTHROUGH, ...payload.flythrough }
     : { ...DEFAULT_FLYTHROUGH };
+
+  const tunnelAssets: TunnelAsset[] = payload.version === 4
+    ? payload.tunnelAssets.map((source) => {
+      const { assetId, ...rest } = source;
+      const asset = materialized.get(assetId);
+      return { ...rest, src: asset?.src ?? '', gifData: asset?.gifData };
+    })
+    : [];
+
+  const tunnel: TunnelConfig = payload.version === 4 && payload.tunnel
+    ? { ...DEFAULT_TUNNEL, ...payload.tunnel, palette: [...(payload.tunnel.palette ?? DEFAULT_TUNNEL.palette)] }
+    : { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] };
 
   return {
     layers,
@@ -238,6 +286,8 @@ export function restoreProjectDocument(
     camera3d,
     flythroughAssets,
     flythrough,
+    tunnelAssets,
+    tunnel,
     canvasBg: payload.canvasBg,
     masterFx
   };

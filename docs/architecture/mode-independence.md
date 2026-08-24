@@ -152,6 +152,13 @@ time, export, Master FX, and native/browser file boundaries, but not the 3D mesh
 mode's editable mesh or camera schemas. Project V3 embeds its GIF source library
 without persisting local folder paths; V1 and V2 remain readable.
 
+GIF Tunnel was subsequently added as another independent procedural surface.
+Its ordered mixed-image library, palette occupancy model, curved ring topology,
+camera, fog, and UV controls are mode-owned. A pure tunnel resolver feeds its
+Three.js renderer and Canvas 2D reference path from the same deterministic
+snapshot. Project V4 embeds its wallpaper sources while V1 through V3 remain
+readable.
+
 ## Guardrails
 
 - Do not duplicate deterministic timing, encoding, native I/O, or asset

@@ -7,7 +7,9 @@ import {
   MasterFxConfig,
   Mesh3dLayer,
   PolygonLayer,
-  PolygonPoint
+  PolygonPoint,
+  TunnelAsset,
+  TunnelConfig
 } from '../types';
 import { getGifFrameAtTime } from '../lib/gifUtils';
 import { applyMotion, getDeformedPoints, getInstances, getModulatedLayer, getPolygonSymmetryTransforms, resolveSymmetryParams } from '../lib/motion';
@@ -18,6 +20,7 @@ import { buildMeshWorldMatrix, mat4TransformPoint, Vec3, vecCross, vecNormalize,
 import { createScreen3dProjector, ScreenPoint } from '../lib/project3d';
 import { getVoronoiCells } from '../lib/voronoi';
 import { resolveFlythroughParticles } from '../lib/flythrough';
+import { resolveTunnelScene, TunnelVec3 } from '../lib/tunnel';
 
 export const CANVAS_WIDTH = 1080;
 export const CANVAS_HEIGHT = 1920;
@@ -30,6 +33,8 @@ export interface RenderState {
   camera3d: Camera3dConfig;
   flythroughAssets: FlythroughAsset[];
   flythrough: FlythroughConfig;
+  tunnelAssets: TunnelAsset[];
+  tunnel: TunnelConfig;
   canvasBg: string;
   masterFx?: MasterFxConfig;
 }
@@ -350,7 +355,7 @@ export function renderFrame(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = state.canvasBg;
+  ctx.fillStyle = state.appMode === 'tunnel' ? state.tunnel.voidColor : state.canvasBg;
   ctx.fillRect(0, 0, width, height);
 
   if (state.appMode === 'symmetry') {
@@ -412,6 +417,8 @@ export function renderFrame(
     renderMesh3dScene(ctx, t, state.mesh3dLayers, state.camera3d, width, height);
   } else if (state.appMode === 'flythrough') {
     renderFlythroughScene(ctx, t, state.flythroughAssets, state.flythrough, width, height);
+  } else if (state.appMode === 'tunnel') {
+    renderTunnelScene(ctx, t, state.tunnelAssets, state.tunnel, width, height);
   }
 
   if (state.masterFx?.enabled) {
@@ -428,6 +435,96 @@ function normalize3([x, y, z]: Point3): Point3 {
 
 function cross3(a: Point3, b: Point3): Point3 {
   return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
+function dot3(a: Point3, b: Point3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function subtract3(a: Point3, b: Point3): Point3 {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function renderTunnelScene(
+  ctx: CanvasRenderingContext2D,
+  t: number,
+  assets: TunnelAsset[],
+  config: TunnelConfig,
+  width: number,
+  height: number
+) {
+  const scene = resolveTunnelScene(assets, config, t);
+  const forward = normalize3(subtract3(scene.cameraTarget, scene.cameraPosition));
+  const right = normalize3(cross3(forward, scene.cameraUp));
+  const up = normalize3(cross3(right, forward));
+  const tanHalfFov = Math.tan(scene.fov * Math.PI / 360);
+  const aspect = width / height;
+  const project = (point: TunnelVec3): [number, number] | null => {
+    const relative = subtract3(point, scene.cameraPosition);
+    const depth = dot3(relative, forward);
+    if (depth <= 1) return null;
+    const ndcX = dot3(relative, right) / (depth * tanHalfFov * aspect);
+    const ndcY = dot3(relative, up) / (depth * tanHalfFov);
+    return [(ndcX + 1) * width / 2, (1 - ndcY) * height / 2];
+  };
+
+  const panes = [...scene.panes].sort((a, b) => b.distance - a.distance);
+  for (const pane of panes) {
+    if (!pane.asset && !pane.color) continue;
+    const projected = pane.corners.map(project);
+    if (projected.some(point => point === null)) continue;
+    const fog = scene.fogDensity > 0
+      ? Math.exp(-Math.pow(scene.fogDensity * pane.distance, 2))
+      : 1;
+    if (fog <= 0.002) continue;
+
+    const fillQuad = (color: string, alpha = 1) => {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.moveTo(projected[0]![0], projected[0]![1]);
+      ctx.lineTo(projected[1]![0], projected[1]![1]);
+      ctx.lineTo(projected[2]![0], projected[2]![1]);
+      ctx.lineTo(projected[3]![0], projected[3]![1]);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.restore();
+    };
+
+    ctx.save();
+    if (pane.asset) {
+      if (fog < 1) fillQuad(scene.fogColor, 1 - fog);
+      ctx.globalAlpha = fog;
+      const source = pane.asset.gifData
+        ? getGifFrameAtTime(pane.asset.gifData, pane.sourceTime, 1)
+        : getCachedImage(pane.asset.src);
+      if (source) {
+        const sourceWidth = pane.asset.gifData?.width
+          ?? pane.asset.width
+          ?? (source instanceof HTMLImageElement ? source.naturalWidth : 1);
+        const sourceHeight = pane.asset.gifData?.height
+          ?? pane.asset.height
+          ?? (source instanceof HTMLImageElement ? source.naturalHeight : 1);
+        const { u0, v0, u1, v1 } = pane.uv;
+        drawImageTriangle(
+          ctx,
+          source,
+          [[u0 * sourceWidth, v0 * sourceHeight], [u1 * sourceWidth, v0 * sourceHeight], [u1 * sourceWidth, v1 * sourceHeight]],
+          [projected[0]!, projected[1]!, projected[2]!]
+        );
+        drawImageTriangle(
+          ctx,
+          source,
+          [[u0 * sourceWidth, v0 * sourceHeight], [u1 * sourceWidth, v1 * sourceHeight], [u0 * sourceWidth, v1 * sourceHeight]],
+          [projected[0]!, projected[2]!, projected[3]!]
+        );
+      }
+    } else if (pane.color) {
+      fillQuad(mixHexColors(scene.fogColor, pane.color, fog));
+    }
+    ctx.restore();
+  }
 }
 
 function renderFlythroughScene(
@@ -654,6 +751,13 @@ function shadeColor(hex: string, factor: number): string {
   const [r, g, b] = parseHexColor(hex);
   const f = Math.max(0, Math.min(1, factor));
   return `rgb(${Math.round(r * f)}, ${Math.round(g * f)}, ${Math.round(b * f)})`;
+}
+
+function mixHexColors(a: string, b: string, amount: number): string {
+  const first = parseHexColor(a);
+  const second = parseHexColor(b);
+  const t = Math.max(0, Math.min(1, amount));
+  return `rgb(${Math.round(first[0] + (second[0] - first[0]) * t)}, ${Math.round(first[1] + (second[1] - first[1]) * t)}, ${Math.round(first[2] + (second[2] - first[2]) * t)})`;
 }
 
 function parseHexColor(hex: string): [number, number, number] {

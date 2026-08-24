@@ -82,6 +82,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const selectedPolygonId = useStore(s => s.selectedPolygonId);
   const mesh3dLayers = useStore(s => s.mesh3dLayers);
   const flythroughAssets = useStore(s => s.flythroughAssets);
+  const tunnelAssets = useStore(s => s.tunnelAssets);
+  const tunnel = useStore(s => s.tunnel);
   const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
   const canvasBg = useStore(s => s.canvasBg);
@@ -97,6 +99,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const onUpdateMesh3d = useStore(s => s.updateMesh3d);
   const onUpdateCamera3d = useStore(s => s.updateCamera3d);
   const onReplaceFlythroughAssets = useStore(s => s.replaceFlythroughAssets);
+  const onAddTunnelAssets = useStore(s => s.addTunnelAssets);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -188,6 +191,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           if (files.length === 0) return;
           if (useStore.getState().appMode === 'flythrough') {
             await useStore.getState().replaceFlythroughAssets(files);
+            return;
+          }
+          if (useStore.getState().appMode === 'tunnel') {
+            await useStore.getState().addTunnelAssets(files);
             return;
           }
           // Physical (device px) position → CSS px → canvas coords
@@ -811,6 +818,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
       if (gifs.length > 0) void onReplaceFlythroughAssets(gifs);
       return;
     }
+    if (appMode === 'tunnel') {
+      if (files.length > 0) void onAddTunnelAssets(files);
+      return;
+    }
     files.forEach((file: File) => {
       if (file.type.startsWith('image/')) {
         onAddLayer(file, coords.x, coords.y);
@@ -844,7 +855,9 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
               ? 'Symmetry Canvas'
               : appMode === 'polygon'
                 ? 'Polygon GIF Tiler'
-                : appMode === '3d' ? '3D Space' : 'GIF Flythrough'}
+                : appMode === '3d'
+                  ? '3D Space'
+                  : appMode === 'flythrough' ? 'GIF Flythrough' : 'GIF Tunnel'}
           </span>
           <span className="text-gray-500 font-mono">1080x1920</span>
           {appMode === '3d' && (
@@ -907,7 +920,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         style={{
           width: CANVAS_WIDTH * scale,
           height: CANVAS_HEIGHT * scale,
-          backgroundColor: canvasBg
+          backgroundColor: appMode === 'tunnel' ? tunnel.voidColor : canvasBg
         }}
       >
         {/* Native 2D Canvas */}
@@ -923,6 +936,14 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
             <div className="px-4 py-3 rounded-lg border border-cyan-900/60 bg-black/65 backdrop-blur-sm text-center shadow-[0_0_40px_rgba(6,182,212,0.08)]">
               <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-500">No flight library</div>
               <div className="mt-1 text-xs text-gray-500">Choose a GIF folder in the Stack panel</div>
+            </div>
+          </div>
+        )}
+
+        {appMode === 'tunnel' && tunnelAssets.length === 0 && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center">
+            <div className="rounded-full border border-teal-950/70 bg-black/60 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-teal-700 backdrop-blur-sm">
+              Palette tunnel · add wallpaper sources in the Stack
             </div>
           </div>
         )}

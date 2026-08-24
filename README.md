@@ -53,6 +53,10 @@ for the product decision and incremental architecture direction.
   deterministic Three.js particle field that rushes past the camera. GIFs
   retain their source aspect ratios, with camera-facing, XY, XZ, and YZ plane
   orientations plus speed, drift, spin, and scale modulation.
+- **GIF Tunnel** — wallpaper a procedurally bent, endlessly advancing low-poly
+  tunnel with an ordered or seeded library of GIFs and static images. Configure
+  ring detail, pane occupancy, palette/transparent gaps, UV crop, camera,
+  synchronized or phase-shifted playback, fog, twist, and path modulation.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

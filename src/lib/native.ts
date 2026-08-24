@@ -128,6 +128,15 @@ export async function pickGifFolder(): Promise<File[] | null> {
   return files.filter(file => file.name.toLowerCase().endsWith('.gif'));
 }
 
+/** Pick one folder and return its top-level supported image files in name order. */
+export async function pickImageFolder(): Promise<File[] | null> {
+  if (!isNative()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const path = await open({ multiple: false, directory: true });
+  if (typeof path !== 'string') return null;
+  return imageFilesFromPaths([path]);
+}
+
 function isEditingText(): boolean {
   const el = document.activeElement;
   return el instanceof HTMLInputElement

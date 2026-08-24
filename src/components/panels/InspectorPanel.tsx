@@ -19,6 +19,7 @@ import Texture3dTab from './inspector/Texture3dTab';
 import Deform3dTab from './inspector/Deform3dTab';
 import Symmetry3dTab from './inspector/Symmetry3dTab';
 import FlythroughInspector from './inspector/FlythroughInspector';
+import TunnelInspector from './inspector/TunnelInspector';
 
 const INSPECTOR_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:inspector', defaultWidth: 336, minWidth: 260, maxWidth: 480, side: 'right' as const };
 
@@ -77,6 +78,8 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
           <PolygonModeInspector />
         ) : appMode === 'flythrough' ? (
           <FlythroughInspector />
+        ) : appMode === 'tunnel' ? (
+          <TunnelInspector />
         ) : (
           selectedMesh ? (
             <div className="p-3 flex flex-col">

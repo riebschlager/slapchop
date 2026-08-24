@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FLYTHROUGH } from '../types';
+import { DEFAULT_FLYTHROUGH, DEFAULT_TUNNEL } from '../types';
 import { restoreProjectDocument } from './project';
 
 describe('restoreProjectDocument', () => {
@@ -65,6 +65,8 @@ describe('restoreProjectDocument', () => {
     expect(document.mesh3dLayers).toEqual([]);
     expect(document.flythroughAssets).toEqual([]);
     expect(document.flythrough.particleCount).toBeGreaterThan(0);
+    expect(document.tunnelAssets).toEqual([]);
+    expect(document.tunnel.sides).toBe(DEFAULT_TUNNEL.sides);
   });
 
   it('restores a V3 flythrough library and its mode-owned config', () => {
@@ -94,5 +96,28 @@ describe('restoreProjectDocument', () => {
     expect(document.flythrough.speed).toBe(900);
     expect(document.flythrough.plane).toBe('xz');
     expect(document.flythrough.depth).toBeGreaterThan(0);
+  });
+
+  it('restores a V4 tunnel library, palette, and procedural configuration', () => {
+    const payload = {
+      app: 'slapchop' as const,
+      version: 4 as const,
+      savedAt: '2026-08-24T00:00:00.000Z',
+      canvasBg: '#000000',
+      layers: [],
+      polygonLayers: [],
+      mesh3dLayers: [],
+      flythroughAssets: [],
+      tunnelAssets: [{ id: 'wall-1', name: 'wall.png', width: 800, height: 600, assetId: 'wall-asset' }],
+      tunnel: { ...DEFAULT_TUNNEL, sides: 4, gifEvery: 3, palette: ['#112233', '#abcdef'] },
+      assets: {}
+    };
+
+    const document = restoreProjectDocument(payload);
+
+    expect(document.tunnelAssets[0]).toMatchObject({ id: 'wall-1', name: 'wall.png', src: '' });
+    expect(document.tunnel.sides).toBe(4);
+    expect(document.tunnel.gifEvery).toBe(3);
+    expect(document.tunnel.palette).toEqual(['#112233', '#abcdef']);
   });
 });

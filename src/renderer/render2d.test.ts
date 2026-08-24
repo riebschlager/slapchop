@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_MASTER_FX, Layer, PolygonLayer } from '../types';
+import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, Layer, PolygonLayer } from '../types';
 import { renderFrame, RenderState } from './render2d';
 
 function createRecordingCanvas() {
@@ -65,6 +65,8 @@ function state(appMode: RenderState['appMode'], layers: Layer[] = []): RenderSta
     camera3d: DEFAULT_CAMERA3D,
     flythroughAssets: [],
     flythrough: DEFAULT_FLYTHROUGH,
+    tunnelAssets: [],
+    tunnel: DEFAULT_TUNNEL,
     canvasBg: '#000000',
     masterFx: DEFAULT_MASTER_FX
   };
@@ -117,5 +119,15 @@ describe('renderFrame mode boundary', () => {
     const second = renderTrace(flythroughState, 0.5);
     expect(first).toEqual(second);
     expect(first.some(entry => entry.startsWith('drawImage:'))).toBe(true);
+  });
+
+  it('renders the palette-only tunnel deterministically in the fallback', () => {
+    const tunnelState: RenderState = {
+      ...state('tunnel'),
+      tunnel: { ...DEFAULT_TUNNEL, sides: 4, ringCount: 6, speed: 0, fogEnabled: false }
+    };
+    const first = renderTrace(tunnelState, 0.5);
+    expect(first).toEqual(renderTrace(tunnelState, 0.5));
+    expect(first.some(entry => entry.startsWith('fill:'))).toBe(true);
   });
 });
