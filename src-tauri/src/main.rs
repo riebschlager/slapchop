@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-  slapchop_lib::run();
+    slapchop_lib::run();
 }

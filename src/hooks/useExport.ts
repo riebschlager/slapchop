@@ -2,13 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { getDocumentSnapshot, useStore } from '../store';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState } from '../renderer/render2d';
 import { getPlaybackTime, renderExportFrame } from '../renderer/loop';
+import { suspendLivePreviewRendering } from '../renderer/livePreviewSuspension';
 import { exportVideo, supportsWebCodecs, VideoFormat } from '../lib/videoExport';
 import { exportZipSequence } from '../lib/zipExport';
 import { exportGif } from '../lib/gifExport';
-import { exportProRes } from '../lib/proresExport';
-import { pickSavePath, saveBlob } from '../lib/native';
+import { exportNativeImageSequence } from '../lib/imageSequenceExport';
+import { exportNativeVideo } from '../lib/ffmpegExport';
+import { getExportErrorMessage } from '../lib/exportErrors';
+import { isNative, pickDirectoryPath, pickSavePath, saveBlob } from '../lib/native';
 
-export type ExportType = 'mp4' | 'webm' | 'prores' | 'gif' | 'zip';
+export type ExportType = 'mp4' | 'webm' | 'prores' | 'gif' | 'zip' | 'sequence';
 export type ExportResolution = 'full' | 'hd' | 'compact';
 export type ExportImageFormat = 'png' | 'jpeg';
 
@@ -28,18 +31,43 @@ function getExportTimestamp(): string {
 // hook needs no reference to the live on-screen canvas. This is what lets the
 // Inspector column trigger and configure exports while the canvas itself
 // stays owned by CanvasWorkspace.
-export function useExport() {
+interface UseExportOptions {
+  liveOutputStreaming?: boolean;
+}
+
+export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}) {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportType, setExportType] = useState<ExportType>('mp4');
   const [exportResolution, setExportResolution] = useState<ExportResolution>('hd');
   const [exportFormat, setExportFormat] = useState<ExportImageFormat>('png');
+  const [exportStartTime, setExportStartTime] = useState<number>(0);
   const [exportDuration, setExportDuration] = useState<number>(3);
   const [exportFps, setExportFps] = useState<number>(30);
+  const [resumeSequence, setResumeSequence] = useState(false);
+  const [pausePreviewDuringExport, setPausePreviewDuringExport] = useState(true);
   const [exportJob, setExportJob] = useState<ExportJob | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const isCancelExportRef = useRef(false);
+  const liveOutputStreamingRef = useRef(liveOutputStreaming);
+  const resumePreviewRef = useRef<(() => void) | null>(null);
+  liveOutputStreamingRef.current = liveOutputStreaming;
 
-  const openExportModal = () => setShowExportModal(true);
+  useEffect(() => {
+    if (!liveOutputStreaming) return;
+    resumePreviewRef.current?.();
+    resumePreviewRef.current = null;
+  }, [liveOutputStreaming]);
+
+  useEffect(() => () => {
+    resumePreviewRef.current?.();
+    resumePreviewRef.current = null;
+  }, []);
+
+  const openExportModal = () => {
+    setExportError(null);
+    setShowExportModal(true);
+  };
   const cancelExport = () => {
     isCancelExportRef.current = true;
     setShowExportModal(false);
@@ -65,6 +93,19 @@ export function useExport() {
   const finishExport = async (blob: Blob, filename: string) => {
     await saveBlob(blob, filename);
     setShowExportModal(false);
+  };
+
+  const runWithPreviewPaused = async <T,>(work: () => Promise<T>): Promise<T> => {
+    if (!isNative() || !pausePreviewDuringExport || liveOutputStreamingRef.current) return work();
+
+    const resumePreview = suspendLivePreviewRendering();
+    resumePreviewRef.current = resumePreview;
+    try {
+      return await work();
+    } finally {
+      resumePreview();
+      if (resumePreviewRef.current === resumePreview) resumePreviewRef.current = null;
+    }
   };
 
   // Real-time MediaRecorder capture, kept only for browsers without WebCodecs.
@@ -120,6 +161,7 @@ export function useExport() {
 
   const startExport = async () => {
     isCancelExportRef.current = false;
+    setExportError(null);
     const doc = snapshotRenderState();
     const [resW, resH] = exportResolution === 'full' ? [1080, 1920]
                        : exportResolution === 'hd' ? [720, 1280]
@@ -131,6 +173,7 @@ export function useExport() {
       height: resH,
       fps: exportFps,
       duration: exportDuration,
+      startTime: isNative() ? exportStartTime : 0,
       renderFrame: (canvas: HTMLCanvasElement, t: number) =>
         renderExportFrame(canvas, t, doc, resW, resH),
       isCancelled: () => isCancelExportRef.current
@@ -140,7 +183,19 @@ export function useExport() {
 
     setExportJob({ label: 'Preparing export…', percent: 0 });
     try {
-      if (exportType === 'zip') {
+      if (exportType === 'sequence') {
+        const directory = await pickDirectoryPath();
+        if (directory) {
+          const result = await runWithPreviewPaused(() => exportNativeImageSequence({
+            ...common,
+            directory,
+            imageFormat: exportFormat,
+            resume: resumeSequence,
+            onProgress: frameProgress(resumeSequence ? 'Rendering/resuming' : 'Rendering')
+          }));
+          if (!result.cancelled) setShowExportModal(false);
+        }
+      } else if (exportType === 'zip') {
         const blob = await exportZipSequence({
           ...common,
           imageFormat: exportFormat,
@@ -149,18 +204,19 @@ export function useExport() {
         });
         if (blob) finishExport(blob, `slapchop-sequence-${ts}-${exportResolution}-${exportDuration}s.zip`);
       } else if (exportType === 'gif') {
-        const blob = await exportGif({ ...common, onProgress: frameProgress('Encoding GIF') });
+        const blob = await runWithPreviewPaused(() =>
+          exportGif({ ...common, onProgress: frameProgress('Encoding GIF') }));
         if (blob) finishExport(blob, `slapchop-anim-${ts}-${exportDuration}s.gif`);
-      } else if (exportType === 'prores') {
-        const savePath = await pickSavePath(`slapchop-video-${ts}-${exportDuration}s.mov`);
+      } else if (isNative() && (exportType === 'mp4' || exportType === 'webm' || exportType === 'prores')) {
+        const extension = exportType === 'prores' ? 'mov' : exportType;
+        const savePath = await pickSavePath(`slapchop-video-${ts}-${exportDuration}s.${extension}`);
         if (savePath) {
-          const ok = await exportProRes({
+          const ok = await runWithPreviewPaused(() => exportNativeVideo(exportType, {
             ...common,
             savePath,
-            onProgress: frameProgress('Rendering'),
-            onEncodeProgress: (done, total) =>
-              setExportJob({ label: `Encoding ProRes ${done}/${total}…`, percent: (done / total) * 100 })
-          });
+            onProgress: frameProgress('Rendering and encoding'),
+            onFinalizing: () => setExportJob({ label: 'Finalizing video…', percent: 100 })
+          }));
           if (ok) setShowExportModal(false);
         }
       } else if (supportsWebCodecs()) {
@@ -174,6 +230,7 @@ export function useExport() {
       }
     } catch (e) {
       console.error('Export failed:', e);
+      setExportError(getExportErrorMessage(e));
     } finally {
       setExportJob(null);
     }
@@ -181,7 +238,10 @@ export function useExport() {
 
   // Native menu items (File > Export…) reach us via window events.
   useEffect(() => {
-    const showExport = () => setShowExportModal(true);
+    const showExport = () => {
+      setExportError(null);
+      setShowExportModal(true);
+    };
     const exportPng = () => void handleExportHighRes();
     window.addEventListener('slapchop:show-export', showExport);
     window.addEventListener('slapchop:export-png', exportPng);
@@ -202,11 +262,19 @@ export function useExport() {
     setExportResolution,
     exportFormat,
     setExportFormat,
+    exportStartTime,
+    setExportStartTime,
     exportDuration,
     setExportDuration,
     exportFps,
     setExportFps,
+    resumeSequence,
+    setResumeSequence,
+    pausePreviewDuringExport,
+    setPausePreviewDuringExport,
+    liveOutputStreaming,
     exportJob,
+    exportError,
     handleExportHighRes,
     startExport
   };

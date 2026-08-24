@@ -12,8 +12,8 @@ import { useLiveOutput } from '../hooks/useLiveOutput';
 // a sibling, not a descendant, of the Stage.
 export default function AppShell() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const exportApi = useExport();
   const liveOutputApi = useLiveOutput(canvasRef);
+  const exportApi = useExport({ liveOutputStreaming: liveOutputApi.liveOutputStreaming });
 
   return (
     <>

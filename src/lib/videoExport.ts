@@ -8,6 +8,7 @@ export interface FrameExportOptions {
   height: number;
   fps: number;
   duration: number;
+  startTime?: number;
   /** Draw the frame for time t (seconds) into the given canvas. Must be a pure function of t. */
   renderFrame: (canvas: HTMLCanvasElement, t: number) => void;
   onProgress?: (done: number, total: number) => void;
@@ -65,7 +66,7 @@ export async function exportVideo(
   format: VideoFormat,
   opts: FrameExportOptions
 ): Promise<Blob | null> {
-  const { width, height, fps, duration, renderFrame, onProgress, isCancelled } = opts;
+  const { width, height, fps, duration, startTime = 0, renderFrame, onProgress, isCancelled } = opts;
   const totalFrames = Math.round(fps * duration);
 
   const config = await pickEncoderConfig(format, width, height, fps);
@@ -98,7 +99,7 @@ export async function exportVideo(
       if (isCancelled?.()) return null;
       if (encodeError) throw encodeError;
 
-      renderFrame(canvas, n / fps);
+      renderFrame(canvas, startTime + n / fps);
       const frame = new VideoFrame(canvas, {
         timestamp: Math.round((n * 1_000_000) / fps),
         duration: Math.round(1_000_000 / fps)

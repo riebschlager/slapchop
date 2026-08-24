@@ -80,15 +80,24 @@ live canvas.
 ## Exports
 
 Animation exports are frame-exact and deterministic: every frame is rendered at its
-exact timestamp and encoded with WebCodecs, so exports run faster than real time and
-never drop frames.
+exact timestamp and encoded with WebCodecs in the browser or streamed through ffmpeg
+in the desktop app, so offline exports never drop frames.
 
 - **MP4 (H.264)** — the default; plays in QuickTime and uploads anywhere
 - **WebM (VP9)**
-- **ProRes 4444** *(desktop app only)* — frame-exact PNGs piped through the bundled
-  ffmpeg sidecar (`prores_ks`, alpha-capable) for VJ/editing pipelines
+- **ProRes 4444** *(desktop app only)* — frame-exact PNGs streamed through the
+  bundled ffmpeg sidecar (`prores_ks`, alpha-capable) for VJ/editing pipelines
 - **Animated GIF** — quantized and encoded off-thread via gifenc
-- **Frame sequence ZIP** — PNG or JPEG frames, compressed off-thread
+- **Frame sequences** — PNG or JPEG files written incrementally to a selected
+  folder in the desktop app, with frame-range and resume support; browsers use ZIP
+
+Desktop MP4, WebM, and ProRes exports stream rendered frames directly through the
+bundled ffmpeg sidecar and write video incrementally, so their memory use does not
+grow with duration. Desktop exports accept a start time and durations up to six
+hours per job. The desktop app pauses its live preview by default while rendering
+animation frames, then resumes from the same playback time; an active TouchDesigner
+Live Output stream keeps the preview running. Animated GIF and browser exports
+retain the short-form limit.
 
 Browsers without WebCodecs fall back to real-time MediaRecorder WebM capture.
 

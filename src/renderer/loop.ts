@@ -1,6 +1,10 @@
 import { useStore } from '../store';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, renderFrame } from './render2d';
 import { PixiSceneRenderer } from './pixiRenderer';
+import {
+  isLivePreviewRenderingSuspended,
+  subscribeToLivePreviewSuspension
+} from './livePreviewSuspension';
 
 // The playback clock lives here, outside React. Components that need the
 // current time (hit testing, selection overlays) read it imperatively.
@@ -45,13 +49,7 @@ export function renderExportFrame(
   height: number
 ) {
   if (activeGpu) {
-    const frame = activeGpu.extract(t, state, width, height);
-    if (target.width !== width) target.width = width;
-    if (target.height !== height) target.height = height;
-    const ctx = target.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, width, height);
-    ctx.drawImage(frame, 0, 0);
+    activeGpu.extract(t, state, width, height, target);
   } else {
     renderFrame(target, t, state, width, height);
   }
@@ -64,18 +62,29 @@ export function startRenderLoop(
   let raf = 0;
   let disposed = false;
   let gpu: PixiSceneRenderer | null = null;
+  let stopTicking: (() => void) | null = null;
 
   let consecutiveErrors = 0;
 
   const startTicking = (drawFn: (t: number, state: RenderState) => void) => {
     let draw = drawFn;
-    const t0 = performance.now();
+    let lastFrameAt = performance.now();
     let frames = 0;
-    let lastFpsAt = t0;
+    let lastFpsAt = lastFrameAt;
+
+    playbackTime = 0;
+
+    const scheduleFrame = () => {
+      if (!disposed && !isLivePreviewRenderingSuspended() && raf === 0) {
+        raf = requestAnimationFrame(tick);
+      }
+    };
 
     const tick = (now: number) => {
+      raf = 0;
       if (disposed) return;
-      playbackTime = (now - t0) / 1000;
+      playbackTime += (now - lastFrameAt) / 1000;
+      lastFrameAt = now;
 
       try {
         draw(playbackTime, useStore.getState());
@@ -105,15 +114,37 @@ export function startRenderLoop(
         frames = 0;
         lastFpsAt = now;
       }
-      if (!disposed) {
-        raf = requestAnimationFrame(tick);
-      }
+      scheduleFrame();
     };
-    raf = requestAnimationFrame(tick);
+
+    const unsubscribe = subscribeToLivePreviewSuspension((suspended) => {
+      if (disposed) return;
+      if (suspended) {
+        if (raf !== 0) cancelAnimationFrame(raf);
+        raf = 0;
+        frames = 0;
+        onFps?.(0);
+        return;
+      }
+
+      // Exclude the paused interval from playback time and FPS accounting so
+      // the preview resumes on the same frame without a clock jump.
+      lastFrameAt = performance.now();
+      lastFpsAt = lastFrameAt;
+      frames = 0;
+      scheduleFrame();
+    });
+
+    scheduleFrame();
+    return () => {
+      unsubscribe();
+      if (raf !== 0) cancelAnimationFrame(raf);
+      raf = 0;
+    };
   };
 
   const start2d = () => {
-    startTicking((t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT));
+    stopTicking = startTicking((t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT));
   };
 
   if (is2dRendererForced()) {
@@ -127,7 +158,7 @@ export function startRenderLoop(
         }
         gpu = renderer;
         activeGpu = renderer;
-        startTicking((t, state) => renderer.render(t, state));
+        stopTicking = startTicking((t, state) => renderer.render(t, state));
       },
       (err) => {
         console.warn('GPU renderer init failed, falling back to Canvas 2D:', err);
@@ -138,7 +169,8 @@ export function startRenderLoop(
 
   return () => {
     disposed = true;
-    cancelAnimationFrame(raf);
+    stopTicking?.();
+    stopTicking = null;
     if (gpu) {
       if (activeGpu === gpu) activeGpu = null;
       gpu.destroy();

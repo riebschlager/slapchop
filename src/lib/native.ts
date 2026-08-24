@@ -56,6 +56,14 @@ export async function pickSavePath(filename: string): Promise<string | null> {
   return save({ defaultPath: filename, filters: filterForFilename(filename) });
 }
 
+/** Pick an existing destination folder for a native frame-sequence export. */
+export async function pickDirectoryPath(): Promise<string | null> {
+  if (!isNative()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const path = await open({ multiple: false, directory: true });
+  return typeof path === 'string' ? path : null;
+}
+
 async function fileFromPath(path: string): Promise<File> {
   const { readFile } = await import('@tauri-apps/plugin-fs');
   const bytes = await readFile(path);

@@ -4,21 +4,44 @@ import { isNative } from '../../lib/native';
 import { supportsWebCodecs } from '../../lib/videoExport';
 import { ExportApi, ExportType } from '../../hooks/useExport';
 
+function formatBytes(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit++;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
 export default function ExportModal({ api }: { api: ExportApi }) {
   const {
     exportType, setExportType,
     exportResolution, setExportResolution,
     exportFormat, setExportFormat,
+    exportStartTime, setExportStartTime,
     exportDuration, setExportDuration,
     exportFps, setExportFps,
+    resumeSequence, setResumeSequence,
+    pausePreviewDuringExport, setPausePreviewDuringExport,
+    liveOutputStreaming,
     exportJob,
+    exportError,
     cancelExport,
     startExport
   } = api;
+  const native = isNative();
+  const durationMax = native && exportType !== 'gif' ? 21_600 : 10;
+  const totalFrames = Math.round(exportDuration * exportFps);
+  const [exportWidth, exportHeight] = exportResolution === 'full' ? [1080, 1920]
+    : exportResolution === 'hd' ? [720, 1280]
+    : [540, 960];
+  const uncompressedSequenceBytes = exportWidth * exportHeight * 4 * totalFrames;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 text-gray-100 shadow-2xl relative">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto p-6 text-gray-100 shadow-2xl relative">
         <button
           onClick={cancelExport}
           className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800 transition-colors"
@@ -36,13 +59,18 @@ export default function ExportModal({ api }: { api: ExportApi }) {
               {([
                 { id: 'mp4', label: 'MP4 (H.264)', Icon: Film },
                 { id: 'webm', label: 'WebM (VP9)', Icon: Video },
-                ...(isNative() ? [{ id: 'prores', label: 'ProRes 4444', Icon: Clapperboard }] : []),
+                ...(native ? [{ id: 'prores', label: 'ProRes 4444', Icon: Clapperboard }] : []),
                 { id: 'gif', label: 'Animated GIF', Icon: Repeat },
-                { id: 'zip', label: 'Frames (ZIP)', Icon: Download }
+                ...(native
+                  ? [{ id: 'sequence', label: 'Frames (Folder)', Icon: Download }]
+                  : [{ id: 'zip', label: 'Frames (ZIP)', Icon: Download }])
               ] as { id: ExportType; label: string; Icon: typeof Film }[]).map(({ id, label, Icon }) => (
                 <button
                   key={id}
-                  onClick={() => setExportType(id)}
+                  onClick={() => {
+                    setExportType(id);
+                    if (id === 'gif' || !native) setExportDuration(Math.min(10, exportDuration));
+                  }}
                   className={cn(
                     "py-2 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-2",
                     exportType === id ? "bg-indigo-600 text-white shadow" : "text-gray-400 hover:text-white"
@@ -53,7 +81,7 @@ export default function ExportModal({ api }: { api: ExportApi }) {
                 </button>
               ))}
             </div>
-            {(exportType === 'mp4' || exportType === 'webm') && !supportsWebCodecs() && (
+            {!native && (exportType === 'mp4' || exportType === 'webm') && !supportsWebCodecs() && (
               <p className="text-[10px] text-amber-400/90 mt-1.5">
                 WebCodecs is unavailable in this browser — video will be recorded in real time as WebM.
               </p>
@@ -85,16 +113,33 @@ export default function ExportModal({ api }: { api: ExportApi }) {
             </div>
           </div>
 
+          {native && (
+            <div>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Start Time (Sec)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={exportStartTime}
+                onChange={(e) => setExportStartTime(Math.max(0, parseFloat(e.target.value) || 0))}
+                disabled={exportJob !== null}
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white disabled:opacity-60"
+              />
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Duration (Sec)</label>
               <input
                 type="number"
                 min="1"
-                max="10"
+                max={durationMax}
+                step="1"
                 value={exportDuration}
-                onChange={(e) => setExportDuration(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white"
+                onChange={(e) => setExportDuration(Math.max(1, Math.min(durationMax, parseFloat(e.target.value) || 1)))}
+                disabled={exportJob !== null}
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white disabled:opacity-60"
               />
             </div>
 
@@ -103,7 +148,8 @@ export default function ExportModal({ api }: { api: ExportApi }) {
               <select
                 value={exportFps}
                 onChange={(e) => setExportFps(parseInt(e.target.value))}
-                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white"
+                disabled={exportJob !== null}
+                className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white disabled:opacity-60"
               >
                 <option value={15}>15 FPS</option>
                 <option value={30}>30 FPS</option>
@@ -112,7 +158,36 @@ export default function ExportModal({ api }: { api: ExportApi }) {
             </div>
           </div>
 
-          {exportType === 'zip' && (
+          <p className="text-[10px] text-gray-500">
+            {totalFrames.toLocaleString()} frames · {native
+              ? 'desktop exports write incrementally without retaining the complete output in memory.'
+              : 'browser exports retain the existing short-form pipeline.'}
+          </p>
+
+          {native && (
+            <div>
+              <label className={cn(
+                'flex items-center gap-2 text-xs',
+                liveOutputStreaming ? 'text-gray-500 cursor-not-allowed' : 'text-gray-300 cursor-pointer'
+              )}>
+                <input
+                  type="checkbox"
+                  checked={pausePreviewDuringExport}
+                  onChange={(e) => setPausePreviewDuringExport(e.target.checked)}
+                  disabled={exportJob !== null || liveOutputStreaming}
+                  className="accent-indigo-500"
+                />
+                Pause preview during export
+              </label>
+              <p className="text-[10px] text-gray-500 mt-1.5">
+                {liveOutputStreaming
+                  ? 'Preview stays active while TouchDesigner Live Output is streaming.'
+                  : 'Frees rendering resources for faster frame generation; playback resumes from the same frame.'}
+              </p>
+            </div>
+          )}
+
+          {(exportType === 'zip' || exportType === 'sequence') && (
             <div>
               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Image File Format</label>
               <div className="flex items-center gap-4 text-xs">
@@ -136,9 +211,32 @@ export default function ExportModal({ api }: { api: ExportApi }) {
                     onChange={() => setExportFormat('jpeg')}
                     className="accent-indigo-500"
                   />
-                  JPEG (Smaller ZIP)
+                  JPEG ({exportType === 'zip' ? 'Smaller ZIP' : 'Smaller files'})
                 </label>
               </div>
+              {exportType === 'sequence' && (
+                <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mt-3">
+                  <input
+                    type="checkbox"
+                    checked={resumeSequence}
+                    onChange={(e) => setResumeSequence(e.target.checked)}
+                    disabled={exportJob !== null}
+                    className="accent-indigo-500"
+                  />
+                  Resume existing sequence (skip frame files already present)
+                </label>
+              )}
+              {exportType === 'sequence' && (
+                <p className="text-[10px] text-gray-500 mt-1.5">
+                  Select an empty destination folder, or select the original folder with Resume enabled. Uncompressed frame data is {formatBytes(uncompressedSequenceBytes)}; actual PNG/JPEG storage depends on the artwork.
+                </p>
+              )}
+            </div>
+          )}
+
+          {exportError && (
+            <div className="p-3 bg-red-950/40 rounded-lg border border-red-900/70 text-xs text-red-200">
+              {exportError}
             </div>
           )}
 

@@ -160,6 +160,9 @@ export class PixiSceneRenderer {
   private bgW = 0;
   private bgH = 0;
   private bgColor = '';
+  private exportTarget: RenderTexture | null = null;
+  private exportTargetW = 0;
+  private exportTargetH = 0;
 
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
@@ -194,16 +197,25 @@ export class PixiSceneRenderer {
   }
 
   /**
-   * Render the scene at time t into an offscreen RenderTexture at an arbitrary
-   * resolution and return the pixels as a canvas. Used by the export paths.
+   * Render the scene at time t into a reusable offscreen RenderTexture and
+   * copy its pixels into the caller-owned canvas. Long exports must not create
+   * a new GPU render target and DOM canvas for every frame.
    */
-  extract(t: number, state: RenderState, width: number, height: number): HTMLCanvasElement {
+  extract(t: number, state: RenderState, width: number, height: number, target: HTMLCanvasElement): void {
     this.sync(t, state, width, height);
-    const rt = RenderTexture.create({ width, height });
-    this.renderer.render({ container: this.stage, target: rt });
-    const out = this.renderer.extract.canvas(rt) as HTMLCanvasElement;
-    rt.destroy(true);
-    return out;
+    if (!this.exportTarget || this.exportTargetW !== width || this.exportTargetH !== height) {
+      this.exportTarget?.destroy(true);
+      this.exportTarget = RenderTexture.create({ width, height });
+      this.exportTargetW = width;
+      this.exportTargetH = height;
+    }
+    this.renderer.render({ container: this.stage, target: this.exportTarget });
+    const extracted = this.renderer.extract.pixels(this.exportTarget);
+    if (target.width !== width) target.width = width;
+    if (target.height !== height) target.height = height;
+    const ctx = target.getContext('2d');
+    if (!ctx) throw new Error('Could not create the export canvas context.');
+    ctx.putImageData(new ImageData(extracted.pixels, extracted.width, extracted.height), 0, 0);
   }
 
   destroy() {
@@ -218,6 +230,8 @@ export class PixiSceneRenderer {
     this.mesh3dTexture?.destroy(true);
     this.flythroughTexture?.destroy(true);
     this.tunnelTexture?.destroy(true);
+    this.exportTarget?.destroy(true);
+    this.exportTarget = null;
     this.rgbSplitFilter.destroy();
     this.duotoneFilter.destroy();
     this.scanlinesFilter.destroy();

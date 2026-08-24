@@ -12,7 +12,7 @@ export interface ZipExportOptions extends FrameExportOptions {
  */
 export async function exportZipSequence(opts: ZipExportOptions): Promise<Blob | null> {
   const {
-    fps, duration, renderFrame,
+    fps, duration, startTime = 0, renderFrame,
     imageFormat, onProgress, onZipProgress, isCancelled
   } = opts;
   const totalFrames = Math.round(fps * duration);
@@ -26,7 +26,7 @@ export async function exportZipSequence(opts: ZipExportOptions): Promise<Blob | 
     for (let frame = 0; frame < totalFrames; frame++) {
       if (isCancelled?.()) return null;
 
-      renderFrame(canvas, frame / fps);
+      renderFrame(canvas, startTime + frame / fps);
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob(resolve, mimeType, 0.92);
       });

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Slapchop desktop permissions: dialogs, file access for user-chosen paths and temp export staging, and the bundled ffmpeg sidecar.",
+  "description": "Slapchop desktop permissions for dialogs and user-chosen project and export paths. Native video encoding is exposed only through narrow application commands.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -12,21 +12,11 @@
     "fs:allow-read-dir",
     "fs:allow-mkdir",
     "fs:allow-remove",
+    "fs:allow-rename",
     "fs:allow-stat",
     {
       "identifier": "fs:scope",
       "allow": [{ "path": "**" }, { "path": "$TEMP/**" }]
-    },
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "binaries/ffmpeg",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    },
-    "shell:allow-kill"
+    }
   ]
 }

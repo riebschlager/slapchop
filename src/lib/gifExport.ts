@@ -9,7 +9,7 @@ import type { FrameExportOptions } from './videoExport';
  * values that divide 100 evenly (50, 25, 20, 10); 30 fps plays at ~33 fps.
  */
 export async function exportGif(opts: FrameExportOptions): Promise<Blob | null> {
-  const { width, height, fps, duration, renderFrame, onProgress, isCancelled } = opts;
+  const { width, height, fps, duration, startTime = 0, renderFrame, onProgress, isCancelled } = opts;
   const totalFrames = Math.round(fps * duration);
   const delay = 1000 / fps;
 
@@ -41,7 +41,7 @@ export async function exportGif(opts: FrameExportOptions): Promise<Blob | null> 
       worker.onerror = (e) => reject(new Error(e.message));
 
       const sendFrame = (frame: number) => {
-        renderFrame(canvas, frame / fps);
+        renderFrame(canvas, startTime + frame / fps);
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) {
           reject(new Error('Could not read pixels from export canvas'));
