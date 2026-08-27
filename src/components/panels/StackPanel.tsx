@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle } from 'lucide-react';
+import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle, Grid2X2 } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
-import { isNative, openProjectViaDialog, pickGifFolder, pickImageFolder } from '../../lib/native';
+import { isNative, openProjectViaDialog, pickGifFiles, pickGifFolder, pickImageFolder } from '../../lib/native';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import ModePicker, { ModeOption } from '../controls/ModePicker';
@@ -13,6 +13,7 @@ import LayerRow from './LayerRow';
 import PolygonRow from './PolygonRow';
 import Mesh3dRow from './Mesh3dRow';
 import TunnelAssetRow from './TunnelAssetRow';
+import GifVoronoiAssetRow from './GifVoronoiAssetRow';
 import { AppMode, Mesh3dPrimitive } from '../../types';
 import { MESH3D_PRIMITIVE_EMOJI } from '../../lib/mesh3dUtils';
 
@@ -23,7 +24,8 @@ const MODE_OPTIONS: ModeOption<AppMode>[] = [
   { value: 'polygon', label: 'Tiled GIF', description: 'Texture-filled polygon mosaics', icon: Shapes },
   { value: '3d', label: '3D Space', description: 'Textured meshes & camera depth', icon: Box },
   { value: 'flythrough', label: 'GIF Flythrough', description: 'Folder-fed planes rushing through space', icon: Rocket },
-  { value: 'tunnel', label: 'GIF Tunnel', description: 'Procedural wallpapered infinite tunnel', icon: Circle }
+  { value: 'tunnel', label: 'GIF Tunnel', description: 'Procedural wallpapered infinite tunnel', icon: Circle },
+  { value: 'gif-voronoi', label: 'GIF Voronoi', description: 'Folder-fed animated cell mosaic', icon: Grid2X2 }
 ];
 
 // [primitive, label] for the "Add Mesh" grid below. Kept as a plain preset
@@ -82,12 +84,20 @@ export default function StackPanel() {
   const onRemoveTunnelAsset = useStore(s => s.removeTunnelAsset);
   const onClearTunnelAssets = useStore(s => s.clearTunnelAssets);
   const onReorderTunnelAssets = useStore(s => s.reorderTunnelAssets);
+  const gifVoronoiAssets = useStore(s => s.gifVoronoiAssets);
+  const onReplaceGifVoronoiAssets = useStore(s => s.replaceGifVoronoiAssets);
+  const onAddGifVoronoiAssets = useStore(s => s.addGifVoronoiAssets);
+  const onRemoveGifVoronoiAsset = useStore(s => s.removeGifVoronoiAsset);
+  const onClearGifVoronoiAssets = useStore(s => s.clearGifVoronoiAssets);
+  const onReorderGifVoronoiAssets = useStore(s => s.reorderGifVoronoiAssets);
 
   const projectFileInputRef = useRef<HTMLInputElement>(null);
   const flythroughFolderInputRef = useRef<HTMLInputElement>(null);
   const flythroughFilesInputRef = useRef<HTMLInputElement>(null);
   const tunnelFolderInputRef = useRef<HTMLInputElement>(null);
   const tunnelFilesInputRef = useRef<HTMLInputElement>(null);
+  const gifVoronoiFolderInputRef = useRef<HTMLInputElement>(null);
+  const gifVoronoiFilesInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const input = flythroughFolderInputRef.current;
@@ -97,6 +107,9 @@ export default function StackPanel() {
     const tunnelInput = tunnelFolderInputRef.current;
     tunnelInput?.setAttribute('webkitdirectory', '');
     tunnelInput?.setAttribute('directory', '');
+    const gifVoronoiInput = gifVoronoiFolderInputRef.current;
+    gifVoronoiInput?.setAttribute('webkitdirectory', '');
+    gifVoronoiInput?.setAttribute('directory', '');
   }, []);
 
   const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,6 +155,11 @@ export default function StackPanel() {
   const handleDragEndTunnel = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) onReorderTunnelAssets(active.id as string, over.id as string);
+  };
+
+  const handleDragEndGifVoronoi = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) onReorderGifVoronoiAssets(active.id as string, over.id as string);
   };
 
   // Selecting is a synchronous store write, so by the time the async
@@ -205,6 +223,36 @@ export default function StackPanel() {
     }
     const files = await pickImageFolder();
     if (files) await onReplaceTunnelAssets(files);
+  };
+
+  const handleGifVoronoiFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length > 0) void onReplaceGifVoronoiAssets(files);
+  };
+
+  const handleGifVoronoiFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length > 0) void onAddGifVoronoiAssets(files);
+  };
+
+  const handleChooseGifVoronoiFiles = async () => {
+    if (!isNative()) {
+      gifVoronoiFilesInputRef.current?.click();
+      return;
+    }
+    const files = await pickGifFiles();
+    if (files && files.length > 0) await onAddGifVoronoiAssets(files);
+  };
+
+  const handleChooseGifVoronoiFolder = async () => {
+    if (!isNative()) {
+      gifVoronoiFolderInputRef.current?.click();
+      return;
+    }
+    const files = await pickGifFolder();
+    if (files) await onReplaceGifVoronoiAssets(files);
   };
 
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
@@ -588,6 +636,57 @@ export default function StackPanel() {
                     <div className="px-4 py-8 text-center">
                       <Circle className="mx-auto mb-2 size-7 text-teal-950" />
                       <p className="text-xs text-gray-500">The palette is live. Add images to wallpaper selected panes.</p>
+                    </div>
+                  )}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </div>
+        </>
+      )}
+
+      {/* MODE 6: GIF VORONOI */}
+      {appMode === 'gif-voronoi' && (
+        <>
+          <div className="shrink-0 border-b border-emerald-950/80 bg-[radial-gradient(circle_at_top_left,rgba(132,204,22,0.13),transparent_62%)] p-3">
+            <button
+              type="button"
+              onClick={() => void handleChooseGifVoronoiFolder()}
+              className="group relative w-full overflow-hidden rounded-lg border border-emerald-800/70 bg-emerald-950/30 px-3 py-3 text-left transition-all hover:border-lime-600/70 hover:bg-emerald-950/50"
+            >
+              <div className="absolute inset-y-0 left-0 w-0.5 bg-lime-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="rounded bg-lime-400/10 p-1.5 text-lime-300 group-hover:text-lime-200">
+                  <FolderInput className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-emerald-100">Choose GIF folder</div>
+                  <div className="mt-0.5 text-[10px] text-emerald-700">Build a new deterministic cell library</div>
+                </div>
+              </div>
+            </button>
+            <input ref={gifVoronoiFolderInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleGifVoronoiFolderChange} />
+            <button type="button" onClick={() => void handleChooseGifVoronoiFiles()} className="mt-2 w-full py-1 text-[10px] text-gray-500 transition-colors hover:text-lime-300">
+              Add individual GIFs
+            </button>
+            <input ref={gifVoronoiFilesInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleGifVoronoiFilesChange} />
+          </div>
+
+          <div className="relative min-h-0 flex-1 overflow-y-auto">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-800 bg-gray-900/95 px-4 py-2 backdrop-blur-sm">
+              <label className="text-xs font-semibold uppercase tracking-wider text-gray-400">Cell Sources ({gifVoronoiAssets.length})</label>
+              {gifVoronoiAssets.length > 0 && <button type="button" onClick={onClearGifVoronoiAssets} className="text-[10px] text-gray-500 transition-colors hover:text-red-300">Clear</button>}
+            </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndGifVoronoi}>
+              <SortableContext items={gifVoronoiAssets.map(asset => asset.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-1 p-2">
+                  {gifVoronoiAssets.map((asset, index) => (
+                    <GifVoronoiAssetRow key={asset.id} asset={asset} index={index} onRemove={onRemoveGifVoronoiAsset} />
+                  ))}
+                  {gifVoronoiAssets.length === 0 && (
+                    <div className="px-4 py-8 text-center">
+                      <Grid2X2 className="mx-auto mb-2 size-7 text-emerald-950" />
+                      <p className="text-xs text-gray-500">The mesh is ready. Add GIFs to populate its cells.</p>
                     </div>
                   )}
                 </div>

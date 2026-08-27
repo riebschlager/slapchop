@@ -64,11 +64,22 @@ export async function pickDirectoryPath(): Promise<string | null> {
   return typeof path === 'string' ? path : null;
 }
 
+const MIME_TYPES: Record<string, string> = {
+  gif: 'image/gif',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  slapchop: 'application/json'
+};
+
 async function fileFromPath(path: string): Promise<File> {
   const { readFile } = await import('@tauri-apps/plugin-fs');
   const bytes = await readFile(path);
   const name = path.split('/').pop() ?? path;
-  return new File([new Uint8Array(bytes)], name);
+  const ext = extensionOf(path);
+  const type = MIME_TYPES[ext] || '';
+  return new File([new Uint8Array(bytes)], name, { type });
 }
 
 export async function openProjectFromPath(path: string): Promise<void> {
@@ -134,6 +145,21 @@ export async function pickGifFolder(): Promise<File[] | null> {
   if (typeof path !== 'string') return null;
   const files = await imageFilesFromPaths([path]);
   return files.filter(file => file.name.toLowerCase().endsWith('.gif'));
+}
+
+/** Pick multiple GIF files via native file picker dialog. */
+export async function pickGifFiles(): Promise<File[] | null> {
+  if (!isNative()) return null;
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const result = await open({
+    multiple: true,
+    directory: false,
+    filters: [{ name: 'Animated GIF', extensions: ['gif'] }]
+  });
+  if (!result) return null;
+  const paths = Array.isArray(result) ? result : [result];
+  if (paths.length === 0) return null;
+  return imageFilesFromPaths(paths);
 }
 
 /** Pick one folder and return its top-level supported image files in name order. */

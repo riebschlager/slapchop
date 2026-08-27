@@ -55,6 +55,63 @@ export function renderExportFrame(
   }
 }
 
+/**
+ * One Pixi renderer per canvas element, for the lifetime of that element.
+ *
+ * Pixi's WebGL teardown calls `loseContext()`, and `getContext()` keeps
+ * returning that same dead context, so a canvas can never host a second
+ * renderer — every draw on it fails with a null shader. React StrictMode
+ * mounts effects twice in development, which is exactly that sequence, and it
+ * only bites the WebGL path (the desktop app), not WebGPU. So teardown is
+ * deferred by a task: a StrictMode remount re-acquires the live renderer
+ * before it runs, while a real unmount lets it through and frees the GPU.
+ */
+interface CanvasRendererEntry {
+  ready: Promise<PixiSceneRenderer>;
+  pendingTeardown: ReturnType<typeof setTimeout> | null;
+}
+
+const canvasRenderers = new Map<HTMLCanvasElement, CanvasRendererEntry>();
+
+function acquireRenderer(canvas: HTMLCanvasElement): Promise<PixiSceneRenderer> {
+  const existing = canvasRenderers.get(canvas);
+  if (existing) {
+    if (existing.pendingTeardown !== null) {
+      clearTimeout(existing.pendingTeardown);
+      existing.pendingTeardown = null;
+    }
+    return existing.ready;
+  }
+  // Kept as the raw create() promise so callers see the renderer on the same
+  // microtask they would without the cache; failure handling hangs off a
+  // separate branch of the chain.
+  const ready = PixiSceneRenderer.create(canvas);
+  void ready.catch(() => canvasRenderers.delete(canvas));
+  canvasRenderers.set(canvas, { ready, pendingTeardown: null });
+  return ready;
+}
+
+function releaseRenderer(canvas: HTMLCanvasElement) {
+  const entry = canvasRenderers.get(canvas);
+  if (!entry || entry.pendingTeardown !== null) return;
+  entry.pendingTeardown = setTimeout(() => {
+    canvasRenderers.delete(canvas);
+    void entry.ready.then((renderer) => renderer.destroy(), () => undefined);
+  }, 0);
+}
+
+/** Drop a renderer that has failed beyond recovery so it is never handed out again. */
+function discardRenderer(canvas: HTMLCanvasElement, renderer: PixiSceneRenderer) {
+  const entry = canvasRenderers.get(canvas);
+  if (entry?.pendingTeardown) clearTimeout(entry.pendingTeardown);
+  canvasRenderers.delete(canvas);
+  try {
+    renderer.destroy();
+  } catch {
+    // Ignore cleanup failure on a lost context
+  }
+}
+
 export function startRenderLoop(
   canvas: HTMLCanvasElement,
   onFps?: (fps: number) => void
@@ -97,11 +154,7 @@ export function startRenderLoop(
         if (gpu && consecutiveErrors > 5) {
           console.warn('GPU renderer failed repeatedly; falling back to Canvas 2D.');
           if (activeGpu === gpu) activeGpu = null;
-          try {
-            gpu.destroy();
-          } catch {
-            // Ignore cleanup failure on a lost context
-          }
+          discardRenderer(canvas, gpu);
           gpu = null;
           draw = (t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT);
           consecutiveErrors = 0;
@@ -144,18 +197,26 @@ export function startRenderLoop(
   };
 
   const start2d = () => {
+    // A canvas keeps whichever context type it was first given. Once Pixi has
+    // claimed a GPU context there is no 2D context to fall back to, and a
+    // silent no-op here is what makes a dead GPU path look like a rendering
+    // bug rather than a renderer failure.
+    if (!canvas.getContext('2d')) {
+      console.error(
+        'Canvas 2D fallback is unavailable: this canvas is already bound to a GPU context. '
+        + 'The preview cannot recover without a fresh canvas element.'
+      );
+      return;
+    }
     stopTicking = startTicking((t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT));
   };
 
   if (is2dRendererForced()) {
     start2d();
   } else {
-    PixiSceneRenderer.create(canvas).then(
+    acquireRenderer(canvas).then(
       (renderer) => {
-        if (disposed) {
-          renderer.destroy();
-          return;
-        }
+        if (disposed) return; // releaseRenderer owns teardown; destroying here would race a remount
         gpu = renderer;
         activeGpu = renderer;
         stopTicking = startTicking((t, state) => renderer.render(t, state));
@@ -173,8 +234,8 @@ export function startRenderLoop(
     stopTicking = null;
     if (gpu) {
       if (activeGpu === gpu) activeGpu = null;
-      gpu.destroy();
       gpu = null;
     }
+    if (!is2dRendererForced()) releaseRenderer(canvas);
   };
 }

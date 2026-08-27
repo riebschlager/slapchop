@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FLYTHROUGH, DEFAULT_TUNNEL } from '../types';
+import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_TUNNEL } from '../types';
 import { restoreProjectDocument } from './project';
 
 describe('restoreProjectDocument', () => {
@@ -67,6 +67,8 @@ describe('restoreProjectDocument', () => {
     expect(document.flythrough.particleCount).toBeGreaterThan(0);
     expect(document.tunnelAssets).toEqual([]);
     expect(document.tunnel.sides).toBe(DEFAULT_TUNNEL.sides);
+    expect(document.gifVoronoiAssets).toEqual([]);
+    expect(document.gifVoronoi.cellCount).toBe(DEFAULT_GIF_VORONOI.cellCount);
   });
 
   it('restores a V3 flythrough library and its mode-owned config', () => {
@@ -119,5 +121,48 @@ describe('restoreProjectDocument', () => {
     expect(document.tunnel.sides).toBe(4);
     expect(document.tunnel.gifEvery).toBe(3);
     expect(document.tunnel.palette).toEqual(['#112233', '#abcdef']);
+  });
+
+  it('restores a V5 GIF Voronoi library and keeps older mode data', () => {
+    const gifData = { width: 320, height: 180, totalDurationMs: 1000, frames: [] };
+    const payload = {
+      app: 'slapchop' as const,
+      version: 5 as const,
+      savedAt: '2026-08-27T00:00:00.000Z',
+      canvasBg: '#000000',
+      layers: [],
+      polygonLayers: [],
+      mesh3dLayers: [],
+      flythroughAssets: [],
+      tunnelAssets: [],
+      tunnel: { ...DEFAULT_TUNNEL, sides: 12 },
+      gifVoronoiAssets: [{
+        id: 'mosaic-1',
+        name: 'mosaic.gif',
+        width: 320,
+        height: 180,
+        assetId: 'mosaic-asset'
+      }],
+      gifVoronoi: {
+        ...DEFAULT_GIF_VORONOI,
+        cellCount: 64,
+        arrangement: 'radial' as const,
+        palette: ['#123456', '#abcdef']
+      },
+      assets: {}
+    };
+    const materialized = new Map([['mosaic-asset', { src: 'blob:mosaic', gifData }]]);
+    const document = restoreProjectDocument(payload, materialized);
+
+    expect(document.gifVoronoiAssets[0]).toMatchObject({
+      id: 'mosaic-1',
+      name: 'mosaic.gif',
+      src: 'blob:mosaic',
+      gifData
+    });
+    expect(document.gifVoronoi.cellCount).toBe(64);
+    expect(document.gifVoronoi.arrangement).toBe('radial');
+    expect(document.gifVoronoi.palette).toEqual(['#123456', '#abcdef']);
+    expect(document.tunnel.sides).toBe(12);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, Layer, PolygonLayer } from '../types';
+import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, Layer, PolygonLayer } from '../types';
 import { renderFrame, RenderState } from './render2d';
 
 function createRecordingCanvas() {
@@ -67,6 +67,8 @@ function state(appMode: RenderState['appMode'], layers: Layer[] = []): RenderSta
     flythrough: DEFAULT_FLYTHROUGH,
     tunnelAssets: [],
     tunnel: DEFAULT_TUNNEL,
+    gifVoronoiAssets: [],
+    gifVoronoi: DEFAULT_GIF_VORONOI,
     canvasBg: '#000000',
     masterFx: DEFAULT_MASTER_FX
   };
@@ -129,5 +131,33 @@ describe('renderFrame mode boundary', () => {
     const first = renderTrace(tunnelState, 0.5);
     expect(first).toEqual(renderTrace(tunnelState, 0.5));
     expect(first.some(entry => entry.startsWith('fill:'))).toBe(true);
+  });
+
+  it('renders a deterministic GIF Voronoi mosaic in the fallback', () => {
+    const gifVoronoiState: RenderState = {
+      ...state('gif-voronoi'),
+      gifVoronoiAssets: [{
+        id: 'mosaic-gif',
+        name: 'wide.gif',
+        src: '',
+        width: 320,
+        height: 180,
+        gifData: {
+          width: 320,
+          height: 180,
+          totalDurationMs: 1000,
+          frames: [{
+            image: {} as CanvasImageSource,
+            delayMs: 1000,
+            startTimeMs: 0,
+            endTimeMs: 1000
+          }]
+        }
+      }],
+      gifVoronoi: { ...DEFAULT_GIF_VORONOI, cellCount: 6, occupancy: 1 }
+    };
+    const first = renderTrace(gifVoronoiState, 0.5);
+    expect(first).toEqual(renderTrace(gifVoronoiState, 0.5));
+    expect(first.filter(entry => entry.startsWith('drawImage:'))).toHaveLength(6);
   });
 });

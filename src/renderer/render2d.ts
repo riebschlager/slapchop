@@ -3,6 +3,8 @@ import {
   Camera3dConfig,
   FlythroughAsset,
   FlythroughConfig,
+  GifVoronoiAsset,
+  GifVoronoiConfig,
   Layer,
   MasterFxConfig,
   Mesh3dLayer,
@@ -21,6 +23,11 @@ import { createScreen3dProjector, ScreenPoint } from '../lib/project3d';
 import { getVoronoiCells } from '../lib/voronoi';
 import { resolveFlythroughParticles } from '../lib/flythrough';
 import { resolveTunnelScene, TunnelVec3 } from '../lib/tunnel';
+import {
+  buildGifVoronoiLayout,
+  gifVoronoiCoverRect,
+  gifVoronoiSourceTime
+} from '../lib/gifVoronoi';
 
 export const CANVAS_WIDTH = 1080;
 export const CANVAS_HEIGHT = 1920;
@@ -35,6 +42,8 @@ export interface RenderState {
   flythrough: FlythroughConfig;
   tunnelAssets: TunnelAsset[];
   tunnel: TunnelConfig;
+  gifVoronoiAssets: GifVoronoiAsset[];
+  gifVoronoi: GifVoronoiConfig;
   canvasBg: string;
   masterFx?: MasterFxConfig;
 }
@@ -86,6 +95,8 @@ interface PatternEntry {
   pattern: CanvasPattern;
 }
 const patternCaches = new WeakMap<CanvasRenderingContext2D, Map<string, PatternEntry>>();
+let gifVoronoiLayoutCacheKey = '';
+let gifVoronoiLayoutCache: ReturnType<typeof buildGifVoronoiLayout> = [];
 
 function getPattern(
   ctx: CanvasRenderingContext2D,
@@ -355,7 +366,11 @@ export function renderFrame(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = state.appMode === 'tunnel' ? state.tunnel.voidColor : state.canvasBg;
+  ctx.fillStyle = state.appMode === 'tunnel'
+    ? state.tunnel.voidColor
+    : state.appMode === 'gif-voronoi'
+      ? state.gifVoronoi.backgroundColor
+      : state.canvasBg;
   ctx.fillRect(0, 0, width, height);
 
   if (state.appMode === 'symmetry') {
@@ -419,10 +434,94 @@ export function renderFrame(
     renderFlythroughScene(ctx, t, state.flythroughAssets, state.flythrough, width, height);
   } else if (state.appMode === 'tunnel') {
     renderTunnelScene(ctx, t, state.tunnelAssets, state.tunnel, width, height);
+  } else if (state.appMode === 'gif-voronoi') {
+    renderGifVoronoiScene(ctx, t, state.gifVoronoiAssets, state.gifVoronoi, width, height);
   }
 
   if (state.masterFx?.enabled) {
     applyMasterFx2D(ctx, t, state.masterFx, width, height);
+  }
+}
+
+function renderGifVoronoiScene(
+  ctx: CanvasRenderingContext2D,
+  t: number,
+  assets: GifVoronoiAsset[],
+  config: GifVoronoiConfig,
+  width: number,
+  height: number
+) {
+  const stageBounds = {
+    minX: -CANVAS_WIDTH / 2,
+    minY: -CANVAS_HEIGHT / 2,
+    maxX: CANVAS_WIDTH / 2,
+    maxY: CANVAS_HEIGHT / 2
+  };
+  const layoutKey = [
+    config.cellCount,
+    config.irregularity,
+    config.seed,
+    config.arrangement,
+    config.occupancy,
+    config.blankFill,
+    config.blankColor,
+    config.palette.join(','),
+    assets.map(asset => asset.id).join(',')
+  ].join('|');
+  if (layoutKey !== gifVoronoiLayoutCacheKey) {
+    gifVoronoiLayoutCache = buildGifVoronoiLayout(assets, config, stageBounds);
+    gifVoronoiLayoutCacheKey = layoutKey;
+  }
+  const cells = gifVoronoiLayoutCache;
+  const scaleX = width / CANVAS_WIDTH;
+  const scaleY = height / CANVAS_HEIGHT;
+
+  for (const cell of cells) {
+    ctx.save();
+    tracePolygonPath(ctx, cell.points, width, height, scaleX, scaleY);
+    ctx.clip();
+    if (cell.asset) {
+      const sourceTime = gifVoronoiSourceTime(cell, config, t, stageBounds);
+      const frame = getGifFrameAtTime(cell.asset.gifData, sourceTime, 1);
+      if (frame) {
+        const rect = gifVoronoiCoverRect(
+          cell.asset.width,
+          cell.asset.height,
+          cell.bounds,
+          config.coverZoom,
+          config.coverOffsetX,
+          config.coverOffsetY
+        );
+        try {
+          ctx.drawImage(
+            frame,
+            width / 2 + rect.x * scaleX,
+            height / 2 + rect.y * scaleY,
+            rect.width * scaleX,
+            rect.height * scaleY
+          );
+        } catch (err) {
+          console.warn('GIF Voronoi frame draw failed:', err);
+        }
+      }
+    } else if (cell.blankColor) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, config.blankOpacity));
+      ctx.fillStyle = cell.blankColor;
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  if (config.gutterWidth > 0) {
+    ctx.save();
+    ctx.strokeStyle = config.gutterColor;
+    ctx.lineWidth = config.gutterWidth * ((scaleX + scaleY) / 2);
+    ctx.lineJoin = 'round';
+    for (const cell of cells) {
+      tracePolygonPath(ctx, cell.points, width, height, scaleX, scaleY);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 }
 

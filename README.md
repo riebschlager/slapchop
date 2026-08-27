@@ -57,6 +57,10 @@ for the product decision and incremental architecture direction.
   tunnel with an ordered or seeded library of GIFs and static images. Configure
   ring detail, pane occupancy, palette/transparent gaps, UV crop, camera,
   synchronized or phase-shifted playback, fog, twist, and path modulation.
+- **GIF Voronoi** — divide the flat output stage into a seeded organic cell
+  field and populate it from a sortable folder library of GIFs. Configure cell
+  density, irregularity, occupancy, scan/radial/scattered assignment, cover
+  crop, playback phase, gutters, backgrounds, and palette or transparent blanks.
 
 ## Inspector controls
 
@@ -72,10 +76,12 @@ and one-click aesthetic presets.
 
 ## Rendering
 
-Rendering runs on the GPU via PixiJS v8 (WebGPU, with automatic WebGL fallback). The
-Canvas 2D renderer is kept as a fallback and as a reference implementation — append
-`?renderer=2d` to the URL to force it. Exports always use the same renderer as the
-live canvas.
+Rendering runs on the GPU via PixiJS v8. The browser prefers WebGPU; the desktop app
+runs on WebGL, which is the backend WKWebView supports reliably. The Canvas 2D
+renderer is kept as a fallback and as a reference implementation. Two URL flags force
+a backend for comparison: `?renderer=2d` for Canvas 2D, and `?renderer=webgl` to
+reproduce the desktop app's GPU path in a browser. Exports always use the same
+renderer as the live canvas.
 
 ## Exports
 

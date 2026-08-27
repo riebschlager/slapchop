@@ -84,6 +84,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const flythroughAssets = useStore(s => s.flythroughAssets);
   const tunnelAssets = useStore(s => s.tunnelAssets);
   const tunnel = useStore(s => s.tunnel);
+  const gifVoronoiAssets = useStore(s => s.gifVoronoiAssets);
+  const gifVoronoi = useStore(s => s.gifVoronoi);
   const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
   const canvasBg = useStore(s => s.canvasBg);
@@ -100,6 +102,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const onUpdateCamera3d = useStore(s => s.updateCamera3d);
   const onReplaceFlythroughAssets = useStore(s => s.replaceFlythroughAssets);
   const onAddTunnelAssets = useStore(s => s.addTunnelAssets);
+  const onAddGifVoronoiAssets = useStore(s => s.addGifVoronoiAssets);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -195,6 +198,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           }
           if (useStore.getState().appMode === 'tunnel') {
             await useStore.getState().addTunnelAssets(files);
+            return;
+          }
+          if (useStore.getState().appMode === 'gif-voronoi') {
+            await useStore.getState().addGifVoronoiAssets(files);
             return;
           }
           // Physical (device px) position → CSS px → canvas coords
@@ -822,6 +829,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
       if (files.length > 0) void onAddTunnelAssets(files);
       return;
     }
+    if (appMode === 'gif-voronoi') {
+      if (files.length > 0) void onAddGifVoronoiAssets(files);
+      return;
+    }
     files.forEach((file: File) => {
       if (file.type.startsWith('image/')) {
         onAddLayer(file, coords.x, coords.y);
@@ -857,7 +868,9 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                 ? 'Polygon GIF Tiler'
                 : appMode === '3d'
                   ? '3D Space'
-                  : appMode === 'flythrough' ? 'GIF Flythrough' : 'GIF Tunnel'}
+                  : appMode === 'flythrough'
+                    ? 'GIF Flythrough'
+                    : appMode === 'tunnel' ? 'GIF Tunnel' : 'GIF Voronoi'}
           </span>
           <span className="text-gray-500 font-mono">1080x1920</span>
           {appMode === '3d' && (
@@ -920,7 +933,9 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         style={{
           width: CANVAS_WIDTH * scale,
           height: CANVAS_HEIGHT * scale,
-          backgroundColor: appMode === 'tunnel' ? tunnel.voidColor : canvasBg
+          backgroundColor: appMode === 'tunnel'
+            ? tunnel.voidColor
+            : appMode === 'gif-voronoi' ? gifVoronoi.backgroundColor : canvasBg
         }}
       >
         {/* Native 2D Canvas */}
@@ -944,6 +959,15 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center">
             <div className="rounded-full border border-teal-950/70 bg-black/60 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-teal-700 backdrop-blur-sm">
               Palette tunnel · add wallpaper sources in the Stack
+            </div>
+          </div>
+        )}
+
+        {appMode === 'gif-voronoi' && gifVoronoiAssets.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="border border-emerald-950/80 bg-black/65 px-4 py-3 text-center shadow-[0_0_48px_rgba(132,204,22,0.08)] backdrop-blur-sm [clip-path:polygon(8%_0,100%_0,92%_100%,0_100%)]">
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-lime-600">Unpopulated field</div>
+              <div className="mt-1 text-xs text-gray-500">Choose a GIF folder in the Stack panel</div>
             </div>
           </div>
         )}

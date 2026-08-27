@@ -4,10 +4,13 @@ import {
   Camera3dConfig,
   DEFAULT_CAMERA3D,
   DEFAULT_FLYTHROUGH,
+  DEFAULT_GIF_VORONOI,
   DEFAULT_MASTER_FX,
   DEFAULT_TUNNEL,
   FlythroughAsset,
   FlythroughConfig,
+  GifVoronoiAsset,
+  GifVoronoiConfig,
   Layer,
   MasterFxConfig,
   Mesh3dLayer,
@@ -31,6 +34,7 @@ type SerializedPolygon = Omit<PolygonLayer, 'src' | 'gifData'> & { assetId?: str
 type SerializedMesh3d = Omit<Mesh3dLayer, 'src' | 'gifData'> & { assetId?: string };
 type SerializedFlythroughAsset = Omit<FlythroughAsset, 'src' | 'gifData'> & { assetId: string };
 type SerializedTunnelAsset = Omit<TunnelAsset, 'src' | 'gifData'> & { assetId: string };
+type SerializedGifVoronoiAsset = Omit<GifVoronoiAsset, 'src' | 'gifData'> & { assetId: string };
 
 interface ProjectFileV1 {
   app: 'slapchop';
@@ -96,7 +100,27 @@ interface ProjectFileV4 {
   assets: Record<string, ProjectAsset>;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4;
+// V5 adds the flat GIF Voronoi library and its mode-owned mosaic controls.
+interface ProjectFileV5 {
+  app: 'slapchop';
+  version: 5;
+  savedAt: string;
+  canvasBg: string;
+  masterFx?: MasterFxConfig;
+  layers: SerializedLayer[];
+  polygonLayers: SerializedPolygon[];
+  mesh3dLayers: SerializedMesh3d[];
+  camera3d?: Camera3dConfig;
+  flythroughAssets: SerializedFlythroughAsset[];
+  flythrough?: FlythroughConfig;
+  tunnelAssets: SerializedTunnelAsset[];
+  tunnel?: TunnelConfig;
+  gifVoronoiAssets: SerializedGifVoronoiAsset[];
+  gifVoronoi?: GifVoronoiConfig;
+  assets: Record<string, ProjectAsset>;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -176,9 +200,19 @@ export async function saveProject(): Promise<void> {
     });
   }
 
-  const payload: ProjectFileV4 = {
+  const gifVoronoiAssets: SerializedGifVoronoiAsset[] = [];
+  for (const source of doc.gifVoronoiAssets) {
+    const { src, gifData, ...rest } = source;
+    void gifData;
+    gifVoronoiAssets.push({
+      ...rest,
+      assetId: await assetIdFor(src, source.name)
+    });
+  }
+
+  const payload: ProjectFileV5 = {
     app: 'slapchop',
-    version: 4,
+    version: 5,
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
     masterFx: doc.masterFx,
@@ -190,6 +224,8 @@ export async function saveProject(): Promise<void> {
     flythrough: doc.flythrough,
     tunnelAssets,
     tunnel: doc.tunnel,
+    gifVoronoiAssets,
+    gifVoronoi: doc.gifVoronoi,
     assets
   };
 
@@ -199,7 +235,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || ![1, 2, 3, 4].includes(payload.version)) {
+  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5].includes(payload.version)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -254,7 +290,7 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_MASTER_FX, ...payload.masterFx }
     : { ...DEFAULT_MASTER_FX };
 
-  const hasFlythrough = payload.version === 3 || payload.version === 4;
+  const hasFlythrough = payload.version === 3 || payload.version === 4 || payload.version === 5;
   const flythroughAssets: FlythroughAsset[] = hasFlythrough
     ? payload.flythroughAssets.map((source) => {
       const { assetId, ...rest } = source;
@@ -267,7 +303,8 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_FLYTHROUGH, ...payload.flythrough }
     : { ...DEFAULT_FLYTHROUGH };
 
-  const tunnelAssets: TunnelAsset[] = payload.version === 4
+  const hasTunnel = payload.version === 4 || payload.version === 5;
+  const tunnelAssets: TunnelAsset[] = hasTunnel
     ? payload.tunnelAssets.map((source) => {
       const { assetId, ...rest } = source;
       const asset = materialized.get(assetId);
@@ -275,9 +312,24 @@ export function restoreProjectDocument(
     })
     : [];
 
-  const tunnel: TunnelConfig = payload.version === 4 && payload.tunnel
+  const tunnel: TunnelConfig = hasTunnel && payload.tunnel
     ? { ...DEFAULT_TUNNEL, ...payload.tunnel, palette: [...(payload.tunnel.palette ?? DEFAULT_TUNNEL.palette)] }
     : { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] };
+
+  const gifVoronoiAssets: GifVoronoiAsset[] = payload.version === 5
+    ? payload.gifVoronoiAssets.map((source) => {
+      const { assetId, ...rest } = source;
+      const asset = materialized.get(assetId);
+      if (!asset?.gifData) {
+        throw new Error(`GIF Voronoi source “${source.name}” could not be decoded.`);
+      }
+      return { ...rest, src: asset.src, gifData: asset.gifData };
+    })
+    : [];
+
+  const gifVoronoi: GifVoronoiConfig = payload.version === 5 && payload.gifVoronoi
+    ? { ...DEFAULT_GIF_VORONOI, ...payload.gifVoronoi, palette: [...(payload.gifVoronoi.palette ?? DEFAULT_GIF_VORONOI.palette)] }
+    : { ...DEFAULT_GIF_VORONOI, palette: [...DEFAULT_GIF_VORONOI.palette] };
 
   return {
     layers,
@@ -288,6 +340,8 @@ export function restoreProjectDocument(
     flythrough,
     tunnelAssets,
     tunnel,
+    gifVoronoiAssets,
+    gifVoronoi,
     canvasBg: payload.canvasBg,
     masterFx
   };

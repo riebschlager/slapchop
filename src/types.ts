@@ -1,4 +1,4 @@
-export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough' | 'tunnel';
+export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough' | 'tunnel' | 'gif-voronoi';
 
 export interface PolygonPoint {
   x: number;
@@ -572,4 +572,64 @@ export const DEFAULT_TUNNEL: TunnelConfig = {
   fogEnabled: true,
   fogColor: '#03040a',
   fogDensity: 0.00012
+};
+
+// --------------------------------------------------------- GIF Voronoi mode
+
+// GIF Voronoi owns a folder-fed GIF library and a deterministic flat mosaic.
+// Its cells and assignments are derived from configuration rather than stored
+// individually, so reseeding or changing density remains one undoable edit.
+export interface GifVoronoiAsset {
+  id: string;
+  name: string;
+  src: string;
+  gifData: GifData;
+  width: number;
+  height: number;
+}
+
+export type GifVoronoiArrangement = 'scan' | 'radial' | 'scatter';
+export type GifVoronoiPhaseMode = 'sync' | 'staggered' | 'sweep';
+export type GifVoronoiBlankFill = 'transparent' | 'solid' | 'palette';
+
+export interface GifVoronoiConfig {
+  cellCount: number;
+  irregularity: number;
+  seed: number;
+  arrangement: GifVoronoiArrangement;
+  occupancy: number;
+  gifSpeed: number;
+  phaseMode: GifVoronoiPhaseMode;
+  phaseSpread: number;
+  coverZoom: number;
+  coverOffsetX: number;
+  coverOffsetY: number;
+  gutterWidth: number;
+  gutterColor: string;
+  backgroundColor: string;
+  blankFill: GifVoronoiBlankFill;
+  blankColor: string;
+  blankOpacity: number;
+  palette: string[];
+}
+
+export const DEFAULT_GIF_VORONOI: GifVoronoiConfig = {
+  cellCount: 42,
+  irregularity: 0.72,
+  seed: 1,
+  arrangement: 'scatter',
+  occupancy: 0.88,
+  gifSpeed: 1,
+  phaseMode: 'staggered',
+  phaseSpread: 0.65,
+  coverZoom: 1,
+  coverOffsetX: 0,
+  coverOffsetY: 0,
+  gutterWidth: 4,
+  gutterColor: '#07110f',
+  backgroundColor: '#020706',
+  blankFill: 'palette',
+  blankColor: '#16352d',
+  blankOpacity: 1,
+  palette: ['#0b3d32', '#126b55', '#18a97f', '#8fdbb6']
 };

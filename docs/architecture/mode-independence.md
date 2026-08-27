@@ -159,6 +159,12 @@ Three.js renderer and Canvas 2D reference path from the same deterministic
 snapshot. Project V4 embeds its wallpaper sources while V1 through V3 remain
 readable.
 
+GIF Voronoi was subsequently added as a flat folder-library mode. Its cell
+topology, source assignment, occupancy, playback phase, cover crop, and blank
+treatments are derived from a mode-owned deterministic resolver. PixiJS renders
+masked GIF cells directly while Canvas 2D remains the reference path. Project
+V5 embeds the GIF library while V1 through V4 remain readable.
+
 ## Guardrails
 
 - Do not duplicate deterministic timing, encoding, native I/O, or asset

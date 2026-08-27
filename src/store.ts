@@ -5,10 +5,13 @@ import {
   Camera3dConfig,
   DEFAULT_CAMERA3D,
   DEFAULT_FLYTHROUGH,
+  DEFAULT_GIF_VORONOI,
   DEFAULT_MASTER_FX,
   DEFAULT_TUNNEL,
   FlythroughAsset,
   FlythroughConfig,
+  GifVoronoiAsset,
+  GifVoronoiConfig,
   Layer,
   MasterFxConfig,
   Mesh3dLayer,
@@ -31,6 +34,8 @@ export interface DocumentState {
   flythrough: FlythroughConfig;
   tunnelAssets: TunnelAsset[];
   tunnel: TunnelConfig;
+  gifVoronoiAssets: GifVoronoiAsset[];
+  gifVoronoi: GifVoronoiConfig;
   canvasBg: string;
   masterFx: MasterFxConfig;
 }
@@ -101,6 +106,15 @@ export interface AppState extends DocumentState {
   reorderTunnelAssets: (activeId: string, overId: string) => void;
   updateTunnel: (updates: Partial<TunnelConfig>) => void;
   reseedTunnel: () => void;
+
+  // GIF Voronoi source library and deterministic mosaic
+  replaceGifVoronoiAssets: (files: File[]) => Promise<void>;
+  addGifVoronoiAssets: (files: File[]) => Promise<void>;
+  removeGifVoronoiAsset: (id: string) => void;
+  clearGifVoronoiAssets: () => void;
+  reorderGifVoronoiAssets: (activeId: string, overId: string) => void;
+  updateGifVoronoi: (updates: Partial<GifVoronoiConfig>) => void;
+  reseedGifVoronoi: () => void;
 }
 
 function reorder<T extends { id: string }>(items: T[], activeId: string, overId: string): T[] {
@@ -152,6 +166,23 @@ async function tunnelAssetsFromFiles(files: File[]): Promise<TunnelAsset[]> {
   }));
 }
 
+async function gifVoronoiAssetsFromFiles(files: File[]): Promise<GifVoronoiAsset[]> {
+  const gifs = files.filter(file => file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif'));
+  const parsed = await Promise.all(gifs.map(async (file): Promise<GifVoronoiAsset | null> => {
+    const gifData = await parseGifFile(file);
+    if (!gifData) return null;
+    return {
+      id: crypto.randomUUID(),
+      name: file.name,
+      src: URL.createObjectURL(file),
+      gifData,
+      width: gifData.width,
+      height: gifData.height
+    };
+  }));
+  return parsed.filter((asset): asset is GifVoronoiAsset => asset !== null);
+}
+
 const INITIAL_POLYGON = createNewPolygonLayer(
   'Hexagon Tile',
   createPresetPolygonPoints('hexagon', 220),
@@ -169,6 +200,8 @@ export const useStore = create<AppState>()(
       flythrough: { ...DEFAULT_FLYTHROUGH },
       tunnelAssets: [],
       tunnel: { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] },
+      gifVoronoiAssets: [],
+      gifVoronoi: { ...DEFAULT_GIF_VORONOI, palette: [...DEFAULT_GIF_VORONOI.palette] },
       canvasBg: '#000000',
       masterFx: { ...DEFAULT_MASTER_FX },
       appMode: 'symmetry',
@@ -190,6 +223,10 @@ export const useStore = create<AppState>()(
         tunnel: doc.tunnel
           ? { ...DEFAULT_TUNNEL, ...doc.tunnel, palette: [...(doc.tunnel.palette ?? DEFAULT_TUNNEL.palette)] }
           : { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] },
+        gifVoronoiAssets: doc.gifVoronoiAssets ?? [],
+        gifVoronoi: doc.gifVoronoi
+          ? { ...DEFAULT_GIF_VORONOI, ...doc.gifVoronoi, palette: [...(doc.gifVoronoi.palette ?? DEFAULT_GIF_VORONOI.palette)] }
+          : { ...DEFAULT_GIF_VORONOI, palette: [...DEFAULT_GIF_VORONOI.palette] },
         canvasBg: doc.canvasBg,
         masterFx: doc.masterFx ? { ...DEFAULT_MASTER_FX, ...doc.masterFx } : { ...DEFAULT_MASTER_FX },
         selectedLayerId: null,
@@ -435,6 +472,25 @@ export const useStore = create<AppState>()(
       })),
       reseedTunnel: () => set(s => ({
         tunnel: { ...s.tunnel, seed: (s.tunnel.seed + 1) % 100000 }
+      })),
+
+      replaceGifVoronoiAssets: async (files) => set({ gifVoronoiAssets: await gifVoronoiAssetsFromFiles(files) }),
+      addGifVoronoiAssets: async (files) => {
+        const assets = await gifVoronoiAssetsFromFiles(files);
+        set(s => ({ gifVoronoiAssets: [...s.gifVoronoiAssets, ...assets] }));
+      },
+      removeGifVoronoiAsset: (id) => set(s => ({
+        gifVoronoiAssets: s.gifVoronoiAssets.filter(asset => asset.id !== id)
+      })),
+      clearGifVoronoiAssets: () => set({ gifVoronoiAssets: [] }),
+      reorderGifVoronoiAssets: (activeId, overId) => set(s => ({
+        gifVoronoiAssets: reorder(s.gifVoronoiAssets, activeId, overId)
+      })),
+      updateGifVoronoi: (updates) => set(s => ({
+        gifVoronoi: { ...s.gifVoronoi, ...updates }
+      })),
+      reseedGifVoronoi: () => set(s => ({
+        gifVoronoi: { ...s.gifVoronoi, seed: (s.gifVoronoi.seed + 1) % 100000 }
       }))
     }),
     {
@@ -449,6 +505,8 @@ export const useStore = create<AppState>()(
         flythrough: s.flythrough,
         tunnelAssets: s.tunnelAssets,
         tunnel: s.tunnel,
+        gifVoronoiAssets: s.gifVoronoiAssets,
+        gifVoronoi: s.gifVoronoi,
         canvasBg: s.canvasBg,
         masterFx: s.masterFx
       }),
@@ -456,7 +514,8 @@ export const useStore = create<AppState>()(
         a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.mesh3dLayers === b.mesh3dLayers
         && a.camera3d === b.camera3d && a.flythroughAssets === b.flythroughAssets
         && a.flythrough === b.flythrough && a.tunnelAssets === b.tunnelAssets
-        && a.tunnel === b.tunnel && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
+        && a.tunnel === b.tunnel && a.gifVoronoiAssets === b.gifVoronoiAssets
+        && a.gifVoronoi === b.gifVoronoi && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
       limit: 100,
       // Coalesce rapid bursts (slider scrubs) into few history entries.
       handleSet: (handleSet) => {
@@ -474,8 +533,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, canvasBg, masterFx } = useStore.getState();
-  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, canvasBg, masterFx };
+  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, canvasBg, masterFx } = useStore.getState();
+  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();

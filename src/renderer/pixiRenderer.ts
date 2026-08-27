@@ -35,12 +35,26 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage, getLayerSize 
 import type { ThreeSceneRenderer } from './threeRenderer';
 import type { FlythroughRenderer } from './flythroughRenderer';
 import type { TunnelRenderer } from './tunnelRenderer';
+import {
+  buildGifVoronoiLayout,
+  gifVoronoiCoverRect,
+  gifVoronoiGeometryKey,
+  gifVoronoiSourceTime,
+  GifVoronoiCell
+} from '../lib/gifVoronoi';
+import { isNative } from '../lib/native';
 
 // The app's BlendMode strings are identical to Pixi's names. The advanced set
 // ('color-dodge', 'color-burn', 'saturation', 'color', 'luminosity') comes from
 // the advanced-blend-modes import; 'hue' is registered by ./hueBlend.
 function toBlendMode(mode: string): BLEND_MODES {
   return mode as BLEND_MODES;
+}
+
+// Dev flag: ?renderer=webgl forces the native backend in a browser session.
+function isWebglForced(): boolean {
+  return typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('renderer') === 'webgl';
 }
 
 function clamp01(v: number): number {
@@ -104,6 +118,14 @@ interface PolygonNode {
   strokeWidth: number;
 }
 
+interface GifVoronoiCellNode {
+  wrapper: Container;
+  content: Container;
+  sprite: Sprite;
+  fill: Sprite;
+  maskG: Graphics;
+}
+
 /**
  * GPU renderer: mirrors the document into a Pixi scene graph each frame and
  * renders it with WebGPU (WebGL fallback). Pure function of (t, state) like
@@ -116,6 +138,7 @@ export class PixiSceneRenderer {
   private root = new Container();
   private symContainer = new Container();
   private polyContainer = new Container();
+  private gifVoronoiContainer = new Container();
   private mesh3dSprite = new Sprite();
   private flythroughSprite = new Sprite();
   private tunnelSprite = new Sprite();
@@ -146,6 +169,12 @@ export class PixiSceneRenderer {
   private polyNodes = new Map<string, PolygonNode>();
   private symOrder = '';
   private polyOrder = '';
+  private gifVoronoiNodes: GifVoronoiCellNode[] = [];
+  private gifVoronoiLayout: GifVoronoiCell[] = [];
+  private gifVoronoiLayoutKey = '';
+  private gifVoronoiGeometryKey = '';
+  private gifVoronoiGutterG = new Graphics();
+  private gifVoronoiGutterKey = '';
 
   private gifTextures = new Map<GifData, Texture[]>();
   private staticTextures = new Map<string, Texture>();
@@ -167,7 +196,8 @@ export class PixiSceneRenderer {
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
     this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite, this.tunnelSprite);
-    this.root.addChild(this.symContainer, this.polyContainer);
+    this.root.addChild(this.symContainer, this.polyContainer, this.gifVoronoiContainer);
+    this.gifVoronoiContainer.addChild(this.gifVoronoiGutterG);
     this.mesh3dSprite.visible = false;
     this.flythroughSprite.visible = false;
     this.tunnelSprite.visible = false;
@@ -175,7 +205,10 @@ export class PixiSceneRenderer {
 
   static async create(canvas: HTMLCanvasElement): Promise<PixiSceneRenderer> {
     const renderer = await autoDetectRenderer({
-      preference: 'webgpu',
+      // The Tauri shell runs on WKWebView, where WebGL is the only reliable
+      // backend. `?renderer=webgl` reproduces that native path in a browser so
+      // GPU parity can be checked without a native build.
+      preference: isNative() || isWebglForced() ? 'webgl' : 'webgpu',
       canvas,
       width: CANVAS_WIDTH,
       height: CANVAS_HEIGHT,
@@ -232,6 +265,11 @@ export class PixiSceneRenderer {
     this.tunnelTexture?.destroy(true);
     this.exportTarget?.destroy(true);
     this.exportTarget = null;
+    // Masks are children of the nodes they clip, so the stage teardown below
+    // frees them along with everything else in the tree.
+    this.gifVoronoiNodes = [];
+    this.symNodes.clear();
+    this.polyNodes.clear();
     this.rgbSplitFilter.destroy();
     this.duotoneFilter.destroy();
     this.scanlinesFilter.destroy();
@@ -245,14 +283,24 @@ export class PixiSceneRenderer {
   // ---------------------------------------------------------------- scene sync
 
   private sync(t: number, state: RenderState, width: number, height: number) {
-    this.layout(width, height, state.appMode === 'tunnel' ? state.tunnel.voidColor : state.canvasBg);
+    this.layout(
+      width,
+      height,
+      state.appMode === 'tunnel'
+        ? state.tunnel.voidColor
+        : state.appMode === 'gif-voronoi'
+          ? state.gifVoronoi.backgroundColor
+          : state.canvasBg
+    );
 
     const symVisible = state.appMode === 'symmetry';
     const mesh3dVisible = state.appMode === '3d';
     const flythroughVisible = state.appMode === 'flythrough';
     const tunnelVisible = state.appMode === 'tunnel';
+    const gifVoronoiVisible = state.appMode === 'gif-voronoi';
     this.symContainer.visible = symVisible;
     this.polyContainer.visible = state.appMode === 'polygon';
+    this.gifVoronoiContainer.visible = gifVoronoiVisible;
     this.mesh3dSprite.visible = mesh3dVisible;
     this.flythroughSprite.visible = flythroughVisible;
     this.tunnelSprite.visible = tunnelVisible;
@@ -271,7 +319,9 @@ export class PixiSceneRenderer {
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (tunnelVisible) {
+    if (gifVoronoiVisible) {
+      this.syncGifVoronoi(t, state);
+    } else if (tunnelVisible) {
       this.syncTunnel(t, state, width, height);
     } else if (flythroughVisible) {
       this.syncFlythrough(t, state, width, height);
@@ -285,6 +335,137 @@ export class PixiSceneRenderer {
 
     this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  // ---------------------------------------------------------- GIF Voronoi
+
+  private createGifVoronoiCellNode(): GifVoronoiCellNode {
+    const wrapper = new Container();
+    const content = new Container();
+    const sprite = new Sprite();
+    const fill = new Sprite(Texture.WHITE);
+    const maskG = new Graphics();
+    sprite.anchor.set(0.5);
+    fill.anchor.set(0.5);
+    content.addChild(fill, sprite);
+    content.mask = maskG;
+    // The mask has to be in the scene graph or Pixi never updates its
+    // transform: it stays at the render group's origin while the content sits
+    // under the centred `root`, so the two never overlap and every cell is
+    // clipped away. As a sibling of the content it shares the untransformed
+    // design space the cell polygon was built in.
+    wrapper.addChild(content, maskG);
+    return { wrapper, content, sprite, fill, maskG };
+  }
+
+  private syncGifVoronoi(t: number, state: RenderState) {
+    const config = state.gifVoronoi;
+    const stageBounds = {
+      minX: -CANVAS_WIDTH / 2,
+      minY: -CANVAS_HEIGHT / 2,
+      maxX: CANVAS_WIDTH / 2,
+      maxY: CANVAS_HEIGHT / 2
+    };
+    const geometryKey = gifVoronoiGeometryKey(config);
+    const geometryChanged = geometryKey !== this.gifVoronoiGeometryKey;
+    const layoutKey = [
+      geometryKey,
+      config.arrangement,
+      config.occupancy,
+      config.blankFill,
+      config.blankColor,
+      config.palette.join(','),
+      state.gifVoronoiAssets.map(asset => asset.id).join(',')
+    ].join('|');
+    const layoutChanged = layoutKey !== this.gifVoronoiLayoutKey;
+    if (layoutChanged) {
+      this.gifVoronoiLayout = buildGifVoronoiLayout(state.gifVoronoiAssets, config, stageBounds);
+      this.gifVoronoiLayoutKey = layoutKey;
+    }
+
+    let nodeCreated = false;
+    while (this.gifVoronoiNodes.length < this.gifVoronoiLayout.length) {
+      const node = this.createGifVoronoiCellNode();
+      this.gifVoronoiNodes.push(node);
+      this.gifVoronoiContainer.addChild(node.wrapper);
+      nodeCreated = true;
+    }
+    while (this.gifVoronoiNodes.length > this.gifVoronoiLayout.length) {
+      const node = this.gifVoronoiNodes.pop()!;
+      node.wrapper.destroy({ children: true });
+    }
+
+    const needsRedrawGeometry = geometryChanged || nodeCreated;
+    if (geometryChanged) {
+      this.gifVoronoiGeometryKey = geometryKey;
+    }
+
+    for (let index = 0; index < this.gifVoronoiLayout.length; index++) {
+      const cell = this.gifVoronoiLayout[index];
+      const node = this.gifVoronoiNodes[index];
+      if (needsRedrawGeometry) {
+        node.maskG.clear().poly(cell.points, true).fill(0xffffff);
+      }
+
+      node.fill.position.set(
+        (cell.bounds.minX + cell.bounds.maxX) / 2,
+        (cell.bounds.minY + cell.bounds.maxY) / 2
+      );
+      node.fill.width = cell.bounds.maxX - cell.bounds.minX;
+      node.fill.height = cell.bounds.maxY - cell.bounds.minY;
+
+      if (cell.asset) {
+        const sourceTime = gifVoronoiSourceTime(cell, config, t, stageBounds);
+        const frameIndex = getGifFrameIndexAtTime(cell.asset.gifData, sourceTime, 1);
+        const textures = this.getGifTextures(cell.asset.gifData);
+        const texture = textures[frameIndex] ?? Texture.EMPTY;
+        const rect = gifVoronoiCoverRect(
+          cell.asset.width,
+          cell.asset.height,
+          cell.bounds,
+          config.coverZoom,
+          config.coverOffsetX,
+          config.coverOffsetY
+        );
+        node.sprite.visible = true;
+        node.fill.visible = false;
+        node.sprite.texture = texture;
+        node.sprite.position.set(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        node.sprite.width = rect.width;
+        node.sprite.height = rect.height;
+      } else {
+        node.sprite.visible = false;
+        node.fill.visible = cell.blankColor !== null;
+        if (cell.blankColor) node.fill.tint = cell.blankColor;
+        node.fill.alpha = clamp01(config.blankOpacity);
+      }
+    }
+
+    const gutterKey = `${geometryKey}|${config.gutterWidth}|${config.gutterColor}`;
+    if (gutterKey !== this.gifVoronoiGutterKey) {
+      this.gifVoronoiGutterG.clear();
+      if (config.gutterWidth > 0) {
+        for (const cell of this.gifVoronoiLayout) {
+          this.gifVoronoiGutterG.poly(cell.points, true).stroke({
+            width: config.gutterWidth,
+            color: config.gutterColor,
+            join: 'round'
+          });
+        }
+      }
+      this.gifVoronoiGutterKey = gutterKey;
+    }
+
+    if (
+      this.gifVoronoiGutterG.parent === this.gifVoronoiContainer &&
+      this.gifVoronoiContainer.getChildIndex(this.gifVoronoiGutterG) !==
+        this.gifVoronoiContainer.children.length - 1
+    ) {
+      this.gifVoronoiContainer.setChildIndex(
+        this.gifVoronoiGutterG,
+        this.gifVoronoiContainer.children.length - 1
+      );
+    }
   }
 
   // --------------------------------------------------------------- GIF tunnel
@@ -939,6 +1120,10 @@ export class PixiSceneRenderer {
     for (const p of state.polygonLayers) {
       if (p.gifData) gifs.add(p.gifData);
       if (p.src) srcs.add(p.src);
+    }
+    for (const asset of state.gifVoronoiAssets) {
+      gifs.add(asset.gifData);
+      if (asset.src) srcs.add(asset.src);
     }
     for (const [gif, arr] of this.gifTextures) {
       if (!gifs.has(gif)) {
