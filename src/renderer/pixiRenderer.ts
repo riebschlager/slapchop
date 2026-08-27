@@ -38,7 +38,7 @@ import type { TunnelRenderer } from './tunnelRenderer';
 import {
   buildGifVoronoiLayout,
   gifVoronoiCoverRect,
-  gifVoronoiGeometryKey,
+  gifVoronoiGeometryFrameKey,
   gifVoronoiSourceTime,
   GifVoronoiCell
 } from '../lib/gifVoronoi';
@@ -366,7 +366,7 @@ export class PixiSceneRenderer {
       maxX: CANVAS_WIDTH / 2,
       maxY: CANVAS_HEIGHT / 2
     };
-    const geometryKey = gifVoronoiGeometryKey(config);
+    const geometryKey = gifVoronoiGeometryFrameKey(config, t);
     const geometryChanged = geometryKey !== this.gifVoronoiGeometryKey;
     const layoutKey = [
       geometryKey,
@@ -379,7 +379,7 @@ export class PixiSceneRenderer {
     ].join('|');
     const layoutChanged = layoutKey !== this.gifVoronoiLayoutKey;
     if (layoutChanged) {
-      this.gifVoronoiLayout = buildGifVoronoiLayout(state.gifVoronoiAssets, config, stageBounds);
+      this.gifVoronoiLayout = buildGifVoronoiLayout(state.gifVoronoiAssets, config, stageBounds, t);
       this.gifVoronoiLayoutKey = layoutKey;
     }
 

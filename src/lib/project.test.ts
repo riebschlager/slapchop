@@ -164,5 +164,12 @@ describe('restoreProjectDocument', () => {
     expect(document.gifVoronoi.arrangement).toBe('radial');
     expect(document.gifVoronoi.palette).toEqual(['#123456', '#abcdef']);
     expect(document.tunnel.sides).toBe(12);
+
+    const legacyPayload = JSON.parse(JSON.stringify(payload));
+    delete legacyPayload.gifVoronoi.pointDriftAmount;
+    delete legacyPayload.gifVoronoi.pointDriftSpeed;
+    const legacyDocument = restoreProjectDocument(legacyPayload, materialized);
+    expect(legacyDocument.gifVoronoi.pointDriftAmount).toBe(0);
+    expect(legacyDocument.gifVoronoi.pointDriftSpeed).toBe(DEFAULT_GIF_VORONOI.pointDriftSpeed);
   });
 });

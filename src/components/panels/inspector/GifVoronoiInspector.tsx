@@ -1,4 +1,5 @@
-import { Dices, Grid2X2, Image as ImageIcon, Palette, Play, Plus, X } from 'lucide-react';
+import { Dices, Grid2X2, Image as ImageIcon, Palette, Play, Plus, Waves, X } from 'lucide-react';
+import { formatRate } from '../../../lib/sliderScale';
 import { useStore } from '../../../store';
 import {
   GifVoronoiArrangement,
@@ -96,6 +97,39 @@ export default function GifVoronoiInspector() {
             <span className="mb-1 block">Background</span>
             <input type="color" value={config.backgroundColor} onChange={event => update({ backgroundColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-gray-700 bg-gray-950 p-0.5" />
           </label>
+        </div>
+      </section>
+
+      <section className="space-y-3 border-b border-gray-800 p-3">
+        <SectionTitle icon={Waves}>Point Drift</SectionTitle>
+        <div className="grid grid-cols-2 gap-3">
+          <Slider
+            size="sm"
+            label="Amount"
+            display={`${Math.round(config.pointDriftAmount * 100)}%`}
+            value={config.pointDriftAmount}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={pointDriftAmount => update({ pointDriftAmount })}
+            trackClassName="h-1 accent-lime-400"
+          />
+          <Slider
+            size="sm"
+            label="Rate"
+            display={`${formatRate(config.pointDriftSpeed)} Hz`}
+            value={config.pointDriftSpeed}
+            min={0}
+            max={2}
+            step={0.001}
+            scale="log"
+            minPositive={0.001}
+            onChange={pointDriftSpeed => update({ pointDriftSpeed })}
+            trackClassName="h-1 accent-lime-400"
+          />
+        </div>
+        <div className="rounded border border-lime-950/80 bg-lime-950/15 px-2 py-1.5 text-[9px] leading-relaxed text-lime-700">
+          Seeded site motion reshapes the mesh over time while each point stays in its home region.
         </div>
       </section>
 

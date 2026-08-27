@@ -160,4 +160,20 @@ describe('renderFrame mode boundary', () => {
     expect(first).toEqual(renderTrace(gifVoronoiState, 0.5));
     expect(first.filter(entry => entry.startsWith('drawImage:'))).toHaveLength(6);
   });
+
+  it('morphs GIF Voronoi geometry over time when point drift is enabled', () => {
+    const gifVoronoiState: RenderState = {
+      ...state('gif-voronoi'),
+      gifVoronoi: {
+        ...DEFAULT_GIF_VORONOI,
+        cellCount: 8,
+        pointDriftAmount: 0.5,
+        pointDriftSpeed: 0.2
+      }
+    };
+
+    const first = renderTrace(gifVoronoiState, 0.5);
+    expect(first).toEqual(renderTrace(gifVoronoiState, 0.5));
+    expect(first).not.toEqual(renderTrace(gifVoronoiState, 1.5));
+  });
 });

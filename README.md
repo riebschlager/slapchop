@@ -59,8 +59,9 @@ for the product decision and incremental architecture direction.
   synchronized or phase-shifted playback, fog, twist, and path modulation.
 - **GIF Voronoi** — divide the flat output stage into a seeded organic cell
   field and populate it from a sortable folder library of GIFs. Configure cell
-  density, irregularity, occupancy, scan/radial/scattered assignment, cover
-  crop, playback phase, gutters, backgrounds, and palette or transparent blanks.
+  density, irregularity, animated point drift, occupancy,
+  scan/radial/scattered assignment, cover crop, playback phase, gutters,
+  backgrounds, and palette or transparent blanks.
 
 ## Inspector controls
 

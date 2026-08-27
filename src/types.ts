@@ -596,6 +596,8 @@ export interface GifVoronoiConfig {
   cellCount: number;
   irregularity: number;
   seed: number;
+  pointDriftAmount: number;
+  pointDriftSpeed: number;
   arrangement: GifVoronoiArrangement;
   occupancy: number;
   gifSpeed: number;
@@ -617,6 +619,8 @@ export const DEFAULT_GIF_VORONOI: GifVoronoiConfig = {
   cellCount: 42,
   irregularity: 0.72,
   seed: 1,
+  pointDriftAmount: 0,
+  pointDriftSpeed: 0.12,
   arrangement: 'scatter',
   occupancy: 0.88,
   gifSpeed: 1,

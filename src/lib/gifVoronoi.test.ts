@@ -3,6 +3,7 @@ import { DEFAULT_GIF_VORONOI, GifVoronoiAsset } from '../types';
 import {
   buildGifVoronoiLayout,
   gifVoronoiCoverRect,
+  gifVoronoiGeometryFrameKey,
   gifVoronoiGeometryKey,
   gifVoronoiSourceTime
 } from './gifVoronoi';
@@ -63,6 +64,37 @@ describe('buildGifVoronoiLayout', () => {
 
     expect(reassigned).toBe(first);
     expect(gifVoronoiGeometryKey({ ...DEFAULT_GIF_VORONOI, seed: 99 })).not.toBe(first);
+  });
+
+  it.each(['scatter', 'scan', 'radial'] as const)(
+    'animates point drift deterministically without changing %s assignments',
+    (arrangement) => {
+      const config = {
+        ...DEFAULT_GIF_VORONOI,
+        cellCount: 18,
+        arrangement,
+        pointDriftAmount: 0.9,
+        pointDriftSpeed: 0.25
+      };
+      const first = buildGifVoronoiLayout(assets, config, bounds, 1.25);
+      const repeated = buildGifVoronoiLayout(assets, config, bounds, 1.25);
+      const later = buildGifVoronoiLayout(assets, config, bounds, 7.75);
+
+      expect(first).toEqual(repeated);
+      expect(first.map(cell => cell.index)).toEqual(later.map(cell => cell.index));
+      expect(first.map(cell => cell.asset?.id)).toEqual(later.map(cell => cell.asset?.id));
+      expect(first.map(cell => cell.points)).not.toEqual(later.map(cell => cell.points));
+    }
+  );
+
+  it('keeps static geometry cached independently from playback time', () => {
+    expect(gifVoronoiGeometryFrameKey(DEFAULT_GIF_VORONOI, 1)).toBe(
+      gifVoronoiGeometryFrameKey(DEFAULT_GIF_VORONOI, 2)
+    );
+    const drifting = { ...DEFAULT_GIF_VORONOI, pointDriftAmount: 0.4 };
+    expect(gifVoronoiGeometryFrameKey(drifting, 1)).not.toBe(
+      gifVoronoiGeometryFrameKey(drifting, 2)
+    );
   });
 });
 

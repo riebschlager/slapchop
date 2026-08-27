@@ -38,9 +38,22 @@ const MIN_CELLS = 2;
 const MAX_CELLS = 120;
 
 export function gifVoronoiGeometryKey(
-  config: Pick<GifVoronoiConfig, 'cellCount' | 'irregularity' | 'seed'>
+  config: Pick<GifVoronoiConfig, 'cellCount' | 'irregularity' | 'seed' | 'pointDriftAmount' | 'pointDriftSpeed'>
 ): string {
-  return [config.cellCount, config.irregularity, config.seed].join('|');
+  return [
+    config.cellCount,
+    config.irregularity,
+    config.seed,
+    config.pointDriftAmount,
+    config.pointDriftSpeed
+  ].join('|');
+}
+
+export function gifVoronoiGeometryFrameKey(config: GifVoronoiConfig, t: number): string {
+  const geometryKey = gifVoronoiGeometryKey(config);
+  return config.pointDriftAmount > 0 && config.pointDriftSpeed > 0
+    ? `${geometryKey}|${t}`
+    : geometryKey;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -92,7 +105,7 @@ function polygonCentroid(points: PolygonPoint[]): PolygonPoint {
   return { x: x / (3 * twiceArea), y: y / (3 * twiceArea) };
 }
 
-function generateCells(bounds: GifVoronoiBounds, config: GifVoronoiConfig): GeneratedCell[] {
+function generateCells(bounds: GifVoronoiBounds, config: GifVoronoiConfig, t: number): GeneratedCell[] {
   const width = bounds.maxX - bounds.minX;
   const height = bounds.maxY - bounds.minY;
   if (width <= 0 || height <= 0) return [];
@@ -106,6 +119,7 @@ function generateCells(bounds: GifVoronoiBounds, config: GifVoronoiConfig): Gene
   const widerRows = count % rows;
   const rowHeight = height / rows;
   const sites: [number, number][] = [];
+  const siteRegions: GifVoronoiBounds[] = [];
 
   for (let row = 0; row < rows; row++) {
     const columns = Math.max(1, baseColumns + (row < widerRows ? 1 : 0));
@@ -113,16 +127,44 @@ function generateCells(bounds: GifVoronoiBounds, config: GifVoronoiConfig): Gene
     for (let column = 0; column < columns; column++) {
       const jitterX = (rand() - 0.5) * columnWidth * 0.82 * irregularity;
       const jitterY = (rand() - 0.5) * rowHeight * 0.82 * irregularity;
-      sites.push([
-        bounds.minX + (column + 0.5) * columnWidth + jitterX,
-        bounds.minY + (row + 0.5) * rowHeight + jitterY
-      ]);
+      const minX = bounds.minX + column * columnWidth;
+      const minY = bounds.minY + row * rowHeight;
+      sites.push([minX + columnWidth / 2 + jitterX, minY + rowHeight / 2 + jitterY]);
+      siteRegions.push({ minX, minY, maxX: minX + columnWidth, maxY: minY + rowHeight });
     }
   }
 
   const phases = sites.map(() => rand());
   const fillRanks = sites.map(() => rand());
   const scatterRanks = sites.map(() => rand());
+  const driftAmount = clamp(config.pointDriftAmount, 0, 1);
+  if (driftAmount > 0) {
+    // A separate seeded stream keeps existing static meshes and assignments
+    // byte-for-byte stable when drift is disabled.
+    const driftRand = mulberry32((Math.floor(config.seed) || 1) ^ 0x5f3759df);
+    const angle = Math.max(0, t) * Math.max(0, config.pointDriftSpeed) * Math.PI * 2;
+    for (let index = 0; index < sites.length; index++) {
+      const region = siteRegions[index];
+      const regionWidth = region.maxX - region.minX;
+      const regionHeight = region.maxY - region.minY;
+      const phaseX = driftRand() * Math.PI * 2;
+      const phaseY = driftRand() * Math.PI * 2;
+      const rateX = 0.72 + driftRand() * 0.56;
+      const rateY = 0.72 + driftRand() * 0.56;
+      const marginX = regionWidth * 0.03;
+      const marginY = regionHeight * 0.03;
+      sites[index][0] = clamp(
+        sites[index][0] + Math.sin(phaseX + angle * rateX) * regionWidth * 0.38 * driftAmount,
+        region.minX + marginX,
+        region.maxX - marginX
+      );
+      sites[index][1] = clamp(
+        sites[index][1] + Math.sin(phaseY + angle * rateY) * regionHeight * 0.38 * driftAmount,
+        region.minY + marginY,
+        region.maxY - marginY
+      );
+    }
+  }
   const delaunay = Delaunay.from(sites);
   const voronoi = delaunay.voronoi([bounds.minX, bounds.minY, bounds.maxX, bounds.maxY]);
   const cells: GeneratedCell[] = [];
@@ -162,9 +204,13 @@ function orderedCells(cells: GeneratedCell[], config: GifVoronoiConfig): Generat
 export function buildGifVoronoiLayout(
   assets: GifVoronoiAsset[],
   config: GifVoronoiConfig,
-  bounds: GifVoronoiBounds
+  bounds: GifVoronoiBounds,
+  t = 0
 ): GifVoronoiCell[] {
-  const generated = generateCells(bounds, config);
+  const generated = generateCells(bounds, config, t);
+  const assignmentCells = config.pointDriftAmount > 0 && config.arrangement !== 'scatter'
+    ? generateCells(bounds, { ...config, pointDriftAmount: 0 }, 0)
+    : generated;
   const occupiedCount = assets.length > 0
     ? Math.round(generated.length * clamp(config.occupancy, 0, 1))
     : 0;
@@ -175,7 +221,7 @@ export function buildGifVoronoiLayout(
       .map(cell => cell.index)
   );
   const assetByCell = new Map<number, GifVoronoiAsset>();
-  orderedCells(generated, config)
+  orderedCells(assignmentCells, config)
     .filter(cell => occupied.has(cell.index))
     .forEach((cell, slot) => assetByCell.set(cell.index, assets[slot % assets.length]));
   const palette = config.palette.length > 0 ? config.palette : [config.blankColor];

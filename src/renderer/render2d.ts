@@ -26,6 +26,7 @@ import { resolveTunnelScene, TunnelVec3 } from '../lib/tunnel';
 import {
   buildGifVoronoiLayout,
   gifVoronoiCoverRect,
+  gifVoronoiGeometryFrameKey,
   gifVoronoiSourceTime
 } from '../lib/gifVoronoi';
 
@@ -458,9 +459,7 @@ function renderGifVoronoiScene(
     maxY: CANVAS_HEIGHT / 2
   };
   const layoutKey = [
-    config.cellCount,
-    config.irregularity,
-    config.seed,
+    gifVoronoiGeometryFrameKey(config, t),
     config.arrangement,
     config.occupancy,
     config.blankFill,
@@ -469,7 +468,7 @@ function renderGifVoronoiScene(
     assets.map(asset => asset.id).join(',')
   ].join('|');
   if (layoutKey !== gifVoronoiLayoutCacheKey) {
-    gifVoronoiLayoutCache = buildGifVoronoiLayout(assets, config, stageBounds);
+    gifVoronoiLayoutCache = buildGifVoronoiLayout(assets, config, stageBounds, t);
     gifVoronoiLayoutCacheKey = layoutKey;
   }
   const cells = gifVoronoiLayoutCache;
