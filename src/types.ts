@@ -661,6 +661,10 @@ export interface LandscapeSkySource {
   textureOffsetY: number;
   textureRotation: number;
   gifSpeed: number;
+  motionTextureScale?: MotionConfig;
+  motionTextureOffsetX?: MotionConfig;
+  motionTextureOffsetY?: MotionConfig;
+  motionTextureRotation?: MotionConfig;
 }
 
 export interface LandscapeConfig {
@@ -694,6 +698,15 @@ export interface LandscapeConfig {
   skyRingWidth: number;
   skyRingGap: number;
   skyBackgroundColor: string;
+  motionHeightScale?: MotionConfig;
+  motionFlightSpeed?: MotionConfig;
+  motionCameraHeight?: MotionConfig;
+  motionCameraX?: MotionConfig;
+  motionLookAhead?: MotionConfig;
+  motionFov?: MotionConfig;
+  motionSkyCenterX?: MotionConfig;
+  motionSkyCenterY?: MotionConfig;
+  motionSkyRingWidth?: MotionConfig;
 }
 
 export const DEFAULT_LANDSCAPE: LandscapeConfig = {

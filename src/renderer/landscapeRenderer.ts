@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getGifFrameIndexAtTime } from '../lib/gifUtils';
-import { resolveLandscapeCells } from '../lib/landscape';
+import { resolveLandscapeCells, resolveLandscapeFrame } from '../lib/landscape';
 import { GifData, LandscapeAsset, LandscapeConfig, LandscapeSkySource } from '../types';
 import { renderLandscapeSky } from './landscape2d';
 
@@ -73,25 +73,27 @@ export class LandscapeRenderer {
       this.height = height;
     }
 
+    const frame = resolveLandscapeFrame(config, skySources, t);
+    const resolved = frame.config;
     const skyContext = this.skyCanvas.getContext('2d');
-    if (skyContext) renderLandscapeSky(skyContext, t, skySources, config, width, height);
+    if (skyContext) renderLandscapeSky(skyContext, t, frame.skySources, resolved, width, height);
 
     this.camera.aspect = width / height;
-    this.camera.fov = config.fov;
-    this.camera.position.set(config.cameraX, config.cameraHeight, 1500);
-    this.camera.lookAt(0, 0, -config.lookAhead);
-    this.camera.far = Math.max(30000, config.terrainDepth * 2.5);
+    this.camera.fov = resolved.fov;
+    this.camera.position.set(resolved.cameraX, resolved.cameraHeight, 1500);
+    this.camera.lookAt(0, 0, -resolved.lookAhead);
+    this.camera.far = Math.max(30000, resolved.terrainDepth * 2.5);
     this.camera.updateProjectionMatrix();
-    this.fog.color.set(config.fogColor);
-    this.fog.density = config.fogDensity;
-    this.scene.fog = config.fogDensity > 0 ? this.fog : null;
+    this.fog.color.set(resolved.fogColor);
+    this.fog.density = resolved.fogDensity;
+    this.scene.fog = resolved.fogDensity > 0 ? this.fog : null;
 
-    const cells = resolveLandscapeCells(config, t, terrainAssets.length);
-    this.syncGeometry(cells, config);
-    this.syncMaterials(terrainAssets, config, t);
+    const cells = resolveLandscapeCells(resolved, t, terrainAssets.length, frame.travel);
+    this.syncGeometry(cells, resolved);
+    this.syncMaterials(terrainAssets, resolved, t);
     this.terrain.material = [this.fallbackMaterial, ...terrainAssets.map(asset => this.assetMaterials.get(asset.id) ?? this.fallbackMaterial)];
-    this.wireframe.visible = config.wireframe;
-    this.wireframeMaterial.color.set(config.wireframeColor);
+    this.wireframe.visible = resolved.wireframe;
+    this.wireframeMaterial.color.set(resolved.wireframeColor);
     this.renderer.render(this.scene, this.camera);
 
     this.outputContext.setTransform(1, 0, 0, 1, 0, 0);

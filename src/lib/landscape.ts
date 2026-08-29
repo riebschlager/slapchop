@@ -1,4 +1,5 @@
-import { LandscapeConfig } from '../types';
+import { LandscapeConfig, LandscapeSkySource, MotionConfig } from '../types';
+import { applyMotion } from './motion';
 
 export interface LandscapePoint {
   x: number;
@@ -11,6 +12,104 @@ export interface LandscapeCell {
   column: number;
   assetIndex: number;
   corners: [LandscapePoint, LandscapePoint, LandscapePoint, LandscapePoint];
+}
+
+export interface ResolvedLandscapeFrame {
+  config: LandscapeConfig;
+  skySources: LandscapeSkySource[];
+  travel: number;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function wrapDegrees(value: number): number {
+  return ((value + 180) % 360 + 360) % 360 - 180;
+}
+
+function resolveBoundedMotion(
+  baseValue: number,
+  motion: MotionConfig | undefined,
+  t: number,
+  min: number,
+  max: number
+): number {
+  if (!motion || motion.type === 'none') return baseValue;
+  return clamp(applyMotion(baseValue, motion, t), min, max);
+}
+
+function integratedCos(rate: number, phase: number, t: number): number {
+  if (Math.abs(rate) < 0.000001) return Math.cos(phase) * t;
+  return (Math.sin(rate * t + phase) - Math.sin(phase)) / rate;
+}
+
+/**
+ * Integrate the configured velocity from zero to t so a speed pulse produces
+ * continuous travel. Multiplying the instantaneous velocity by t would make
+ * the apparent pulse grow with the project duration and jump during scrubbing.
+ */
+export function landscapeTravelDistance(config: LandscapeConfig, t: number): number {
+  const elapsed = Math.max(0, t);
+  const baseTravel = config.flightSpeed * elapsed;
+  const motion = config.motionFlightSpeed;
+  if (!motion || motion.type === 'none') return baseTravel;
+
+  let modulationTravel = 0;
+  if (motion.type === 'sine') {
+    const rate = motion.speed * Math.PI * 2;
+    modulationTravel = Math.abs(rate) < 0.000001
+      ? Math.sin(motion.phase) * elapsed
+      : (Math.cos(motion.phase) - Math.cos(rate * elapsed + motion.phase)) / rate;
+  } else if (motion.type === 'noise') {
+    // applyMotion's deterministic pseudo-noise is a product of three waves.
+    // Product-to-sum gives an exact antiderivative and keeps long exports O(1).
+    const speed = motion.speed;
+    const phase = motion.phase;
+    modulationTravel = 0.25 * (
+      integratedCos(-1.5 * speed, 0.7 * phase, elapsed)
+      + integratedCos(2.9 * speed, -1.3 * phase, elapsed)
+      - integratedCos(0.1 * speed, 3.3 * phase, elapsed)
+      - integratedCos(4.5 * speed, 1.3 * phase, elapsed)
+    );
+  }
+  return baseTravel + modulationTravel * motion.amplitude;
+}
+
+function resolveSkySource(source: LandscapeSkySource, t: number): LandscapeSkySource {
+  return {
+    ...source,
+    textureScale: resolveBoundedMotion(source.textureScale, source.motionTextureScale, t, 0.35, 3),
+    textureOffsetX: resolveBoundedMotion(source.textureOffsetX, source.motionTextureOffsetX, t, -2, 2),
+    textureOffsetY: resolveBoundedMotion(source.textureOffsetY, source.motionTextureOffsetY, t, -2, 2),
+    textureRotation: source.motionTextureRotation && source.motionTextureRotation.type !== 'none'
+      ? wrapDegrees(applyMotion(source.textureRotation, source.motionTextureRotation, t))
+      : source.textureRotation
+  };
+}
+
+/** Resolve every continuous Landscape parameter once for both renderers. */
+export function resolveLandscapeFrame(
+  config: LandscapeConfig,
+  skySources: LandscapeSkySource[],
+  t: number
+): ResolvedLandscapeFrame {
+  return {
+    config: {
+      ...config,
+      heightScale: resolveBoundedMotion(config.heightScale, config.motionHeightScale, t, 0, 3200),
+      flightSpeed: resolveBoundedMotion(config.flightSpeed, config.motionFlightSpeed, t, 0, 2600),
+      cameraHeight: resolveBoundedMotion(config.cameraHeight, config.motionCameraHeight, t, 120, 3200),
+      cameraX: resolveBoundedMotion(config.cameraX, config.motionCameraX, t, -1800, 1800),
+      lookAhead: resolveBoundedMotion(config.lookAhead, config.motionLookAhead, t, 500, 8000),
+      fov: resolveBoundedMotion(config.fov, config.motionFov, t, 30, 110),
+      skyCenterX: resolveBoundedMotion(config.skyCenterX, config.motionSkyCenterX, t, -540, 540),
+      skyCenterY: resolveBoundedMotion(config.skyCenterY, config.motionSkyCenterY, t, -960, 960),
+      skyRingWidth: resolveBoundedMotion(config.skyRingWidth, config.motionSkyRingWidth, t, 40, 420)
+    },
+    skySources: skySources.map(source => resolveSkySource(source, t)),
+    travel: landscapeTravelDistance(config, t)
+  };
 }
 
 function fract(value: number): number {
@@ -83,13 +182,14 @@ export function landscapeAssetIndex(
 export function resolveLandscapeCells(
   config: LandscapeConfig,
   t: number,
-  assetCount: number
+  assetCount: number,
+  resolvedTravel?: number
 ): LandscapeCell[] {
   const columns = Math.max(2, Math.round(config.meshColumns));
   const rows = Math.max(4, Math.round(config.meshRows));
   const cellWidth = config.terrainWidth / columns;
   const cellDepth = config.terrainDepth / rows;
-  const travel = Math.max(0, t) * config.flightSpeed;
+  const travel = resolvedTravel ?? Math.max(0, t) * config.flightSpeed;
   const rowAdvance = Math.floor(travel / cellDepth);
   const rowOffset = travel - rowAdvance * cellDepth;
   const nearZ = 820;

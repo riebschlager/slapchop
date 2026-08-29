@@ -1,5 +1,5 @@
 import { getGifFrameAtTime } from '../lib/gifUtils';
-import { resolveLandscapeCells, LandscapePoint } from '../lib/landscape';
+import { resolveLandscapeCells, LandscapePoint, resolveLandscapeFrame } from '../lib/landscape';
 import { LandscapeAsset, LandscapeConfig, LandscapeSkySource } from '../types';
 
 interface ProjectedPoint {
@@ -138,10 +138,12 @@ export function renderLandscapeScene2d(
   width: number,
   height: number
 ) {
-  renderLandscapeSky(ctx, t, skySources, config, width, height);
-  const cells = resolveLandscapeCells(config, t, terrainAssets.length).reverse();
+  const frame = resolveLandscapeFrame(config, skySources, t);
+  const resolved = frame.config;
+  renderLandscapeSky(ctx, t, frame.skySources, resolved, width, height);
+  const cells = resolveLandscapeCells(resolved, t, terrainAssets.length, frame.travel).reverse();
   for (const cell of cells) {
-    const projected = cell.corners.map(point => projectLandscapePoint(point, config, width, height));
+    const projected = cell.corners.map(point => projectLandscapePoint(point, resolved, width, height));
     if (projected.some(point => point === null)) continue;
     const quad = projected as ProjectedPoint[];
     ctx.save();
@@ -151,36 +153,36 @@ export function renderLandscapeScene2d(
     const asset = cell.assetIndex >= 0 ? terrainAssets[cell.assetIndex] : null;
     if (asset) {
       ctx.clip();
-      const frame = getGifFrameAtTime(asset.gifData, t, config.terrainGifSpeed);
-      if (frame) {
+      const gifFrame = getGifFrameAtTime(asset.gifData, t, resolved.terrainGifSpeed);
+      if (gifFrame) {
         const xs = quad.map(point => point.x);
         const ys = quad.map(point => point.y);
         const minX = Math.min(...xs);
         const minY = Math.min(...ys);
         const drawWidth = Math.max(1, Math.max(...xs) - minX);
         const drawHeight = Math.max(1, Math.max(...ys) - minY);
-        const zoom = Math.max(0.25, config.terrainTextureScale);
+        const zoom = Math.max(0.25, resolved.terrainTextureScale);
         ctx.drawImage(
-          frame,
-          minX + config.terrainTextureOffsetX * drawWidth - drawWidth * (zoom - 1) / 2,
-          minY + config.terrainTextureOffsetY * drawHeight - drawHeight * (zoom - 1) / 2,
+          gifFrame,
+          minX + resolved.terrainTextureOffsetX * drawWidth - drawWidth * (zoom - 1) / 2,
+          minY + resolved.terrainTextureOffsetY * drawHeight - drawHeight * (zoom - 1) / 2,
           drawWidth * zoom,
           drawHeight * zoom
         );
       }
     } else {
       const averageHeight = cell.corners.reduce((sum, point) => sum + point.y, 0) / 4;
-      const lightness = Math.max(12, Math.min(48, 28 + averageHeight / Math.max(1, config.heightScale) * 20));
+      const lightness = Math.max(12, Math.min(48, 28 + averageHeight / Math.max(1, resolved.heightScale) * 20));
       ctx.fillStyle = `hsl(${178 + cell.column * 3} 46% ${lightness}%)`;
       ctx.fill();
     }
     ctx.restore();
 
-    if (config.wireframe) {
+    if (resolved.wireframe) {
       ctx.beginPath();
       quad.forEach((point, index) => index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y));
       ctx.closePath();
-      ctx.strokeStyle = config.wireframeColor;
+      ctx.strokeStyle = resolved.wireframeColor;
       ctx.globalAlpha = 0.45;
       ctx.lineWidth = Math.max(0.5, width / 1080);
       ctx.stroke();

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LANDSCAPE } from '../types';
-import { landscapeAssetIndex, landscapeHeight, resolveLandscapeCells } from './landscape';
+import { applyMotion } from './motion';
+import {
+  landscapeAssetIndex,
+  landscapeHeight,
+  landscapeTravelDistance,
+  resolveLandscapeCells,
+  resolveLandscapeFrame
+} from './landscape';
 
 describe('GIF Landscape procedural scene', () => {
   it('resolves identical terrain for an identical document time', () => {
@@ -31,6 +38,93 @@ describe('GIF Landscape procedural scene', () => {
     expect(landscapeAssetIndex(2, 3, 3, ordered)).toBe(2);
     expect(landscapeAssetIndex(8, 4, 5, DEFAULT_LANDSCAPE)).toBe(
       landscapeAssetIndex(8, 4, 5, DEFAULT_LANDSCAPE)
+    );
+  });
+
+  it('resolves continuous terrain, camera, and sky motion with safe bounds', () => {
+    const frame = resolveLandscapeFrame({
+      ...DEFAULT_LANDSCAPE,
+      motionHeightScale: { type: 'sine', speed: 1, amplitude: 4000, phase: 0 },
+      motionCameraX: { type: 'sine', speed: 1, amplitude: 3000, phase: 0 },
+      motionFov: { type: 'sine', speed: 1, amplitude: 100, phase: Math.PI },
+      motionSkyRingWidth: { type: 'sine', speed: 1, amplitude: 400, phase: 0 }
+    }, [], 0.25);
+
+    expect(frame.config.heightScale).toBe(3200);
+    expect(frame.config.cameraX).toBe(1800);
+    expect(frame.config.fov).toBe(30);
+    expect(frame.config.skyRingWidth).toBe(420);
+  });
+
+  it('preserves unmodulated document values without reinterpretation', () => {
+    const config = { ...DEFAULT_LANDSCAPE, cameraX: 2400, fov: 120 };
+    const source = {
+      id: 'sky-static',
+      name: 'Static sky',
+      assets: [],
+      textureScale: 4,
+      textureOffsetX: 3,
+      textureOffsetY: -3,
+      textureRotation: 540,
+      gifSpeed: 1
+    };
+    const frame = resolveLandscapeFrame(config, [source], 2);
+
+    expect(frame.config.cameraX).toBe(2400);
+    expect(frame.config.fov).toBe(120);
+    expect(frame.skySources[0]).toMatchObject({
+      textureScale: 4,
+      textureOffsetX: 3,
+      textureOffsetY: -3,
+      textureRotation: 540
+    });
+  });
+
+  it('resolves each sky folder motion independently', () => {
+    const source = {
+      id: 'sky-1',
+      name: 'Sky',
+      assets: [],
+      textureScale: 1,
+      textureOffsetX: 0,
+      textureOffsetY: 0,
+      textureRotation: 170,
+      gifSpeed: 1,
+      motionTextureScale: { type: 'sine' as const, speed: 1, amplitude: 0.5, phase: 0 },
+      motionTextureRotation: { type: 'sine' as const, speed: 1, amplitude: 30, phase: 0 }
+    };
+    const frame = resolveLandscapeFrame(DEFAULT_LANDSCAPE, [source], 0.25);
+
+    expect(frame.skySources[0].textureScale).toBeCloseTo(1.5);
+    expect(frame.skySources[0].textureRotation).toBe(-160);
+    expect(source.textureScale).toBe(1);
+    expect(source.textureRotation).toBe(170);
+  });
+
+  it('integrates speed modulation into continuous deterministic travel', () => {
+    const sineConfig = {
+      ...DEFAULT_LANDSCAPE,
+      motionFlightSpeed: { type: 'sine' as const, speed: 1, amplitude: 200, phase: 0 }
+    };
+    expect(landscapeTravelDistance(sineConfig, 0)).toBe(0);
+    expect(landscapeTravelDistance(sineConfig, 1)).toBeCloseTo(DEFAULT_LANDSCAPE.flightSpeed);
+    expect(landscapeTravelDistance(sineConfig, 0.5)).toBeCloseTo(
+      DEFAULT_LANDSCAPE.flightSpeed * 0.5 + 200 / Math.PI
+    );
+
+    const noiseConfig = {
+      ...DEFAULT_LANDSCAPE,
+      motionFlightSpeed: { type: 'noise' as const, speed: 0.7, amplitude: 300, phase: 0.4 }
+    };
+    const t = 1.3;
+    const delta = 0.00001;
+    const derivative = (
+      landscapeTravelDistance(noiseConfig, t + delta)
+      - landscapeTravelDistance(noiseConfig, t - delta)
+    ) / (delta * 2);
+    expect(derivative).toBeCloseTo(
+      applyMotion(noiseConfig.flightSpeed, noiseConfig.motionFlightSpeed, t),
+      3
     );
   });
 });

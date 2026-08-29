@@ -1,6 +1,7 @@
 import { Camera, Dices, Grid3X3, Image as ImageIcon, Mountain, Play, Sun, Waves } from 'lucide-react';
 import { formatRate } from '../../../lib/sliderScale';
 import { useStore } from '../../../store';
+import MotionControl from '../../controls/MotionControl';
 import Slider from '../../controls/Slider';
 import Toggle from '../../controls/Toggle';
 import MasterFxPanel from '../MasterFxPanel';
@@ -56,6 +57,7 @@ export default function LandscapeInspector() {
           <Slider size="sm" label="Ridges" display={`${Math.round(config.ridgeAmount * 100)}%`} value={config.ridgeAmount} min={0} max={1} step={0.01} onChange={ridgeAmount => update({ ridgeAmount })} />
         </div>
         <Slider label="Plateaus" display={`${Math.round(config.plateauAmount * 100)}%`} value={config.plateauAmount} min={0} max={1} step={0.01} onChange={plateauAmount => update({ plateauAmount })} />
+        <MotionControl label="Relief Pulse" config={config.motionHeightScale} onChange={motionHeightScale => update({ motionHeightScale })} maxAmplitude={1600} stepAmplitude={25} />
         <div className="flex items-center justify-between rounded border border-gray-800 bg-gray-800/30 p-2">
           <div>
             <div className="text-[11px] font-semibold text-gray-300">Wire Grid</div>
@@ -91,6 +93,13 @@ export default function LandscapeInspector() {
           <Slider size="sm" label="Track X" display={Math.round(config.cameraX)} value={config.cameraX} min={-1800} max={1800} step={20} onChange={cameraX => update({ cameraX })} />
           <Slider size="sm" label="Look Ahead" display={Math.round(config.lookAhead)} value={config.lookAhead} min={500} max={8000} step={50} onChange={lookAhead => update({ lookAhead })} />
         </div>
+        <div className="pt-1">
+          <MotionControl label="Velocity Pulse" config={config.motionFlightSpeed} onChange={motionFlightSpeed => update({ motionFlightSpeed })} maxAmplitude={1300} stepAmplitude={10} />
+          <MotionControl label="Camera Sway" config={config.motionCameraX} onChange={motionCameraX => update({ motionCameraX })} maxAmplitude={1200} stepAmplitude={20} />
+          <MotionControl label="Altitude Float" config={config.motionCameraHeight} onChange={motionCameraHeight => update({ motionCameraHeight })} maxAmplitude={1600} stepAmplitude={20} />
+          <MotionControl label="Look-Ahead Drift" config={config.motionLookAhead} onChange={motionLookAhead => update({ motionLookAhead })} maxAmplitude={4000} stepAmplitude={50} />
+          <MotionControl label="Lens Breathing" config={config.motionFov} onChange={motionFov => update({ motionFov })} maxAmplitude={40} stepAmplitude={1} />
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-[10px] text-gray-400"><span className="mb-1 block">Fog</span><input type="color" value={config.fogColor} onChange={event => update({ fogColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-gray-700 bg-gray-950 p-0.5" /></label>
           <Slider size="sm" label="Density" display={config.fogDensity.toFixed(5)} value={config.fogDensity} min={0} max={0.0006} step={0.00001} onChange={fogDensity => update({ fogDensity })} />
@@ -106,6 +115,11 @@ export default function LandscapeInspector() {
           <Slider size="sm" label="Ring Width" display={Math.round(config.skyRingWidth)} value={config.skyRingWidth} min={40} max={420} step={5} onChange={skyRingWidth => update({ skyRingWidth })} />
         </div>
         <Slider label="Ring Gap" display={Math.round(config.skyRingGap)} value={config.skyRingGap} min={0} max={80} step={1} onChange={skyRingGap => update({ skyRingGap })} />
+        <div className="pt-1">
+          <MotionControl label="Sun Drift X" config={config.motionSkyCenterX} onChange={motionSkyCenterX => update({ motionSkyCenterX })} maxAmplitude={540} stepAmplitude={5} />
+          <MotionControl label="Sun Drift Y" config={config.motionSkyCenterY} onChange={motionSkyCenterY => update({ motionSkyCenterY })} maxAmplitude={960} stepAmplitude={5} />
+          <MotionControl label="Ring Breathing" config={config.motionSkyRingWidth} onChange={motionSkyRingWidth => update({ motionSkyRingWidth })} maxAmplitude={210} stepAmplitude={5} />
+        </div>
         <label className="text-[10px] text-gray-400"><span className="mb-1 block">Sky Ground</span><input type="color" value={config.skyBackgroundColor} onChange={event => update({ skyBackgroundColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-gray-700 bg-gray-950 p-0.5" /></label>
       </section>
 
@@ -121,6 +135,12 @@ export default function LandscapeInspector() {
           </div>
           <Slider label="Rotation" display={`${Math.round(selectedSkySource.textureRotation)}°`} value={selectedSkySource.textureRotation} min={-180} max={180} step={1} onChange={textureRotation => updateSkySource(selectedSkySource.id, { textureRotation })} />
           <Slider label="GIF Speed" display={`${formatRate(selectedSkySource.gifSpeed)}×`} value={selectedSkySource.gifSpeed} min={0} max={3} step={0.001} scale="log" minPositive={0.05} onChange={gifSpeed => updateSkySource(selectedSkySource.id, { gifSpeed })} />
+          <div className="pt-1">
+            <MotionControl label="Tile Size Pulse" config={selectedSkySource.motionTextureScale} onChange={motionTextureScale => updateSkySource(selectedSkySource.id, { motionTextureScale })} maxAmplitude={1.5} stepAmplitude={0.05} />
+            <MotionControl label="Tile Drift X" config={selectedSkySource.motionTextureOffsetX} onChange={motionTextureOffsetX => updateSkySource(selectedSkySource.id, { motionTextureOffsetX })} maxAmplitude={2} stepAmplitude={0.05} />
+            <MotionControl label="Tile Drift Y" config={selectedSkySource.motionTextureOffsetY} onChange={motionTextureOffsetY => updateSkySource(selectedSkySource.id, { motionTextureOffsetY })} maxAmplitude={2} stepAmplitude={0.05} />
+            <MotionControl label="Tile Spin" config={selectedSkySource.motionTextureRotation} onChange={motionTextureRotation => updateSkySource(selectedSkySource.id, { motionTextureRotation })} maxAmplitude={180} stepAmplitude={1} />
+          </div>
         </section>
       )}
 

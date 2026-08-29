@@ -190,4 +190,21 @@ describe('renderFrame mode boundary', () => {
     expect(first.some(entry => entry.startsWith('arc:'))).toBe(true);
     expect(first.some(entry => entry.startsWith('lineTo:'))).toBe(true);
   });
+
+  it('animates the landscape from document time when motion is enabled', () => {
+    const landscapeState: RenderState = {
+      ...state('landscape'),
+      landscape: {
+        ...DEFAULT_LANDSCAPE,
+        meshColumns: 4,
+        meshRows: 8,
+        flightSpeed: 0,
+        motionSkyCenterX: { type: 'sine', speed: 1, amplitude: 240, phase: 0 },
+        motionCameraHeight: { type: 'sine', speed: 0.5, amplitude: 300, phase: 0 }
+      }
+    };
+    const first = renderTrace(landscapeState, 0.25);
+    expect(first).toEqual(renderTrace(landscapeState, 0.25));
+    expect(first).not.toEqual(renderTrace(landscapeState, 0.75));
+  });
 });

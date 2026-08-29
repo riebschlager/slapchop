@@ -198,9 +198,15 @@ describe('restoreProjectDocument', () => {
         textureOffsetY: -0.1,
         textureRotation: 12,
         gifSpeed: 0.75,
+        motionTextureRotation: { type: 'noise' as const, speed: 0.3, amplitude: 45, phase: 1.2 },
         assets: [{ id: 'sky-gif-1', name: 'sun.gif', width: 240, height: 180, assetId: 'sky-asset' }]
       }],
-      landscape: { ...DEFAULT_LANDSCAPE, skyCircleCount: 11, ridgeAmount: 0.9 },
+      landscape: {
+        ...DEFAULT_LANDSCAPE,
+        skyCircleCount: 11,
+        ridgeAmount: 0.9,
+        motionCameraX: { type: 'sine' as const, speed: 0.25, amplitude: 500, phase: 0 }
+      },
       assets: {}
     };
     const materialized = new Map([
@@ -210,9 +216,14 @@ describe('restoreProjectDocument', () => {
     const document = restoreProjectDocument(payload, materialized);
 
     expect(document.landscapeTerrainAssets[0]).toMatchObject({ name: 'ground.gif', src: 'blob:terrain', gifData });
-    expect(document.landscapeSkySources[0]).toMatchObject({ name: 'Solar folder', textureScale: 1.5 });
+    expect(document.landscapeSkySources[0]).toMatchObject({
+      name: 'Solar folder',
+      textureScale: 1.5,
+      motionTextureRotation: { type: 'noise', amplitude: 45 }
+    });
     expect(document.landscapeSkySources[0].assets[0]).toMatchObject({ name: 'sun.gif', src: 'blob:sky', gifData });
     expect(document.landscape.skyCircleCount).toBe(11);
     expect(document.landscape.ridgeAmount).toBe(0.9);
+    expect(document.landscape.motionCameraX).toEqual({ type: 'sine', speed: 0.25, amplitude: 500, phase: 0 });
   });
 });
