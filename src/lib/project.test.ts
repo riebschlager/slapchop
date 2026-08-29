@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_TUNNEL } from '../types';
+import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_TUNNEL } from '../types';
 import { restoreProjectDocument } from './project';
 
 describe('restoreProjectDocument', () => {
@@ -69,6 +69,9 @@ describe('restoreProjectDocument', () => {
     expect(document.tunnel.sides).toBe(DEFAULT_TUNNEL.sides);
     expect(document.gifVoronoiAssets).toEqual([]);
     expect(document.gifVoronoi.cellCount).toBe(DEFAULT_GIF_VORONOI.cellCount);
+    expect(document.landscapeTerrainAssets).toEqual([]);
+    expect(document.landscapeSkySources).toEqual([]);
+    expect(document.landscape.heightScale).toBe(DEFAULT_LANDSCAPE.heightScale);
   });
 
   it('restores a V3 flythrough library and its mode-owned config', () => {
@@ -171,5 +174,45 @@ describe('restoreProjectDocument', () => {
     const legacyDocument = restoreProjectDocument(legacyPayload, materialized);
     expect(legacyDocument.gifVoronoi.pointDriftAmount).toBe(0);
     expect(legacyDocument.gifVoronoi.pointDriftSpeed).toBe(DEFAULT_GIF_VORONOI.pointDriftSpeed);
+  });
+
+  it('restores a V6 landscape terrain and independently mapped sky folders', () => {
+    const gifData = { width: 240, height: 180, totalDurationMs: 1000, frames: [] };
+    const payload = {
+      app: 'slapchop' as const,
+      version: 6 as const,
+      savedAt: '2026-08-29T00:00:00.000Z',
+      canvasBg: '#000000',
+      layers: [],
+      polygonLayers: [],
+      mesh3dLayers: [],
+      flythroughAssets: [],
+      tunnelAssets: [],
+      gifVoronoiAssets: [],
+      landscapeTerrainAssets: [{ id: 'terrain-1', name: 'ground.gif', width: 240, height: 180, assetId: 'terrain-asset' }],
+      landscapeSkySources: [{
+        id: 'sky-1',
+        name: 'Solar folder',
+        textureScale: 1.5,
+        textureOffsetX: 0.2,
+        textureOffsetY: -0.1,
+        textureRotation: 12,
+        gifSpeed: 0.75,
+        assets: [{ id: 'sky-gif-1', name: 'sun.gif', width: 240, height: 180, assetId: 'sky-asset' }]
+      }],
+      landscape: { ...DEFAULT_LANDSCAPE, skyCircleCount: 11, ridgeAmount: 0.9 },
+      assets: {}
+    };
+    const materialized = new Map([
+      ['terrain-asset', { src: 'blob:terrain', gifData }],
+      ['sky-asset', { src: 'blob:sky', gifData }]
+    ]);
+    const document = restoreProjectDocument(payload, materialized);
+
+    expect(document.landscapeTerrainAssets[0]).toMatchObject({ name: 'ground.gif', src: 'blob:terrain', gifData });
+    expect(document.landscapeSkySources[0]).toMatchObject({ name: 'Solar folder', textureScale: 1.5 });
+    expect(document.landscapeSkySources[0].assets[0]).toMatchObject({ name: 'sun.gif', src: 'blob:sky', gifData });
+    expect(document.landscape.skyCircleCount).toBe(11);
+    expect(document.landscape.ridgeAmount).toBe(0.9);
   });
 });

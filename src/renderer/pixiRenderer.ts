@@ -35,6 +35,7 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage, getLayerSize 
 import type { ThreeSceneRenderer } from './threeRenderer';
 import type { FlythroughRenderer } from './flythroughRenderer';
 import type { TunnelRenderer } from './tunnelRenderer';
+import type { LandscapeRenderer } from './landscapeRenderer';
 import {
   buildGifVoronoiLayout,
   gifVoronoiCoverRect,
@@ -142,6 +143,7 @@ export class PixiSceneRenderer {
   private mesh3dSprite = new Sprite();
   private flythroughSprite = new Sprite();
   private tunnelSprite = new Sprite();
+  private landscapeSprite = new Sprite();
 
   // Lazily created (and lazily *imported* — three.js is a ~600KB dependency
   // that only users who touch 3D mode should ever download) on first use.
@@ -164,6 +166,11 @@ export class PixiSceneRenderer {
   private tunnelTexture: Texture<CanvasSource> | null = null;
   private tunnelTexW = 0;
   private tunnelTexH = 0;
+  private landscapeRenderer: LandscapeRenderer | null = null;
+  private landscapeLoading: Promise<void> | null = null;
+  private landscapeTexture: Texture<CanvasSource> | null = null;
+  private landscapeTexW = 0;
+  private landscapeTexH = 0;
 
   private symNodes = new Map<string, SymmetryNode>();
   private polyNodes = new Map<string, PolygonNode>();
@@ -195,12 +202,13 @@ export class PixiSceneRenderer {
 
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
-    this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite, this.tunnelSprite);
+    this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite, this.tunnelSprite, this.landscapeSprite);
     this.root.addChild(this.symContainer, this.polyContainer, this.gifVoronoiContainer);
     this.gifVoronoiContainer.addChild(this.gifVoronoiGutterG);
     this.mesh3dSprite.visible = false;
     this.flythroughSprite.visible = false;
     this.tunnelSprite.visible = false;
+    this.landscapeSprite.visible = false;
   }
 
   static async create(canvas: HTMLCanvasElement): Promise<PixiSceneRenderer> {
@@ -260,9 +268,11 @@ export class PixiSceneRenderer {
     this.three?.destroy();
     this.flythroughRenderer?.destroy();
     this.tunnelRenderer?.destroy();
+    this.landscapeRenderer?.destroy();
     this.mesh3dTexture?.destroy(true);
     this.flythroughTexture?.destroy(true);
     this.tunnelTexture?.destroy(true);
+    this.landscapeTexture?.destroy(true);
     this.exportTarget?.destroy(true);
     this.exportTarget = null;
     // Masks are children of the nodes they clip, so the stage teardown below
@@ -290,6 +300,8 @@ export class PixiSceneRenderer {
         ? state.tunnel.voidColor
         : state.appMode === 'gif-voronoi'
           ? state.gifVoronoi.backgroundColor
+          : state.appMode === 'landscape'
+            ? state.landscape.skyBackgroundColor
           : state.canvasBg
     );
 
@@ -298,12 +310,14 @@ export class PixiSceneRenderer {
     const flythroughVisible = state.appMode === 'flythrough';
     const tunnelVisible = state.appMode === 'tunnel';
     const gifVoronoiVisible = state.appMode === 'gif-voronoi';
+    const landscapeVisible = state.appMode === 'landscape';
     this.symContainer.visible = symVisible;
     this.polyContainer.visible = state.appMode === 'polygon';
     this.gifVoronoiContainer.visible = gifVoronoiVisible;
     this.mesh3dSprite.visible = mesh3dVisible;
     this.flythroughSprite.visible = flythroughVisible;
     this.tunnelSprite.visible = tunnelVisible;
+    this.landscapeSprite.visible = landscapeVisible;
     if (!tunnelVisible && this.tunnelRenderer) {
       this.tunnelRenderer.destroy();
       this.tunnelRenderer = null;
@@ -313,13 +327,24 @@ export class PixiSceneRenderer {
       this.tunnelTexW = 0;
       this.tunnelTexH = 0;
     }
+    if (!landscapeVisible && this.landscapeRenderer) {
+      this.landscapeRenderer.destroy();
+      this.landscapeRenderer = null;
+      this.landscapeTexture?.destroy(true);
+      this.landscapeTexture = null;
+      this.landscapeSprite.texture = Texture.EMPTY;
+      this.landscapeTexW = 0;
+      this.landscapeTexH = 0;
+    }
 
     // Node membership tracks the document in every mode so deletions (and
     // undo of deletions) are handled even while another mode is active.
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (gifVoronoiVisible) {
+    if (landscapeVisible) {
+      this.syncLandscape(t, state, width, height);
+    } else if (gifVoronoiVisible) {
       this.syncGifVoronoi(t, state);
     } else if (tunnelVisible) {
       this.syncTunnel(t, state, width, height);
@@ -335,6 +360,44 @@ export class PixiSceneRenderer {
 
     this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  // ------------------------------------------------------------ GIF landscape
+
+  private syncLandscape(t: number, state: RenderState, width: number, height: number) {
+    if (!this.landscapeRenderer) {
+      if (!this.landscapeLoading) {
+        this.landscapeLoading = import('./landscapeRenderer')
+          .then(mod => {
+            if (this.destroyed) return;
+            this.landscapeRenderer = mod.LandscapeRenderer.create();
+          })
+          .finally(() => {
+            this.landscapeLoading = null;
+          });
+      }
+      return;
+    }
+    const canvas = this.landscapeRenderer.renderToCanvas(
+      t,
+      state.landscapeTerrainAssets,
+      state.landscapeSkySources,
+      state.landscape,
+      width,
+      height
+    );
+    if (!this.landscapeTexture) {
+      this.landscapeTexture = new Texture({ source: new CanvasSource({ resource: canvas, width, height }) });
+      this.landscapeSprite.texture = this.landscapeTexture;
+    } else if (this.landscapeTexW !== width || this.landscapeTexH !== height) {
+      this.landscapeTexture.source.resize(width, height, 1);
+    }
+    this.landscapeTexW = width;
+    this.landscapeTexH = height;
+    this.landscapeTexture.source.update();
+    this.landscapeSprite.position.set(0, 0);
+    this.landscapeSprite.width = width;
+    this.landscapeSprite.height = height;
   }
 
   // ---------------------------------------------------------- GIF Voronoi

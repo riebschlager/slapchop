@@ -62,6 +62,10 @@ for the product decision and incremental architecture direction.
   density, irregularity, animated point drift, occupancy,
   scan/radial/scattered assignment, cover crop, playback phase, gutters,
   backgrounds, and palette or transparent blanks.
+- **GIF Landscape** — fly continuously over a seeded noise-displaced terrain
+  grid tiled from a folder of animated GIFs. Shape mountains, ridges, plateaus,
+  canyons, camera, fog, and mesh density; then build a concentric sky around a
+  movable sun from independently mapped GIF folders for each ring family.
 
 ## Inspector controls
 

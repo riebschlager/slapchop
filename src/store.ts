@@ -6,12 +6,16 @@ import {
   DEFAULT_CAMERA3D,
   DEFAULT_FLYTHROUGH,
   DEFAULT_GIF_VORONOI,
+  DEFAULT_LANDSCAPE,
   DEFAULT_MASTER_FX,
   DEFAULT_TUNNEL,
   FlythroughAsset,
   FlythroughConfig,
   GifVoronoiAsset,
   GifVoronoiConfig,
+  LandscapeAsset,
+  LandscapeConfig,
+  LandscapeSkySource,
   Layer,
   MasterFxConfig,
   Mesh3dLayer,
@@ -36,6 +40,9 @@ export interface DocumentState {
   tunnel: TunnelConfig;
   gifVoronoiAssets: GifVoronoiAsset[];
   gifVoronoi: GifVoronoiConfig;
+  landscapeTerrainAssets: LandscapeAsset[];
+  landscapeSkySources: LandscapeSkySource[];
+  landscape: LandscapeConfig;
   canvasBg: string;
   masterFx: MasterFxConfig;
 }
@@ -45,6 +52,7 @@ export interface AppState extends DocumentState {
   selectedLayerId: string | null;
   selectedPolygonId: string | null;
   selectedMesh3dId: string | null;
+  selectedLandscapeSkySourceId: string | null;
   isDrawingPolygon: boolean;
 
   setAppMode: (mode: AppMode) => void;
@@ -115,6 +123,17 @@ export interface AppState extends DocumentState {
   reorderGifVoronoiAssets: (activeId: string, overId: string) => void;
   updateGifVoronoi: (updates: Partial<GifVoronoiConfig>) => void;
   reseedGifVoronoi: () => void;
+
+  // GIF Landscape terrain atlas, concentric sky sources, and scene
+  replaceLandscapeTerrainAssets: (files: File[]) => Promise<void>;
+  clearLandscapeTerrainAssets: () => void;
+  addLandscapeSkySource: (files: File[]) => Promise<void>;
+  replaceLandscapeSkySource: (id: string, files: File[]) => Promise<void>;
+  removeLandscapeSkySource: (id: string) => void;
+  selectLandscapeSkySource: (id: string | null) => void;
+  updateLandscapeSkySource: (id: string, updates: Partial<LandscapeSkySource>) => void;
+  updateLandscape: (updates: Partial<LandscapeConfig>) => void;
+  reseedLandscape: () => void;
 }
 
 function reorder<T extends { id: string }>(items: T[], activeId: string, overId: string): T[] {
@@ -183,6 +202,28 @@ async function gifVoronoiAssetsFromFiles(files: File[]): Promise<GifVoronoiAsset
   return parsed.filter((asset): asset is GifVoronoiAsset => asset !== null);
 }
 
+async function landscapeAssetsFromFiles(files: File[]): Promise<LandscapeAsset[]> {
+  const gifs = files.filter(file => file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif'));
+  const parsed = await Promise.all(gifs.map(async (file): Promise<LandscapeAsset | null> => {
+    const gifData = await parseGifFile(file);
+    if (!gifData) return null;
+    return {
+      id: crypto.randomUUID(),
+      name: file.name,
+      src: URL.createObjectURL(file),
+      gifData,
+      width: gifData.width,
+      height: gifData.height
+    };
+  }));
+  return parsed.filter((asset): asset is LandscapeAsset => asset !== null);
+}
+
+function landscapeFolderName(files: File[], fallback: string): string {
+  const relativePath = files[0]?.webkitRelativePath;
+  return relativePath?.split('/')[0] || fallback;
+}
+
 const INITIAL_POLYGON = createNewPolygonLayer(
   'Hexagon Tile',
   createPresetPolygonPoints('hexagon', 220),
@@ -202,12 +243,16 @@ export const useStore = create<AppState>()(
       tunnel: { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] },
       gifVoronoiAssets: [],
       gifVoronoi: { ...DEFAULT_GIF_VORONOI, palette: [...DEFAULT_GIF_VORONOI.palette] },
+      landscapeTerrainAssets: [],
+      landscapeSkySources: [],
+      landscape: { ...DEFAULT_LANDSCAPE },
       canvasBg: '#000000',
       masterFx: { ...DEFAULT_MASTER_FX },
       appMode: 'symmetry',
       selectedLayerId: null,
       selectedPolygonId: INITIAL_POLYGON.id,
       selectedMesh3dId: null,
+      selectedLandscapeSkySourceId: null,
       isDrawingPolygon: false,
 
       setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false }),
@@ -227,11 +272,15 @@ export const useStore = create<AppState>()(
         gifVoronoi: doc.gifVoronoi
           ? { ...DEFAULT_GIF_VORONOI, ...doc.gifVoronoi, palette: [...(doc.gifVoronoi.palette ?? DEFAULT_GIF_VORONOI.palette)] }
           : { ...DEFAULT_GIF_VORONOI, palette: [...DEFAULT_GIF_VORONOI.palette] },
+        landscapeTerrainAssets: doc.landscapeTerrainAssets ?? [],
+        landscapeSkySources: doc.landscapeSkySources ?? [],
+        landscape: doc.landscape ? { ...DEFAULT_LANDSCAPE, ...doc.landscape } : { ...DEFAULT_LANDSCAPE },
         canvasBg: doc.canvasBg,
         masterFx: doc.masterFx ? { ...DEFAULT_MASTER_FX, ...doc.masterFx } : { ...DEFAULT_MASTER_FX },
         selectedLayerId: null,
         selectedPolygonId: null,
         selectedMesh3dId: null,
+        selectedLandscapeSkySourceId: null,
         isDrawingPolygon: false
       }),
 
@@ -491,6 +540,50 @@ export const useStore = create<AppState>()(
       })),
       reseedGifVoronoi: () => set(s => ({
         gifVoronoi: { ...s.gifVoronoi, seed: (s.gifVoronoi.seed + 1) % 100000 }
+      })),
+
+      replaceLandscapeTerrainAssets: async (files) => set({
+        landscapeTerrainAssets: await landscapeAssetsFromFiles(files)
+      }),
+      clearLandscapeTerrainAssets: () => set({ landscapeTerrainAssets: [] }),
+      addLandscapeSkySource: async (files) => {
+        const assets = await landscapeAssetsFromFiles(files);
+        if (assets.length === 0) return;
+        const source: LandscapeSkySource = {
+          id: crypto.randomUUID(),
+          name: landscapeFolderName(files, `Sky source ${get().landscapeSkySources.length + 1}`),
+          assets,
+          textureScale: 1,
+          textureOffsetX: 0,
+          textureOffsetY: 0,
+          textureRotation: 0,
+          gifSpeed: 1
+        };
+        set(s => ({
+          landscapeSkySources: [...s.landscapeSkySources, source],
+          selectedLandscapeSkySourceId: source.id
+        }));
+      },
+      replaceLandscapeSkySource: async (id, files) => {
+        const assets = await landscapeAssetsFromFiles(files);
+        if (assets.length === 0) return;
+        set(s => ({
+          landscapeSkySources: s.landscapeSkySources.map(source => source.id === id
+            ? { ...source, name: landscapeFolderName(files, source.name), assets }
+            : source)
+        }));
+      },
+      removeLandscapeSkySource: (id) => set(s => ({
+        landscapeSkySources: s.landscapeSkySources.filter(source => source.id !== id),
+        selectedLandscapeSkySourceId: s.selectedLandscapeSkySourceId === id ? null : s.selectedLandscapeSkySourceId
+      })),
+      selectLandscapeSkySource: (id) => set({ selectedLandscapeSkySourceId: id }),
+      updateLandscapeSkySource: (id, updates) => set(s => ({
+        landscapeSkySources: s.landscapeSkySources.map(source => source.id === id ? { ...source, ...updates } : source)
+      })),
+      updateLandscape: (updates) => set(s => ({ landscape: { ...s.landscape, ...updates } })),
+      reseedLandscape: () => set(s => ({
+        landscape: { ...s.landscape, seed: (s.landscape.seed + 1) % 100000 }
       }))
     }),
     {
@@ -507,6 +600,9 @@ export const useStore = create<AppState>()(
         tunnel: s.tunnel,
         gifVoronoiAssets: s.gifVoronoiAssets,
         gifVoronoi: s.gifVoronoi,
+        landscapeTerrainAssets: s.landscapeTerrainAssets,
+        landscapeSkySources: s.landscapeSkySources,
+        landscape: s.landscape,
         canvasBg: s.canvasBg,
         masterFx: s.masterFx
       }),
@@ -515,7 +611,9 @@ export const useStore = create<AppState>()(
         && a.camera3d === b.camera3d && a.flythroughAssets === b.flythroughAssets
         && a.flythrough === b.flythrough && a.tunnelAssets === b.tunnelAssets
         && a.tunnel === b.tunnel && a.gifVoronoiAssets === b.gifVoronoiAssets
-        && a.gifVoronoi === b.gifVoronoi && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
+        && a.gifVoronoi === b.gifVoronoi && a.landscapeTerrainAssets === b.landscapeTerrainAssets
+        && a.landscapeSkySources === b.landscapeSkySources && a.landscape === b.landscape
+        && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
       limit: 100,
       // Coalesce rapid bursts (slider scrubs) into few history entries.
       handleSet: (handleSet) => {
@@ -533,8 +631,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, canvasBg, masterFx } = useStore.getState();
-  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, canvasBg, masterFx };
+  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx } = useStore.getState();
+  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();

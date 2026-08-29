@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, Layer, PolygonLayer } from '../types';
+import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, Layer, PolygonLayer } from '../types';
 import { renderFrame, RenderState } from './render2d';
 
 function createRecordingCanvas() {
@@ -69,6 +69,9 @@ function state(appMode: RenderState['appMode'], layers: Layer[] = []): RenderSta
     tunnel: DEFAULT_TUNNEL,
     gifVoronoiAssets: [],
     gifVoronoi: DEFAULT_GIF_VORONOI,
+    landscapeTerrainAssets: [],
+    landscapeSkySources: [],
+    landscape: DEFAULT_LANDSCAPE,
     canvasBg: '#000000',
     masterFx: DEFAULT_MASTER_FX
   };
@@ -175,5 +178,16 @@ describe('renderFrame mode boundary', () => {
     const first = renderTrace(gifVoronoiState, 0.5);
     expect(first).toEqual(renderTrace(gifVoronoiState, 0.5));
     expect(first).not.toEqual(renderTrace(gifVoronoiState, 1.5));
+  });
+
+  it('renders a deterministic noise landscape in the fallback', () => {
+    const landscapeState: RenderState = {
+      ...state('landscape'),
+      landscape: { ...DEFAULT_LANDSCAPE, meshColumns: 4, meshRows: 8, flightSpeed: 0 }
+    };
+    const first = renderTrace(landscapeState, 0.5);
+    expect(first).toEqual(renderTrace(landscapeState, 0.5));
+    expect(first.some(entry => entry.startsWith('arc:'))).toBe(true);
+    expect(first.some(entry => entry.startsWith('lineTo:'))).toBe(true);
   });
 });

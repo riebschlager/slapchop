@@ -5,6 +5,9 @@ import {
   FlythroughConfig,
   GifVoronoiAsset,
   GifVoronoiConfig,
+  LandscapeAsset,
+  LandscapeConfig,
+  LandscapeSkySource,
   Layer,
   MasterFxConfig,
   Mesh3dLayer,
@@ -29,6 +32,7 @@ import {
   gifVoronoiGeometryFrameKey,
   gifVoronoiSourceTime
 } from '../lib/gifVoronoi';
+import { renderLandscapeScene2d } from './landscape2d';
 
 export const CANVAS_WIDTH = 1080;
 export const CANVAS_HEIGHT = 1920;
@@ -45,6 +49,9 @@ export interface RenderState {
   tunnel: TunnelConfig;
   gifVoronoiAssets: GifVoronoiAsset[];
   gifVoronoi: GifVoronoiConfig;
+  landscapeTerrainAssets: LandscapeAsset[];
+  landscapeSkySources: LandscapeSkySource[];
+  landscape: LandscapeConfig;
   canvasBg: string;
   masterFx?: MasterFxConfig;
 }
@@ -371,6 +378,8 @@ export function renderFrame(
     ? state.tunnel.voidColor
     : state.appMode === 'gif-voronoi'
       ? state.gifVoronoi.backgroundColor
+      : state.appMode === 'landscape'
+        ? state.landscape.skyBackgroundColor
       : state.canvasBg;
   ctx.fillRect(0, 0, width, height);
 
@@ -437,6 +446,8 @@ export function renderFrame(
     renderTunnelScene(ctx, t, state.tunnelAssets, state.tunnel, width, height);
   } else if (state.appMode === 'gif-voronoi') {
     renderGifVoronoiScene(ctx, t, state.gifVoronoiAssets, state.gifVoronoi, width, height);
+  } else if (state.appMode === 'landscape') {
+    renderLandscapeScene2d(ctx, t, state.landscapeTerrainAssets, state.landscapeSkySources, state.landscape, width, height);
   }
 
   if (state.masterFx?.enabled) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle, Grid2X2 } from 'lucide-react';
+import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle, Grid2X2, Mountain, Sun } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
@@ -25,7 +25,8 @@ const MODE_OPTIONS: ModeOption<AppMode>[] = [
   { value: '3d', label: '3D Space', description: 'Textured meshes & camera depth', icon: Box },
   { value: 'flythrough', label: 'GIF Flythrough', description: 'Folder-fed planes rushing through space', icon: Rocket },
   { value: 'tunnel', label: 'GIF Tunnel', description: 'Procedural wallpapered infinite tunnel', icon: Circle },
-  { value: 'gif-voronoi', label: 'GIF Voronoi', description: 'Folder-fed animated cell mosaic', icon: Grid2X2 }
+  { value: 'gif-voronoi', label: 'GIF Voronoi', description: 'Folder-fed animated cell mosaic', icon: Grid2X2 },
+  { value: 'landscape', label: 'GIF Landscape', description: 'Noise terrain beneath a concentric GIF sky', icon: Mountain }
 ];
 
 // [primitive, label] for the "Add Mesh" grid below. Kept as a plain preset
@@ -90,6 +91,15 @@ export default function StackPanel() {
   const onRemoveGifVoronoiAsset = useStore(s => s.removeGifVoronoiAsset);
   const onClearGifVoronoiAssets = useStore(s => s.clearGifVoronoiAssets);
   const onReorderGifVoronoiAssets = useStore(s => s.reorderGifVoronoiAssets);
+  const landscapeTerrainAssets = useStore(s => s.landscapeTerrainAssets);
+  const landscapeSkySources = useStore(s => s.landscapeSkySources);
+  const selectedLandscapeSkySourceId = useStore(s => s.selectedLandscapeSkySourceId);
+  const onReplaceLandscapeTerrainAssets = useStore(s => s.replaceLandscapeTerrainAssets);
+  const onClearLandscapeTerrainAssets = useStore(s => s.clearLandscapeTerrainAssets);
+  const onAddLandscapeSkySource = useStore(s => s.addLandscapeSkySource);
+  const onReplaceLandscapeSkySource = useStore(s => s.replaceLandscapeSkySource);
+  const onRemoveLandscapeSkySource = useStore(s => s.removeLandscapeSkySource);
+  const onSelectLandscapeSkySource = useStore(s => s.selectLandscapeSkySource);
 
   const projectFileInputRef = useRef<HTMLInputElement>(null);
   const flythroughFolderInputRef = useRef<HTMLInputElement>(null);
@@ -98,6 +108,9 @@ export default function StackPanel() {
   const tunnelFilesInputRef = useRef<HTMLInputElement>(null);
   const gifVoronoiFolderInputRef = useRef<HTMLInputElement>(null);
   const gifVoronoiFilesInputRef = useRef<HTMLInputElement>(null);
+  const landscapeTerrainFolderInputRef = useRef<HTMLInputElement>(null);
+  const landscapeSkyFolderInputRef = useRef<HTMLInputElement>(null);
+  const landscapeSkyReplaceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const input = flythroughFolderInputRef.current;
@@ -110,6 +123,12 @@ export default function StackPanel() {
     const gifVoronoiInput = gifVoronoiFolderInputRef.current;
     gifVoronoiInput?.setAttribute('webkitdirectory', '');
     gifVoronoiInput?.setAttribute('directory', '');
+    const landscapeTerrainInput = landscapeTerrainFolderInputRef.current;
+    landscapeTerrainInput?.setAttribute('webkitdirectory', '');
+    landscapeTerrainInput?.setAttribute('directory', '');
+    const landscapeSkyInput = landscapeSkyFolderInputRef.current;
+    landscapeSkyInput?.setAttribute('webkitdirectory', '');
+    landscapeSkyInput?.setAttribute('directory', '');
   }, []);
 
   const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,16 +274,56 @@ export default function StackPanel() {
     if (files) await onReplaceGifVoronoiAssets(files);
   };
 
+  const handleLandscapeTerrainFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (files.length > 0) void onReplaceLandscapeTerrainAssets(files);
+  };
+
+  const handleChooseLandscapeTerrainFolder = async () => {
+    if (!isNative()) {
+      landscapeTerrainFolderInputRef.current?.click();
+      return;
+    }
+    const files = await pickGifFolder();
+    if (files) await onReplaceLandscapeTerrainAssets(files);
+  };
+
+  const handleLandscapeSkyFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    const replaceId = landscapeSkyReplaceIdRef.current;
+    landscapeSkyReplaceIdRef.current = null;
+    if (files.length === 0) return;
+    if (replaceId) void onReplaceLandscapeSkySource(replaceId, files);
+    else void onAddLandscapeSkySource(files);
+  };
+
+  const handleChooseLandscapeSkyFolder = async (replaceId: string | null = null) => {
+    if (!isNative()) {
+      landscapeSkyReplaceIdRef.current = replaceId;
+      landscapeSkyFolderInputRef.current?.click();
+      return;
+    }
+    const files = await pickGifFolder();
+    if (!files) return;
+    if (replaceId) await onReplaceLandscapeSkySource(replaceId, files);
+    else await onAddLandscapeSkySource(files);
+  };
+
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
   const isSceneActive = appMode === 'symmetry'
     ? !selectedLayerId
     : appMode === 'polygon'
       ? !selectedPolygonId
-      : appMode === '3d' ? !selectedMesh3dId : true;
+      : appMode === '3d'
+        ? !selectedMesh3dId
+        : appMode === 'landscape' ? !selectedLandscapeSkySourceId : true;
   const selectScene = () => {
     if (appMode === 'symmetry') onSelectLayer(null);
     else if (appMode === 'polygon') onSelectPolygon(null);
     else if (appMode === '3d') onSelectMesh3d(null);
+    else if (appMode === 'landscape') onSelectLandscapeSkySource(null);
   };
 
   const { width, collapsed, toggleCollapsed, startResize } = usePanelState(STACK_PANEL_DEFAULTS);
@@ -692,6 +751,72 @@ export default function StackPanel() {
                 </div>
               </SortableContext>
             </DndContext>
+          </div>
+        </>
+      )}
+
+      {/* MODE 7: GIF LANDSCAPE */}
+      {appMode === 'landscape' && (
+        <>
+          <div className="shrink-0 space-y-2 border-b border-orange-950/80 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.15),transparent_64%)] p-3">
+            <button type="button" onClick={() => void handleChooseLandscapeTerrainFolder()} className="group relative w-full overflow-hidden rounded-lg border border-orange-800/70 bg-orange-950/30 px-3 py-3 text-left transition-all hover:border-orange-600/80 hover:bg-orange-950/50">
+              <div className="absolute inset-y-0 left-0 w-0.5 bg-orange-400" />
+              <div className="flex items-center gap-2.5">
+                <div className="rounded bg-orange-400/10 p-1.5 text-orange-300"><Mountain className="size-4" /></div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-orange-100">Choose terrain GIF folder</div>
+                  <div className="mt-0.5 text-[10px] text-orange-800">{landscapeTerrainAssets.length > 0 ? `${landscapeTerrainAssets.length} sources loaded · replace atlas` : 'Tile the displaced ground mesh'}</div>
+                </div>
+              </div>
+            </button>
+            <input ref={landscapeTerrainFolderInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleLandscapeTerrainFolderChange} />
+            <button type="button" onClick={() => void handleChooseLandscapeSkyFolder()} className="group relative w-full overflow-hidden rounded-lg border border-amber-700/60 bg-amber-950/25 px-3 py-2.5 text-left transition-all hover:border-amber-500/70 hover:bg-amber-950/45">
+              <div className="absolute inset-y-0 left-0 w-0.5 bg-amber-300" />
+              <div className="flex items-center gap-2.5">
+                <div className="rounded bg-amber-300/10 p-1.5 text-amber-300"><Sun className="size-4" /></div>
+                <div>
+                  <div className="text-xs font-bold text-amber-100">Add sky GIF folder</div>
+                  <div className="mt-0.5 text-[10px] text-amber-800">One independent mapping source</div>
+                </div>
+              </div>
+            </button>
+            <input ref={landscapeSkyFolderInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleLandscapeSkyFolderChange} />
+          </div>
+
+          <div className="relative min-h-0 flex-1 overflow-y-auto">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-800 bg-gray-900/95 px-4 py-2 backdrop-blur-sm">
+              <label className="text-xs font-semibold uppercase tracking-wider text-gray-400">Sky Ring Folders ({landscapeSkySources.length})</label>
+              {landscapeTerrainAssets.length > 0 && <button type="button" onClick={onClearLandscapeTerrainAssets} className="text-[10px] text-gray-500 transition-colors hover:text-red-300">Clear terrain</button>}
+            </div>
+            <div className="space-y-1 p-2">
+              {landscapeSkySources.map((source, index) => (
+                <button
+                  key={source.id}
+                  type="button"
+                  onClick={() => onSelectLandscapeSkySource(source.id)}
+                  className={cn(
+                    'group flex w-full items-center gap-2 rounded border p-2 text-left transition-colors',
+                    selectedLandscapeSkySourceId === source.id
+                      ? 'border-orange-700/70 bg-orange-950/30'
+                      : 'border-transparent hover:border-gray-700 hover:bg-gray-800/60'
+                  )}
+                >
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-amber-800/50 bg-amber-950/40 font-mono text-[10px] text-amber-300">{String(index + 1).padStart(2, '0')}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[11px] font-semibold text-gray-200">{source.name}</div>
+                    <div className="text-[9px] uppercase tracking-wider text-gray-600">{source.assets.length} GIFs · rings {index + 1}, {index + 1 + landscapeSkySources.length}…</div>
+                  </div>
+                  <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); void handleChooseLandscapeSkyFolder(source.id); }} onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); void handleChooseLandscapeSkyFolder(source.id); } }} className="rounded px-1 py-0.5 text-[9px] text-gray-600 opacity-0 transition-all hover:text-amber-300 group-hover:opacity-100 focus:opacity-100">Replace</span>
+                  <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); onRemoveLandscapeSkySource(source.id); }} onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); onRemoveLandscapeSkySource(source.id); } }} className="p-1 text-gray-700 opacity-0 transition-all hover:text-red-300 group-hover:opacity-100 focus:opacity-100" aria-label={`Remove ${source.name}`}><Trash2 className="size-3.5" /></span>
+                </button>
+              ))}
+              {landscapeSkySources.length === 0 && (
+                <div className="px-4 py-8 text-center">
+                  <Sun className="mx-auto mb-2 size-8 text-orange-950" />
+                  <p className="text-xs text-gray-500">Add a folder for each sky texture family. Rings cycle through them in order.</p>
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}

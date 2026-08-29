@@ -5,12 +5,16 @@ import {
   DEFAULT_CAMERA3D,
   DEFAULT_FLYTHROUGH,
   DEFAULT_GIF_VORONOI,
+  DEFAULT_LANDSCAPE,
   DEFAULT_MASTER_FX,
   DEFAULT_TUNNEL,
   FlythroughAsset,
   FlythroughConfig,
   GifVoronoiAsset,
   GifVoronoiConfig,
+  LandscapeAsset,
+  LandscapeConfig,
+  LandscapeSkySource,
   Layer,
   MasterFxConfig,
   Mesh3dLayer,
@@ -35,6 +39,8 @@ type SerializedMesh3d = Omit<Mesh3dLayer, 'src' | 'gifData'> & { assetId?: strin
 type SerializedFlythroughAsset = Omit<FlythroughAsset, 'src' | 'gifData'> & { assetId: string };
 type SerializedTunnelAsset = Omit<TunnelAsset, 'src' | 'gifData'> & { assetId: string };
 type SerializedGifVoronoiAsset = Omit<GifVoronoiAsset, 'src' | 'gifData'> & { assetId: string };
+type SerializedLandscapeAsset = Omit<LandscapeAsset, 'src' | 'gifData'> & { assetId: string };
+type SerializedLandscapeSkySource = Omit<LandscapeSkySource, 'assets'> & { assets: SerializedLandscapeAsset[] };
 
 interface ProjectFileV1 {
   app: 'slapchop';
@@ -120,7 +126,31 @@ interface ProjectFileV5 {
   assets: Record<string, ProjectAsset>;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5;
+// V6 adds the flyover landscape's terrain library, independent sky-folder
+// sources, and mode-owned procedural scene configuration.
+interface ProjectFileV6 {
+  app: 'slapchop';
+  version: 6;
+  savedAt: string;
+  canvasBg: string;
+  masterFx?: MasterFxConfig;
+  layers: SerializedLayer[];
+  polygonLayers: SerializedPolygon[];
+  mesh3dLayers: SerializedMesh3d[];
+  camera3d?: Camera3dConfig;
+  flythroughAssets: SerializedFlythroughAsset[];
+  flythrough?: FlythroughConfig;
+  tunnelAssets: SerializedTunnelAsset[];
+  tunnel?: TunnelConfig;
+  gifVoronoiAssets: SerializedGifVoronoiAsset[];
+  gifVoronoi?: GifVoronoiConfig;
+  landscapeTerrainAssets: SerializedLandscapeAsset[];
+  landscapeSkySources: SerializedLandscapeSkySource[];
+  landscape?: LandscapeConfig;
+  assets: Record<string, ProjectAsset>;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -210,9 +240,20 @@ export async function saveProject(): Promise<void> {
     });
   }
 
-  const payload: ProjectFileV5 = {
+  const serializeLandscapeAsset = async (source: LandscapeAsset): Promise<SerializedLandscapeAsset> => {
+    const { src, gifData, ...rest } = source;
+    void gifData;
+    return { ...rest, assetId: await assetIdFor(src, source.name) };
+  };
+  const landscapeTerrainAssets = await Promise.all(doc.landscapeTerrainAssets.map(serializeLandscapeAsset));
+  const landscapeSkySources: SerializedLandscapeSkySource[] = await Promise.all(doc.landscapeSkySources.map(async source => ({
+    ...source,
+    assets: await Promise.all(source.assets.map(serializeLandscapeAsset))
+  })));
+
+  const payload: ProjectFileV6 = {
     app: 'slapchop',
-    version: 5,
+    version: 6,
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
     masterFx: doc.masterFx,
@@ -226,6 +267,9 @@ export async function saveProject(): Promise<void> {
     tunnel: doc.tunnel,
     gifVoronoiAssets,
     gifVoronoi: doc.gifVoronoi,
+    landscapeTerrainAssets,
+    landscapeSkySources,
+    landscape: doc.landscape,
     assets
   };
 
@@ -235,7 +279,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5].includes(payload.version)) {
+  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6].includes(payload.version)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -290,7 +334,7 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_MASTER_FX, ...payload.masterFx }
     : { ...DEFAULT_MASTER_FX };
 
-  const hasFlythrough = payload.version === 3 || payload.version === 4 || payload.version === 5;
+  const hasFlythrough = 'flythroughAssets' in payload;
   const flythroughAssets: FlythroughAsset[] = hasFlythrough
     ? payload.flythroughAssets.map((source) => {
       const { assetId, ...rest } = source;
@@ -303,7 +347,7 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_FLYTHROUGH, ...payload.flythrough }
     : { ...DEFAULT_FLYTHROUGH };
 
-  const hasTunnel = payload.version === 4 || payload.version === 5;
+  const hasTunnel = 'tunnelAssets' in payload;
   const tunnelAssets: TunnelAsset[] = hasTunnel
     ? payload.tunnelAssets.map((source) => {
       const { assetId, ...rest } = source;
@@ -316,7 +360,8 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_TUNNEL, ...payload.tunnel, palette: [...(payload.tunnel.palette ?? DEFAULT_TUNNEL.palette)] }
     : { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] };
 
-  const gifVoronoiAssets: GifVoronoiAsset[] = payload.version === 5
+  const hasGifVoronoi = 'gifVoronoiAssets' in payload;
+  const gifVoronoiAssets: GifVoronoiAsset[] = hasGifVoronoi
     ? payload.gifVoronoiAssets.map((source) => {
       const { assetId, ...rest } = source;
       const asset = materialized.get(assetId);
@@ -327,9 +372,28 @@ export function restoreProjectDocument(
     })
     : [];
 
-  const gifVoronoi: GifVoronoiConfig = payload.version === 5 && payload.gifVoronoi
+  const gifVoronoi: GifVoronoiConfig = hasGifVoronoi && payload.gifVoronoi
     ? { ...DEFAULT_GIF_VORONOI, ...payload.gifVoronoi, palette: [...(payload.gifVoronoi.palette ?? DEFAULT_GIF_VORONOI.palette)] }
     : { ...DEFAULT_GIF_VORONOI, palette: [...DEFAULT_GIF_VORONOI.palette] };
+
+  const materializeLandscapeAsset = (source: SerializedLandscapeAsset): LandscapeAsset => {
+    const { assetId, ...rest } = source;
+    const asset = materialized.get(assetId);
+    if (!asset?.gifData) throw new Error(`Landscape source “${source.name}” could not be decoded.`);
+    return { ...rest, src: asset.src, gifData: asset.gifData };
+  };
+  const landscapeTerrainAssets: LandscapeAsset[] = payload.version === 6
+    ? payload.landscapeTerrainAssets.map(materializeLandscapeAsset)
+    : [];
+  const landscapeSkySources: LandscapeSkySource[] = payload.version === 6
+    ? payload.landscapeSkySources.map(source => ({
+      ...source,
+      assets: source.assets.map(materializeLandscapeAsset)
+    }))
+    : [];
+  const landscape: LandscapeConfig = payload.version === 6 && payload.landscape
+    ? { ...DEFAULT_LANDSCAPE, ...payload.landscape }
+    : { ...DEFAULT_LANDSCAPE };
 
   return {
     layers,
@@ -342,6 +406,9 @@ export function restoreProjectDocument(
     tunnel,
     gifVoronoiAssets,
     gifVoronoi,
+    landscapeTerrainAssets,
+    landscapeSkySources,
+    landscape,
     canvasBg: payload.canvasBg,
     masterFx
   };

@@ -1,4 +1,4 @@
-export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough' | 'tunnel' | 'gif-voronoi';
+export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough' | 'tunnel' | 'gif-voronoi' | 'landscape';
 
 export interface PolygonPoint {
   x: number;
@@ -636,4 +636,95 @@ export const DEFAULT_GIF_VORONOI: GifVoronoiConfig = {
   blankColor: '#16352d',
   blankOpacity: 1,
   palette: ['#0b3d32', '#126b55', '#18a97f', '#8fdbb6']
+};
+
+// ---------------------------------------------------------- GIF landscape mode
+
+// Landscape deliberately owns both of its media models. Terrain GIFs are
+// assigned across a moving height field, while each sky source represents a
+// separate user-picked folder that can be mapped onto one or more annuli.
+export interface LandscapeAsset {
+  id: string;
+  name: string;
+  src: string;
+  gifData: GifData;
+  width: number;
+  height: number;
+}
+
+export interface LandscapeSkySource {
+  id: string;
+  name: string;
+  assets: LandscapeAsset[];
+  textureScale: number;
+  textureOffsetX: number;
+  textureOffsetY: number;
+  textureRotation: number;
+  gifSpeed: number;
+}
+
+export interface LandscapeConfig {
+  seed: number;
+  meshColumns: number;
+  meshRows: number;
+  terrainWidth: number;
+  terrainDepth: number;
+  heightScale: number;
+  noiseScale: number;
+  noiseOctaves: number;
+  ridgeAmount: number;
+  plateauAmount: number;
+  flightSpeed: number;
+  cameraHeight: number;
+  cameraX: number;
+  lookAhead: number;
+  fov: number;
+  terrainTextureScale: number;
+  terrainTextureOffsetX: number;
+  terrainTextureOffsetY: number;
+  terrainGifSpeed: number;
+  terrainShuffle: boolean;
+  wireframe: boolean;
+  wireframeColor: string;
+  fogColor: string;
+  fogDensity: number;
+  skyCenterX: number;
+  skyCenterY: number;
+  skyCircleCount: number;
+  skyRingWidth: number;
+  skyRingGap: number;
+  skyBackgroundColor: string;
+}
+
+export const DEFAULT_LANDSCAPE: LandscapeConfig = {
+  seed: 17,
+  meshColumns: 12,
+  meshRows: 28,
+  terrainWidth: 5200,
+  terrainDepth: 12000,
+  heightScale: 1250,
+  noiseScale: 0.00075,
+  noiseOctaves: 4,
+  ridgeAmount: 0.62,
+  plateauAmount: 0.18,
+  flightSpeed: 720,
+  cameraHeight: 980,
+  cameraX: 0,
+  lookAhead: 2900,
+  fov: 66,
+  terrainTextureScale: 1,
+  terrainTextureOffsetX: 0,
+  terrainTextureOffsetY: 0,
+  terrainGifSpeed: 1,
+  terrainShuffle: true,
+  wireframe: true,
+  wireframeColor: '#c9ff5d',
+  fogColor: '#090d18',
+  fogDensity: 0.00016,
+  skyCenterX: 0,
+  skyCenterY: -420,
+  skyCircleCount: 7,
+  skyRingWidth: 170,
+  skyRingGap: 10,
+  skyBackgroundColor: '#090d18'
 };

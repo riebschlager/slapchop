@@ -21,6 +21,7 @@ import Symmetry3dTab from './inspector/Symmetry3dTab';
 import FlythroughInspector from './inspector/FlythroughInspector';
 import TunnelInspector from './inspector/TunnelInspector';
 import GifVoronoiInspector from './inspector/GifVoronoiInspector';
+import LandscapeInspector from './inspector/LandscapeInspector';
 
 const INSPECTOR_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:inspector', defaultWidth: 336, minWidth: 260, maxWidth: 480, side: 'right' as const };
 
@@ -83,6 +84,8 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
           <TunnelInspector />
         ) : appMode === 'gif-voronoi' ? (
           <GifVoronoiInspector />
+        ) : appMode === 'landscape' ? (
+          <LandscapeInspector />
         ) : (
           selectedMesh ? (
             <div className="p-3 flex flex-col">
