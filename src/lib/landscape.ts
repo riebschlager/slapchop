@@ -175,6 +175,19 @@ export function landscapeAssetIndex(
 }
 
 /**
+ * Pick one GIF for an entire sky ring. Sources still repeat across ring
+ * families, while successive uses of a source advance through that folder.
+ */
+export function landscapeSkyAssetIndex(
+  ring: number,
+  sourceCount: number,
+  assetCount: number
+): number {
+  if (sourceCount <= 0 || assetCount <= 0) return -1;
+  return Math.floor(Math.max(0, ring) / sourceCount) % assetCount;
+}
+
+/**
  * Resolve the moving grid in camera space. Rows wrap one cell at a time while
  * their world-space noise coordinates keep advancing, producing an endless
  * deterministic flyover without a wall-clock-dependent simulation.

@@ -4,6 +4,7 @@ import { applyMotion } from './motion';
 import {
   landscapeAssetIndex,
   landscapeHeight,
+  landscapeSkyAssetIndex,
   landscapeTravelDistance,
   resolveLandscapeCells,
   resolveLandscapeFrame
@@ -39,6 +40,16 @@ describe('GIF Landscape procedural scene', () => {
     expect(landscapeAssetIndex(8, 4, 5, DEFAULT_LANDSCAPE)).toBe(
       landscapeAssetIndex(8, 4, 5, DEFAULT_LANDSCAPE)
     );
+  });
+
+  it('assigns one GIF to each sky ring and advances within its source folder', () => {
+    expect(landscapeSkyAssetIndex(0, 2, 3)).toBe(0);
+    expect(landscapeSkyAssetIndex(1, 2, 4)).toBe(0);
+    expect(landscapeSkyAssetIndex(2, 2, 3)).toBe(1);
+    expect(landscapeSkyAssetIndex(4, 2, 3)).toBe(2);
+    expect(landscapeSkyAssetIndex(6, 2, 3)).toBe(0);
+    expect(landscapeSkyAssetIndex(0, 0, 3)).toBe(-1);
+    expect(landscapeSkyAssetIndex(0, 2, 0)).toBe(-1);
   });
 
   it('resolves continuous terrain, camera, and sky motion with safe bounds', () => {

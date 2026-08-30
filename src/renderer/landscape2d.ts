@@ -1,5 +1,10 @@
 import { getGifFrameAtTime } from '../lib/gifUtils';
-import { resolveLandscapeCells, LandscapePoint, resolveLandscapeFrame } from '../lib/landscape';
+import {
+  landscapeSkyAssetIndex,
+  resolveLandscapeCells,
+  LandscapePoint,
+  resolveLandscapeFrame
+} from '../lib/landscape';
 import { LandscapeAsset, LandscapeConfig, LandscapeSkySource } from '../types';
 
 interface ProjectedPoint {
@@ -43,28 +48,7 @@ function projectLandscapePoint(
   };
 }
 
-function skyAssetForTile(source: LandscapeSkySource, x: number, y: number, ring: number): LandscapeAsset | null {
-  if (source.assets.length === 0) return null;
-  const hash = Math.abs((x * 73856093) ^ (y * 19349663) ^ (ring * 83492791));
-  return source.assets[hash % source.assets.length];
-}
-
-function drawContained(
-  ctx: CanvasRenderingContext2D,
-  image: CanvasImageSource,
-  sourceWidth: number,
-  sourceHeight: number,
-  x: number,
-  y: number,
-  size: number
-) {
-  const scale = Math.min(size / Math.max(1, sourceWidth), size / Math.max(1, sourceHeight));
-  const drawWidth = sourceWidth * scale;
-  const drawHeight = sourceHeight * scale;
-  ctx.drawImage(image, x + (size - drawWidth) / 2, y + (size - drawHeight) / 2, drawWidth, drawHeight);
-}
-
-/** Draw the concentric, independently folder-textured sky. */
+/** Draw the concentric sky with one repeatable GIF assigned to each ring. */
 export function renderLandscapeSky(
   ctx: CanvasRenderingContext2D,
   t: number,
@@ -86,6 +70,10 @@ export function renderLandscapeSky(
       ? 0
       : ring * config.skyRingWidth * scale + ring * config.skyRingGap * scale;
     const source = sources.length > 0 ? sources[ring % sources.length] : null;
+    const assetIndex = source
+      ? landscapeSkyAssetIndex(ring, sources.length, source.assets.length)
+      : -1;
+    const asset = source && assetIndex >= 0 ? source.assets[assetIndex] : null;
 
     ctx.save();
     ctx.beginPath();
@@ -98,28 +86,28 @@ export function renderLandscapeSky(
     ctx.fillStyle = ring % 2 === 0 ? '#ff5d32' : '#ffd84d';
     ctx.fillRect(0, 0, width, height);
 
-    if (source && source.assets.length > 0) {
-      const tileSize = Math.max(56, 210 * source.textureScale * scale);
-      const offsetX = source.textureOffsetX * tileSize;
-      const offsetY = source.textureOffsetY * tileSize;
+    if (source && asset) {
+      const tileWidth = Math.max(56, 210 * source.textureScale * scale);
+      const tileHeight = Math.max(1, tileWidth * asset.height / Math.max(1, asset.width));
+      const offsetX = source.textureOffsetX * tileWidth;
+      const offsetY = source.textureOffsetY * tileHeight;
       ctx.translate(centerX, centerY);
       ctx.rotate(source.textureRotation * Math.PI / 180);
       ctx.translate(-centerX, -centerY);
-      const minX = Math.floor((-outerRadius - offsetX) / tileSize) - 1;
-      const maxX = Math.ceil((outerRadius - offsetX) / tileSize) + 1;
-      const minY = Math.floor((-outerRadius - offsetY) / tileSize) - 1;
-      const maxY = Math.ceil((outerRadius - offsetY) / tileSize) + 1;
+      const minX = Math.floor((-outerRadius - offsetX) / tileWidth) - 1;
+      const maxX = Math.ceil((outerRadius - offsetX) / tileWidth) + 1;
+      const minY = Math.floor((-outerRadius - offsetY) / tileHeight) - 1;
+      const maxY = Math.ceil((outerRadius - offsetY) / tileHeight) + 1;
+      const gifFrame = getGifFrameAtTime(asset.gifData, t, source.gifSpeed);
+      if (!gifFrame) {
+        ctx.restore();
+        continue;
+      }
       for (let tileY = minY; tileY <= maxY; tileY++) {
         for (let tileX = minX; tileX <= maxX; tileX++) {
-          const asset = skyAssetForTile(source, tileX, tileY, ring);
-          if (!asset) continue;
-          const frame = getGifFrameAtTime(asset.gifData, t, source.gifSpeed);
-          if (!frame) continue;
-          const x = centerX + offsetX + tileX * tileSize;
-          const y = centerY + offsetY + tileY * tileSize;
-          ctx.fillStyle = '#050609';
-          ctx.fillRect(x, y, tileSize, tileSize);
-          drawContained(ctx, frame, asset.width, asset.height, x, y, tileSize);
+          const x = centerX + offsetX + tileX * tileWidth;
+          const y = centerY + offsetY + tileY * tileHeight;
+          ctx.drawImage(gifFrame, x, y, tileWidth, tileHeight);
         }
       }
     }

@@ -776,7 +776,7 @@ export default function StackPanel() {
                 <div className="rounded bg-amber-300/10 p-1.5 text-amber-300"><Sun className="size-4" /></div>
                 <div>
                   <div className="text-xs font-bold text-amber-100">Add sky GIF folder</div>
-                  <div className="mt-0.5 text-[10px] text-amber-800">One independent mapping source</div>
+                  <div className="mt-0.5 text-[10px] text-amber-800">One GIF per ring, tiled to fill</div>
                 </div>
               </div>
             </button>
@@ -804,7 +804,7 @@ export default function StackPanel() {
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-amber-800/50 bg-amber-950/40 font-mono text-[10px] text-amber-300">{String(index + 1).padStart(2, '0')}</div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[11px] font-semibold text-gray-200">{source.name}</div>
-                    <div className="text-[9px] uppercase tracking-wider text-gray-600">{source.assets.length} GIFs · rings {index + 1}, {index + 1 + landscapeSkySources.length}…</div>
+                    <div className="text-[9px] uppercase tracking-wider text-gray-600">{source.assets.length} GIFs · one per assigned ring</div>
                   </div>
                   <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); void handleChooseLandscapeSkyFolder(source.id); }} onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); void handleChooseLandscapeSkyFolder(source.id); } }} className="rounded px-1 py-0.5 text-[9px] text-gray-600 opacity-0 transition-all hover:text-amber-300 group-hover:opacity-100 focus:opacity-100">Replace</span>
                   <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); onRemoveLandscapeSkySource(source.id); }} onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); onRemoveLandscapeSkySource(source.id); } }} className="p-1 text-gray-700 opacity-0 transition-all hover:text-red-300 group-hover:opacity-100 focus:opacity-100" aria-label={`Remove ${source.name}`}><Trash2 className="size-3.5" /></span>
@@ -813,7 +813,7 @@ export default function StackPanel() {
               {landscapeSkySources.length === 0 && (
                 <div className="px-4 py-8 text-center">
                   <Sun className="mx-auto mb-2 size-8 text-orange-950" />
-                  <p className="text-xs text-gray-500">Add a folder for each sky texture family. Rings cycle through them in order.</p>
+                  <p className="text-xs text-gray-500">Add a folder for each sky family. Every ring picks one GIF and tiles it across its surface.</p>
                 </div>
               )}
             </div>

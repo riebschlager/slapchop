@@ -65,7 +65,7 @@ for the product decision and incremental architecture direction.
 - **GIF Landscape** — fly continuously over a seeded noise-displaced terrain
   grid tiled from a folder of animated GIFs. Shape mountains, ridges, plateaus,
   canyons, camera, fog, and mesh density; then build a concentric sky around a
-  movable sun from independently mapped GIF folders for each ring family.
+  movable sun from GIF folders that assign one repeatable GIF to each ring.
   Sine and noise modulators animate terrain relief, flight velocity, camera,
   sun placement, ring width, and each sky folder's texture mapping.
 

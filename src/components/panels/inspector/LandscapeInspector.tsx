@@ -127,7 +127,7 @@ export default function LandscapeInspector() {
         <section className="space-y-3 border-b border-orange-950/70 bg-orange-950/10 p-3">
           <SectionTitle icon={Waves}>Selected Sky Folder</SectionTitle>
           <div className="text-[11px] font-semibold text-orange-200">{selectedSkySource.name}</div>
-          <div className="text-[9px] uppercase tracking-wider text-orange-800">{selectedSkySource.assets.length} GIFs · ring assignment cycles in stack order</div>
+          <div className="text-[9px] uppercase tracking-wider text-orange-800">{selectedSkySource.assets.length} GIFs · one tiled GIF per assigned ring</div>
           <Slider label="Tile Size" display={`${selectedSkySource.textureScale.toFixed(2)}×`} value={selectedSkySource.textureScale} min={0.35} max={3} step={0.01} onChange={textureScale => updateSkySource(selectedSkySource.id, { textureScale })} />
           <div className="grid grid-cols-2 gap-3">
             <Slider size="sm" label="Offset X" display={selectedSkySource.textureOffsetX.toFixed(2)} value={selectedSkySource.textureOffsetX} min={-2} max={2} step={0.01} onChange={textureOffsetX => updateSkySource(selectedSkySource.id, { textureOffsetX })} />
