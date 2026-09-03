@@ -78,7 +78,7 @@ export async function exportNativeVideo(
       if (!inFlight) return;
       const pending = inFlight;
       inFlight = null;
-      await profiler.timeAsync('ipc.writeFrame', () => pending);
+      await profiler.timeAsync('ipc.drain', () => pending);
     };
 
     for (let n = 0; n < totalFrames; n++) {
@@ -91,23 +91,33 @@ export async function exportNativeVideo(
         return false;
       }
 
-      const frame = renderRgbaFrame((startFrame + n) / fps);
+      // `loop.frame` brackets the whole iteration, so anything the individual
+      // stages do not account for stays visible instead of vanishing into the
+      // gap between them.
+      await profiler.timeAsync('loop.frame', async () => {
+        const frame = renderRgbaFrame((startFrame + n) / fps);
 
-      // Ordering: the previous write must complete before the next is issued.
-      // Its cost lands in ipc.writeFrame, which now also absorbs whatever
-      // ffmpeg could not overlap.
-      await settleInFlight();
-      profiler.recordBytes('ipc.writeFrame', frame.byteLength);
-      inFlight = invoke('write_native_video_frame', frame, {
-        headers: { [VIDEO_JOB_HEADER]: jobId as string }
+        // Ordering: the previous write must complete before the next is
+        // issued. `ipc.drain` is therefore the backpressure the queue could
+        // not absorb.
+        await settleInFlight();
+
+        // Issuing the invoke is not free: the request is built and the frame
+        // handed to fetch. Timed separately from the wait so overlap cannot
+        // hide it.
+        profiler.recordBytes('ipc.submit', frame.byteLength);
+        inFlight = profiler.time('ipc.submit', () =>
+          invoke('write_native_video_frame', frame, {
+            headers: { [VIDEO_JOB_HEADER]: jobId as string }
+          }));
+
+        profiler.countFrame();
+        onProgress?.(n + 1, totalFrames);
+        // A macrotask turn so the window keeps painting and stays cancellable.
+        // Overlapped with the write above rather than serialized after it.
+        await profiler.timeAsync('loop.yield', () =>
+          new Promise<void>((resolve) => setTimeout(resolve)));
       });
-
-      profiler.countFrame();
-      onProgress?.(n + 1, totalFrames);
-      // A macrotask turn so the window keeps painting and stays cancellable.
-      // Overlapped with the write above rather than serialized after it.
-      await profiler.timeAsync('loop.yield', () =>
-        new Promise<void>((resolve) => setTimeout(resolve)));
     }
     await settleInFlight();
 
