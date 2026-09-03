@@ -1,6 +1,6 @@
 # Video export performance
 
-- **Status:** Phases 0, 2, and 3 complete (7.61x measured); Phase 1 next
+- **Status:** Phases 0, 1, 2, and 3 implemented; 7.61x measured at `quality`
 - **Date:** 2026-09-02
 - **Scope:** Shared browser and Tauri animation-export pipeline
 
@@ -315,6 +315,19 @@ motion, film grain, and GIF edges.
 expected frame count and timestamps; balanced settings have an accepted quality
 and size tradeoff; hardware failure falls back cleanly.
 
+Implemented, with the mappings and measurements in
+[`video-export-benchmark.md`](./video-export-benchmark.md). `quality` reproduces
+the pre-speeds settings exactly and remains the default, so no export changes
+unless a faster speed is chosen. Hardware encoders are probed at runtime and the
+modal discloses any fallback.
+
+Two exit criteria are only partly met. Every format and speed is covered by
+argument tests and by real encodes that decode back and assert frame count, but
+the *quality and size tradeoff has not been accepted* — `balanced` and `fast`
+change CRF and need visual review before either could become a default. And the
+speeds have not been measured end-to-end, where they compete with `scene.sync`
+for CPU, which is the effect they were chosen for.
+
 ### Phase 2: Replace PNG with raw RGBA for desktop video
 
 Change the native video frame boundary so the renderer can provide pixels
@@ -531,14 +544,23 @@ overhead to amortize.
 
 ## Open decisions
 
-- Should `balanced` replace the current defaults, or should speed profiles be
-  opt-in initially?
-- For MP4, is minimum wall time or lower CPU/power use the primary meaning of
-  `fast`?
+- ~~Should `balanced` replace the current defaults, or should speed profiles be
+  opt-in initially?~~ **Opt-in.** `quality` is the default and reproduces the
+  pre-speeds settings, so no existing export changes. Promoting `balanced`
+  needs the visual review that has not happened yet.
+- ~~For MP4, is minimum wall time or lower CPU/power use the primary meaning of
+  `fast`?~~ **Lower CPU, which is also the faster choice in the pipeline.**
+  `h264_videotoolbox` measured 136 fps against `libx264 medium`'s 152, but uses
+  1.0 core against 6.5. Since Phase 3 overlapped drawing with encoding and
+  `scene.sync` is 67% of a frame, the freed cores are worth more than the
+  encoder's own throughput.
 - What visual-quality and file-size thresholds are acceptable for balanced and
   fast VP9?
 - Does VideoToolbox ProRes preserve the required alpha and color behavior on
-  every supported Mac?
+  every supported Mac? **Verified on one.** A half-transparent frame round-trips
+  identically through `prores_videotoolbox` and `prores_ks`, both returning
+  alpha 129 from an input of 128 with exact colors. Other Macs are covered by a
+  runtime availability probe and software fallback rather than by assumption.
 - ~~Can Tauri raw IPC sustain full-resolution 60 fps without excessive
   copying?~~ **Answered: no at 60 fps, and not at 1:1 for 30 fps either, but it
   is still a large win.** A raw request body moves 197.8 MiB/s with 1.00ms of

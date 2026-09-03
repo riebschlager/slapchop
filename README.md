@@ -106,7 +106,11 @@ in the desktop app, so offline exports never drop frames.
 
 Desktop MP4, WebM, and ProRes exports stream rendered frames directly through the
 bundled ffmpeg sidecar as raw RGBA and write video incrementally, so their memory
-use does not grow with duration. Desktop exports accept a start time and durations up to six
+use does not grow with duration. They also offer three encoder speeds — Fast,
+Balanced, and Quality — which change encoder settings only; resolution, frame
+rate, effects, and frame-exact timing are identical at every speed. Quality is
+the default. Fast uses VideoToolbox hardware encoding where available, falling
+back to software and saying so. Desktop exports accept a start time and durations up to six
 hours per job. The desktop app pauses its live preview by default while rendering
 animation frames, then resumes from the same playback time; an active TouchDesigner
 Live Output stream keeps the preview running. Animated GIF and browser exports

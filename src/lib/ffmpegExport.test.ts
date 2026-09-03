@@ -13,6 +13,7 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
 
 const WIDTH = 4;
 const HEIGHT = 2;
+const START_OK = { jobId: 'job-7', encoder: 'libx264', fellBack: false };
 
 function baseOptions(overrides: Record<string, unknown> = {}) {
   return {
@@ -21,6 +22,7 @@ function baseOptions(overrides: Record<string, unknown> = {}) {
     fps: 2,
     duration: 1.5,
     savePath: '/exports/show.mp4',
+    speed: 'quality' as const,
     renderRgbaFrame: () => new Uint8Array(WIDTH * HEIGHT * 4),
     ...overrides
   };
@@ -31,7 +33,7 @@ beforeEach(() => {
   rename.mockReset().mockResolvedValue(undefined);
   remove.mockReset().mockResolvedValue(undefined);
   invoke.mockImplementation(async (cmd: string) => {
-    if (cmd === 'start_native_video_export') return 'job-7';
+    if (cmd === 'start_native_video_export') return START_OK;
     if (cmd === 'finish_native_video_export') return { code: 0, stderr: '' };
     return undefined;
   });
@@ -89,7 +91,7 @@ describe('exportNativeVideo raw frame transport', () => {
   it('draws the next frame while the previous write is still in flight', async () => {
     const events: string[] = [];
     invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'start_native_video_export') return 'job-7';
+      if (cmd === 'start_native_video_export') return START_OK;
       if (cmd === 'finish_native_video_export') return { code: 0, stderr: '' };
       if (cmd === 'write_native_video_frame') {
         events.push('write-start');
@@ -121,7 +123,7 @@ describe('exportNativeVideo raw frame transport', () => {
     const order: number[] = [];
     let issued = 0;
     invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'start_native_video_export') return 'job-7';
+      if (cmd === 'start_native_video_export') return START_OK;
       if (cmd === 'finish_native_video_export') return { code: 0, stderr: '' };
       if (cmd === 'write_native_video_frame') {
         const seq = issued++;
@@ -144,7 +146,7 @@ describe('exportNativeVideo raw frame transport', () => {
     const events: string[] = [];
     let rendered = 0;
     invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'start_native_video_export') return 'job-7';
+      if (cmd === 'start_native_video_export') return START_OK;
       if (cmd === 'finish_native_video_export') return { code: 0, stderr: '' };
       if (cmd === 'write_native_video_frame') {
         await new Promise((r) => setTimeout(r));
@@ -166,6 +168,41 @@ describe('exportNativeVideo raw frame transport', () => {
     // Cancelling underneath an in-flight write would race Rust reading bytes
     // the frame still owns.
     expect(events).toEqual(['write-end', 'write-end', 'cancel']);
+  });
+
+  it('passes the requested encoder speed to the native job', async () => {
+    await exportNativeVideo('webm', baseOptions({ speed: 'balanced', savePath: '/x/a.webm' }));
+
+    const [, args] = invoke.mock.calls.find(([cmd]) => cmd === 'start_native_video_export')!;
+    expect(args).toMatchObject({ format: 'webm', speed: 'balanced' });
+  });
+
+  it('discloses a hardware encoder fallback exactly once', async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'start_native_video_export') {
+        return { jobId: 'job-7', encoder: 'libx264', fellBack: true };
+      }
+      if (cmd === 'finish_native_video_export') return { code: 0, stderr: '' };
+      return undefined;
+    });
+    const fallbacks: string[] = [];
+
+    await exportNativeVideo('mp4', baseOptions({
+      speed: 'fast',
+      onEncoderFallback: (encoder: string) => fallbacks.push(encoder)
+    }));
+
+    expect(fallbacks).toEqual(['libx264']);
+  });
+
+  it('stays quiet when the requested encoder was used', async () => {
+    const fallbacks: string[] = [];
+    await exportNativeVideo('mp4', baseOptions({
+      speed: 'fast',
+      onEncoderFallback: (encoder: string) => fallbacks.push(encoder)
+    }));
+
+    expect(fallbacks).toEqual([]);
   });
 
   it('installs the finished file atomically from the partial path', async () => {
@@ -197,7 +234,7 @@ describe('exportNativeVideo raw frame transport', () => {
 
   it('surfaces ffmpeg failure detail and removes the partial file', async () => {
     invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'start_native_video_export') return 'job-7';
+      if (cmd === 'start_native_video_export') return START_OK;
       if (cmd === 'finish_native_video_export') return { code: 1, stderr: 'bad geometry' };
       return undefined;
     });

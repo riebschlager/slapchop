@@ -2,6 +2,7 @@ import { Clapperboard, Download, Film, Loader2, Repeat, Video, X } from 'lucide-
 import { cn } from '../../lib/utils';
 import { isNative } from '../../lib/native';
 import { supportsWebCodecs } from '../../lib/videoExport';
+import { ExportSpeed } from '../../lib/ffmpegExport';
 import { ExportApi, ExportType } from '../../hooks/useExport';
 
 function formatBytes(bytes: number): string {
@@ -24,6 +25,8 @@ export default function ExportModal({ api }: { api: ExportApi }) {
     exportDuration, setExportDuration,
     exportFps, setExportFps,
     resumeSequence, setResumeSequence,
+    exportSpeed, setExportSpeed,
+    exportNotice,
     pausePreviewDuringExport, setPausePreviewDuringExport,
     liveOutputStreaming,
     exportJob,
@@ -38,6 +41,9 @@ export default function ExportModal({ api }: { api: ExportApi }) {
     : exportResolution === 'hd' ? [720, 1280]
     : [540, 960];
   const uncompressedSequenceBytes = exportWidth * exportHeight * 4 * totalFrames;
+  // Encoder speeds only exist for the ffmpeg-backed desktop video formats.
+  const isNativeVideo = native
+    && (exportType === 'mp4' || exportType === 'webm' || exportType === 'prores');
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -87,6 +93,39 @@ export default function ExportModal({ api }: { api: ExportApi }) {
               </p>
             )}
           </div>
+
+          {isNativeVideo && (
+            <div>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">
+                Encoder Speed
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'fast', label: 'Fast', sub: 'Lowest CPU' },
+                  { id: 'balanced', label: 'Balanced', sub: 'Faster, smaller' },
+                  { id: 'quality', label: 'Quality', sub: 'Reference' }
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => setExportSpeed(option.id as ExportSpeed)}
+                    className={cn(
+                      "p-2 rounded-lg border text-left transition-colors",
+                      exportSpeed === option.id
+                        ? "bg-indigo-950/50 border-indigo-500 text-white"
+                        : "bg-gray-950/50 border-gray-800 text-gray-400 hover:border-gray-700"
+                    )}
+                  >
+                    <div className="text-xs font-semibold">{option.label}</div>
+                    <div className="text-[10px] text-gray-500">{option.sub}</div>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1.5">
+                Changes encoder settings only. Resolution, frame rate, effects, and
+                frame-exact timing are identical at every speed.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Resolution</label>
@@ -237,6 +276,12 @@ export default function ExportModal({ api }: { api: ExportApi }) {
           {exportError && (
             <div className="p-3 bg-red-950/40 rounded-lg border border-red-900/70 text-xs text-red-200">
               {exportError}
+            </div>
+          )}
+
+          {exportNotice && (
+            <div className="p-3 bg-amber-950/40 rounded-lg border border-amber-900/70 text-xs text-amber-200">
+              {exportNotice}
             </div>
           )}
 

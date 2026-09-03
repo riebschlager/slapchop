@@ -14,8 +14,6 @@ use std::{
 use serde::Serialize;
 use tauri::Manager;
 
-mod ipc_probe;
-
 // .slapchop files opened from Finder (double-click / drag onto Dock icon) arrive
 // as RunEvent::Opened, possibly before the webview has loaded. They are queued
 // here; the frontend drains the queue on startup and whenever it hears the
@@ -106,6 +104,16 @@ impl Drop for NativeVideoExports {
     }
 }
 
+/// Reports which encoder actually started, so a hardware fallback is disclosed
+/// rather than silently changing the output.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeVideoStart {
+    job_id: String,
+    encoder: String,
+    fell_back: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeVideoStatus {
@@ -143,15 +151,267 @@ fn ffmpeg_path() -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Encoder arguments for one format at one speed, plus the encoder name so the
+/// frontend can say what actually ran when a hardware session is unavailable.
+struct EncoderChoice {
+    name: &'static str,
+    args: Vec<String>,
+    /// True when this is the software substitute for an unavailable hardware
+    /// encoder, so the UI can disclose it rather than silently differ.
+    fell_back: bool,
+}
+
+/// VideoToolbox availability varies by device, configuration, and system load,
+/// so it is probed once per process per encoder rather than assumed. The probe
+/// encodes a single tiny frame to a null output.
+fn hardware_encoder_available(encoder: &str) -> bool {
+    static PROBED: std::sync::OnceLock<Mutex<HashMap<String, bool>>> = std::sync::OnceLock::new();
+
+    let lock = PROBED.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(cache) = lock.lock() {
+        if let Some(available) = cache.get(encoder) {
+            return *available;
+        }
+    }
+
+    let available = ffmpeg_path()
+        .ok()
+        .and_then(|ffmpeg| {
+            Command::new(ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=64x64:r=30",
+                    "-frames:v",
+                    "1",
+                    "-c:v",
+                    encoder,
+                    "-f",
+                    "null",
+                    "-",
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .ok()
+        })
+        .is_some_and(|status| status.success());
+    if let Ok(mut cache) = lock.lock() {
+        cache.insert(encoder.to_string(), available);
+    }
+    available
+}
+
+/// Format- and speed-specific encoder settings.
+///
+/// Speeds are deliberately not forced into a shared set of flags: the formats
+/// have unlike controls, and the measured bottleneck differs per format. See
+/// `docs/architecture/video-export-benchmark.md` for the numbers behind these.
+///
+/// `quality` reproduces the settings that shipped before export speeds
+/// existed, so it is the reference for any comparison.
+fn select_encoder(
+    format: &str,
+    speed: &str,
+    allow_hardware: bool,
+) -> Result<EncoderChoice, String> {
+    let strings = |args: &[&str]| args.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+
+    // Hardware H.264 is not the fastest encoder in isolation, but it uses
+    // about one core where x264 medium uses six and a half. Once drawing and
+    // encoding overlap, the cores it leaves free are worth more than its own
+    // throughput.
+    let h264_hardware = strings(&[
+        "-c:v",
+        "h264_videotoolbox",
+        "-b:v",
+        "12M",
+        "-profile:v",
+        "high",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+    ]);
+    let h264_software = |preset: &str, crf: &str| {
+        strings(&[
+            "-c:v",
+            "libx264",
+            "-preset",
+            preset,
+            "-crf",
+            crf,
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+        ])
+    };
+    // VideoToolbox ProRes measured lower wall time, a quarter of the CPU, the
+    // same file size, and byte-identical alpha against prores_ks.
+    let prores_hardware = strings(&[
+        "-c:v",
+        "prores_videotoolbox",
+        "-profile:v",
+        "4444",
+        "-pix_fmt",
+        "yuva444p10le",
+    ]);
+    let prores_software = strings(&[
+        "-c:v",
+        "prores_ks",
+        "-profile:v",
+        "4444",
+        "-pix_fmt",
+        "yuva444p10le",
+        "-vendor",
+        "apl0",
+    ]);
+
+    let hardware = |name: &'static str,
+                    args: Vec<String>,
+                    software: Vec<String>,
+                    software_name: &'static str| {
+        if allow_hardware && hardware_encoder_available(name) {
+            EncoderChoice {
+                name,
+                args,
+                fell_back: false,
+            }
+        } else {
+            EncoderChoice {
+                name: software_name,
+                args: software,
+                fell_back: true,
+            }
+        }
+    };
+
+    Ok(match (format, speed) {
+        ("mp4", "quality") => EncoderChoice {
+            name: "libx264",
+            args: h264_software("medium", "18"),
+            fell_back: false,
+        },
+        ("mp4", "balanced") => EncoderChoice {
+            name: "libx264",
+            args: h264_software("veryfast", "20"),
+            fell_back: false,
+        },
+        ("mp4", "fast") => hardware(
+            "h264_videotoolbox",
+            h264_hardware,
+            h264_software("veryfast", "20"),
+            "libx264",
+        ),
+
+        ("webm", "quality") => EncoderChoice {
+            name: "libvpx-vp9",
+            args: strings(&[
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                "30",
+                "-b:v",
+                "0",
+                "-pix_fmt",
+                "yuv420p",
+                "-row-mt",
+                "1",
+            ]),
+            fell_back: false,
+        },
+        ("webm", "balanced") => EncoderChoice {
+            name: "libvpx-vp9",
+            args: strings(&[
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                "32",
+                "-b:v",
+                "0",
+                "-deadline",
+                "good",
+                "-cpu-used",
+                "4",
+                "-row-mt",
+                "1",
+                "-tile-columns",
+                "2",
+                "-frame-parallel",
+                "1",
+                "-pix_fmt",
+                "yuv420p",
+            ]),
+            fell_back: false,
+        },
+        ("webm", "fast") => EncoderChoice {
+            name: "libvpx-vp9",
+            args: strings(&[
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                "34",
+                "-b:v",
+                "0",
+                "-deadline",
+                "realtime",
+                "-cpu-used",
+                "6",
+                "-row-mt",
+                "1",
+                "-pix_fmt",
+                "yuv420p",
+            ]),
+            fell_back: false,
+        },
+
+        // prores_ks stays the quality reference; both faster speeds use the
+        // hardware encoder, which measured strictly better on every axis.
+        ("prores", "quality") => EncoderChoice {
+            name: "prores_ks",
+            args: prores_software,
+            fell_back: false,
+        },
+        ("prores", _) => hardware(
+            "prores_videotoolbox",
+            prores_hardware,
+            prores_software,
+            "prores_ks",
+        ),
+
+        (_, "fast" | "balanced" | "quality") => {
+            return Err(format!("Unsupported native video format: {format}"))
+        }
+        _ => return Err(format!("Unsupported export speed: {speed}")),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn spawn_native_video_job(
     format: &str,
+    speed: &str,
     fps: u32,
     total_frames: u32,
     width: u32,
     height: u32,
     output_path: &Path,
-) -> Result<NativeVideoJob, String> {
-    let args = native_video_args(format, fps, total_frames, width, height, output_path)?;
+) -> Result<(NativeVideoJob, EncoderChoice), String> {
+    let encoder = select_encoder(format, speed, true)?;
+    let args = native_video_args(
+        format,
+        &encoder,
+        fps,
+        total_frames,
+        width,
+        height,
+        output_path,
+    )?;
     let mut child = Command::new(ffmpeg_path()?)
         .args(args)
         .stdin(Stdio::piped())
@@ -187,15 +447,18 @@ fn spawn_native_video_job(
         Ok(())
     });
 
-    Ok(NativeVideoJob {
-        child,
-        stderr_thread,
-        frames: Some(frames),
-        writer_thread: Some(writer_thread),
-        frame_bytes: frame_bytes(width, height)?,
-        frames_queued: 0,
-        total_frames,
-    })
+    Ok((
+        NativeVideoJob {
+            child,
+            stderr_thread,
+            frames: Some(frames),
+            writer_thread: Some(writer_thread),
+            frame_bytes: frame_bytes(width, height)?,
+            frames_queued: 0,
+            total_frames,
+        },
+        encoder,
+    ))
 }
 
 /// The exact body size one raw RGBA frame must have. Also the single place
@@ -213,8 +476,10 @@ fn frame_bytes(width: u32, height: u32) -> Result<usize, String> {
     Ok(width as usize * height as usize * 4)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn native_video_args(
     format: &str,
+    encoder: &EncoderChoice,
     fps: u32,
     total_frames: u32,
     width: u32,
@@ -281,52 +546,7 @@ fn native_video_args(
         "-threads".into(),
         encoder_threads.to_string(),
     ];
-    match format {
-        "mp4" => args.extend(
-            [
-                "-c:v",
-                "libx264",
-                "-preset",
-                "medium",
-                "-crf",
-                "18",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+faststart",
-            ]
-            .map(String::from),
-        ),
-        "webm" => args.extend(
-            [
-                "-c:v",
-                "libvpx-vp9",
-                "-crf",
-                "30",
-                "-b:v",
-                "0",
-                "-pix_fmt",
-                "yuv420p",
-                "-row-mt",
-                "1",
-            ]
-            .map(String::from),
-        ),
-        "prores" => args.extend(
-            [
-                "-c:v",
-                "prores_ks",
-                "-profile:v",
-                "4444",
-                "-pix_fmt",
-                "yuva444p10le",
-                "-vendor",
-                "apl0",
-            ]
-            .map(String::from),
-        ),
-        _ => unreachable!(),
-    }
+    args.extend(encoder.args.iter().cloned());
     args.push(output_path.to_string_lossy().into_owned());
     Ok(args)
 }
@@ -335,15 +555,24 @@ fn native_video_args(
 #[allow(clippy::too_many_arguments)]
 fn start_native_video_export(
     format: String,
+    speed: String,
     fps: u32,
     total_frames: u32,
     width: u32,
     height: u32,
     output_path: String,
     state: tauri::State<'_, NativeVideoExports>,
-) -> Result<String, String> {
+) -> Result<NativeVideoStart, String> {
     let output_path = PathBuf::from(output_path);
-    let job = spawn_native_video_job(&format, fps, total_frames, width, height, &output_path)?;
+    let (job, encoder) = spawn_native_video_job(
+        &format,
+        &speed,
+        fps,
+        total_frames,
+        width,
+        height,
+        &output_path,
+    )?;
     let id = format!(
         "{}-{}",
         std::process::id(),
@@ -354,7 +583,11 @@ fn start_native_video_export(
         .lock()
         .map_err(|_| "The native video export manager is unavailable.".to_string())?
         .insert(id.clone(), job);
-    Ok(id)
+    Ok(NativeVideoStart {
+        job_id: id,
+        encoder: encoder.name.to_string(),
+        fell_back: encoder.fell_back,
+    })
 }
 
 /// Header carrying the job identifier, because the frame itself has to be the
@@ -500,10 +733,7 @@ pub fn run() {
             start_native_video_export,
             write_native_video_frame,
             finish_native_video_export,
-            cancel_native_video_export,
-            ipc_probe::probe_raw_frame,
-            ipc_probe::probe_json_frame,
-            ipc_probe::probe_report
+            cancel_native_video_export
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -544,23 +774,38 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        ffmpeg_path, frame_bytes, native_video_args, spawn_native_video_job, validate_job_id,
-        wait_for_native_video,
+        ffmpeg_path, frame_bytes, hardware_encoder_available, native_video_args, select_encoder,
+        spawn_native_video_job, validate_job_id, wait_for_native_video,
     };
+
+    /// The `quality` speed is the pre-speeds behavior, so most argument
+    /// assertions are about it.
+    fn quality_args(format: &str, width: u32, height: u32, path: &str) -> Vec<String> {
+        let encoder = select_encoder(format, "quality", false).unwrap();
+        native_video_args(format, &encoder, 30, 300, width, height, Path::new(path)).unwrap()
+    }
     use std::{fs, path::Path, process::Command};
 
     #[test]
     fn builds_h264_args_for_an_absolute_mp4_path() {
-        let args =
-            native_video_args("mp4", 30, 300, 1080, 1920, Path::new("/tmp/export.mp4")).unwrap();
+        let args = quality_args("mp4", 1080, 1920, "/tmp/export.mp4");
         assert!(args.windows(2).any(|pair| pair == ["-c:v", "libx264"]));
         assert!(args.windows(2).any(|pair| pair == ["-pix_fmt", "yuv420p"]));
     }
 
     #[test]
     fn rejects_a_mismatched_container_extension() {
-        let error = native_video_args("prores", 30, 300, 1080, 1920, Path::new("/tmp/export.mp4"))
-            .unwrap_err();
+        let encoder = select_encoder("prores", "quality", false).unwrap();
+        let error = native_video_args(
+            "prores",
+            &encoder,
+            30,
+            300,
+            1080,
+            1920,
+            Path::new("/tmp/export.mp4"),
+        )
+        .unwrap_err();
         assert!(error.contains(".mov"));
     }
 
@@ -568,7 +813,7 @@ mod tests {
     fn declares_raw_rgba_input_geometry_for_every_format() {
         for (format, extension) in [("mp4", "mp4"), ("webm", "webm"), ("prores", "mov")] {
             let path = format!("/tmp/export.{extension}");
-            let args = native_video_args(format, 30, 300, 720, 1280, Path::new(&path)).unwrap();
+            let args = quality_args(format, 720, 1280, &path);
             assert!(args.windows(2).any(|pair| pair == ["-f", "rawvideo"]));
             assert!(args
                 .windows(2)
@@ -584,17 +829,152 @@ mod tests {
 
     #[test]
     fn prores_keeps_its_alpha_pixel_format() {
-        let args =
-            native_video_args("prores", 30, 90, 540, 960, Path::new("/tmp/export.mov")).unwrap();
+        let args = quality_args("prores", 540, 960, "/tmp/export.mov");
         assert!(args
             .windows(2)
             .any(|pair| pair == ["-pix_fmt", "yuva444p10le"]));
     }
 
     #[test]
+    fn builds_valid_arguments_for_every_format_and_speed() {
+        for (format, extension) in [("mp4", "mp4"), ("webm", "webm"), ("prores", "mov")] {
+            for speed in ["fast", "balanced", "quality"] {
+                let encoder = select_encoder(format, speed, false).unwrap();
+                let path = format!("/tmp/export.{extension}");
+                let args =
+                    native_video_args(format, &encoder, 30, 300, 1080, 1920, Path::new(&path))
+                        .unwrap_or_else(|e| panic!("{format}/{speed}: {e}"));
+
+                // Exactly one codec, and the raw input contract intact.
+                assert_eq!(
+                    args.iter().filter(|a| *a == "-c:v").count(),
+                    1,
+                    "{format}/{speed} must name one encoder"
+                );
+                assert!(args.windows(2).any(|p| p == ["-f", "rawvideo"]));
+                assert!(args.windows(2).any(|p| p == ["-pixel_format", "rgba"]));
+                assert_eq!(args.last().unwrap(), &path);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_an_unknown_speed_or_format() {
+        assert!(select_encoder("mp4", "turbo", false).is_err());
+        assert!(select_encoder("avi", "fast", false).is_err());
+    }
+
+    #[test]
+    fn quality_speed_reproduces_the_pre_speeds_settings() {
+        let mp4 = quality_args("mp4", 1080, 1920, "/tmp/export.mp4");
+        assert!(mp4.windows(2).any(|p| p == ["-preset", "medium"]));
+        assert!(mp4.windows(2).any(|p| p == ["-crf", "18"]));
+
+        let webm = quality_args("webm", 1080, 1920, "/tmp/export.webm");
+        assert!(webm.windows(2).any(|p| p == ["-c:v", "libvpx-vp9"]));
+        assert!(webm.windows(2).any(|p| p == ["-crf", "30"]));
+
+        let prores = quality_args("prores", 1080, 1920, "/tmp/export.mov");
+        assert!(prores.windows(2).any(|p| p == ["-c:v", "prores_ks"]));
+    }
+
+    /// With hardware disallowed, the faster speeds must still produce a
+    /// working software encoder and say that they substituted one.
+    #[test]
+    fn falls_back_to_software_when_hardware_is_unavailable() {
+        let mp4 = select_encoder("mp4", "fast", false).unwrap();
+        assert_eq!(mp4.name, "libx264");
+        assert!(mp4.fell_back);
+
+        let prores = select_encoder("prores", "fast", false).unwrap();
+        assert_eq!(prores.name, "prores_ks");
+        assert!(prores.fell_back);
+
+        // VP9 has no hardware path, so it never reports a substitution.
+        assert!(!select_encoder("webm", "fast", false).unwrap().fell_back);
+    }
+
+    /// Runs each faster speed for real, but only asserts on encoders this
+    /// machine actually has, so the suite does not depend on hardware.
+    #[test]
+    fn every_available_speed_produces_a_decodable_file() {
+        let (width, height, frames) = (64u32, 64u32, 4u32);
+        for (format, extension) in [("mp4", "mp4"), ("webm", "webm"), ("prores", "mov")] {
+            for speed in ["fast", "balanced", "quality"] {
+                let output = std::env::temp_dir().join(format!(
+                    "slapchop-speed-{format}-{speed}-{}.{extension}",
+                    std::process::id()
+                ));
+                let (mut job, encoder) =
+                    spawn_native_video_job(format, speed, 30, frames, width, height, &output)
+                        .unwrap();
+                if encoder.fell_back {
+                    // Hardware absent here; the software path is covered by
+                    // the `quality` pass of this same loop.
+                    job.abort();
+                    let _ = job.stderr_thread.join();
+                    let _ = fs::remove_file(&output);
+                    continue;
+                }
+                for _ in 0..frames {
+                    job.queue_frame(split_frame(width, height, 255)).unwrap();
+                }
+                let status = wait_for_native_video(job).unwrap();
+                assert_eq!(
+                    status.code,
+                    Some(0),
+                    "{format}/{speed} via {}: {}",
+                    encoder.name,
+                    status.stderr
+                );
+                let (_, decoded) = decode_to_rgba(&output, width as usize * height as usize * 4);
+                assert_eq!(decoded, frames as usize, "{format}/{speed} frame count");
+                fs::remove_file(output).unwrap();
+            }
+        }
+    }
+
+    /// The alpha guarantee has to hold for whichever ProRes encoder runs, not
+    /// just the software one.
+    #[test]
+    fn prores_alpha_survives_on_every_available_encoder() {
+        let (width, height) = (64u32, 64u32);
+        for speed in ["quality", "fast"] {
+            let output = std::env::temp_dir().join(format!(
+                "slapchop-prores-alpha-{speed}-{}.mov",
+                std::process::id()
+            ));
+            let (mut job, encoder) =
+                spawn_native_video_job("prores", speed, 30, 2, width, height, &output).unwrap();
+            for _ in 0..2 {
+                job.queue_frame(split_frame(width, height, 128)).unwrap();
+            }
+            let status = wait_for_native_video(job).unwrap();
+            assert_eq!(status.code, Some(0), "{}", status.stderr);
+
+            let (decoded, _) = decode_to_rgba(&output, width as usize * height as usize * 4);
+            assert!(
+                (100..=155).contains(&decoded[3]),
+                "{} lost alpha: got {}",
+                encoder.name,
+                decoded[3]
+            );
+            fs::remove_file(output).unwrap();
+        }
+    }
+
+    #[test]
+    fn hardware_probe_result_is_stable() {
+        // Whatever this machine reports, it must report it consistently: the
+        // answer is cached and a flapping probe would change encoders midway.
+        let first = hardware_encoder_available("h264_videotoolbox");
+        assert_eq!(first, hardware_encoder_available("h264_videotoolbox"));
+        assert!(!hardware_encoder_available("definitely_not_an_encoder"));
+    }
+
+    #[test]
     fn caps_encoder_threads_so_the_renderer_keeps_cpu() {
-        let args =
-            native_video_args("mp4", 30, 300, 1080, 1920, Path::new("/tmp/export.mp4")).unwrap();
+        let args = quality_args("mp4", 1080, 1920, "/tmp/export.mp4");
         let threads = args
             .windows(2)
             .find(|pair| pair[0] == "-threads")
@@ -616,8 +996,17 @@ mod tests {
 
     #[test]
     fn rejects_odd_dimensions_before_spawning_ffmpeg() {
-        let error = native_video_args("mp4", 30, 300, 1081, 1920, Path::new("/tmp/export.mp4"))
-            .unwrap_err();
+        let encoder = select_encoder("mp4", "quality", false).unwrap();
+        let error = native_video_args(
+            "mp4",
+            &encoder,
+            30,
+            300,
+            1081,
+            1920,
+            Path::new("/tmp/export.mp4"),
+        )
+        .unwrap_err();
         assert!(error.contains("even"), "{error}");
     }
 
@@ -692,7 +1081,9 @@ mod tests {
             "slapchop-raw-video-test-{}.mp4",
             std::process::id()
         ));
-        let mut job = spawn_native_video_job("mp4", 30, frames, width, height, &output).unwrap();
+        let mut job = spawn_native_video_job("mp4", "quality", 30, frames, width, height, &output)
+            .unwrap()
+            .0;
         assert_eq!(job.frame_bytes, width as usize * height as usize * 4);
 
         let frame = split_frame(width, height, 255);
@@ -732,7 +1123,9 @@ mod tests {
             "slapchop-queue-order-test-{}.mp4",
             std::process::id()
         ));
-        let mut job = spawn_native_video_job("mp4", 30, frames, width, height, &output).unwrap();
+        let mut job = spawn_native_video_job("mp4", "quality", 30, frames, width, height, &output)
+            .unwrap()
+            .0;
 
         // More frames than the queue is deep, so the writer has to keep up
         // while queue_frame blocks rather than dropping anything.
@@ -759,7 +1152,9 @@ mod tests {
             "slapchop-queue-abort-test-{}.mp4",
             std::process::id()
         ));
-        let mut job = spawn_native_video_job("mp4", 30, 600, width, height, &output).unwrap();
+        let mut job = spawn_native_video_job("mp4", "quality", 30, 600, width, height, &output)
+            .unwrap()
+            .0;
         for _ in 0..4 {
             let _ = job.queue_frame(split_frame(width, height, 255));
         }
@@ -783,7 +1178,9 @@ mod tests {
             "slapchop-raw-prores-test-{}.mov",
             std::process::id()
         ));
-        let mut job = spawn_native_video_job("prores", 30, 2, width, height, &output).unwrap();
+        let mut job = spawn_native_video_job("prores", "quality", 30, 2, width, height, &output)
+            .unwrap()
+            .0;
 
         let frame = split_frame(width, height, 128);
         for _ in 0..2 {

@@ -4,15 +4,36 @@ import { getExportProfiler } from './exportProfiler';
 export type NativeVideoFormat = VideoFormat | 'prores';
 
 /**
+ * Codec speed, meant per format rather than as a shared set of flags: the
+ * formats expose unlike controls and their bottlenecks differ. `quality` is
+ * the settings that shipped before speeds existed, so it is the reference for
+ * any comparison. Only encoder settings change — never resolution, frame rate,
+ * effects, or frame-exact timing.
+ */
+export type ExportSpeed = 'fast' | 'balanced' | 'quality';
+
+export const EXPORT_SPEEDS: ExportSpeed[] = ['fast', 'balanced', 'quality'];
+
+interface NativeVideoStart {
+  jobId: string;
+  encoder: string;
+  /** True when a hardware encoder was unavailable and software ran instead. */
+  fellBack: boolean;
+}
+
+/**
  * The native path takes pixels rather than a canvas: ffmpeg reads rawvideo, so
  * a PNG in between would only be encoded here to be decoded there.
  */
 export interface NativeVideoExportOptions
   extends Omit<FrameExportOptions, 'renderFrame'> {
   savePath: string;
+  speed: ExportSpeed;
   /** RGBA bytes for time t, exactly `width * height * 4`. */
   renderRgbaFrame: (t: number) => Uint8Array;
   onFinalizing?: () => void;
+  /** Called only when the requested hardware encoder was unavailable. */
+  onEncoderFallback?: (encoder: string) => void;
 }
 
 /**
@@ -54,8 +75,8 @@ export async function exportNativeVideo(
   opts: NativeVideoExportOptions
 ): Promise<boolean> {
   const {
-    width, height, fps, duration, startTime = 0, renderRgbaFrame, savePath,
-    onProgress, onFinalizing, isCancelled
+    width, height, fps, duration, startTime = 0, renderRgbaFrame, savePath, speed,
+    onProgress, onFinalizing, onEncoderFallback, isCancelled
   } = opts;
   const totalFrames = Math.round(fps * duration);
   const startFrame = Math.round(Math.max(0, startTime) * fps);
@@ -66,15 +87,20 @@ export async function exportNativeVideo(
   const profiler = getExportProfiler();
 
   try {
-    jobId = await profiler.timeAsync('ffmpeg.start', () =>
-      invoke<string>('start_native_video_export', {
+    const started = await profiler.timeAsync('ffmpeg.start', () =>
+      invoke<NativeVideoStart>('start_native_video_export', {
         format,
+        speed,
         fps,
         totalFrames,
         width,
         height,
         outputPath: partialPath
       }));
+    jobId = started.jobId;
+    // Hardware availability varies by device and system load, so a fallback is
+    // disclosed rather than silently changing the output.
+    if (started.fellBack) onEncoderFallback?.(started.encoder);
     // The write for the previous frame, still in flight while this one draws.
     let inFlight: Promise<unknown> | null = null;
     const settleInFlight = async () => {

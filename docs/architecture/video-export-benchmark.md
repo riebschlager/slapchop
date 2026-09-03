@@ -158,6 +158,85 @@ therefore JSON-serialized per frame. `recordBytes('ipc.writeFrame', ...)` was
 added after these runs so the next baseline reports actual PNG bytes and a
 MiB/s figure, which will confirm the per-byte cost directly.
 
+## Phase 1: encoder candidate measurements (2026-09-02)
+
+Encoder-only, 90 frames of `testsrc2` at 1080x1920 through the bundled arm64
+ffmpeg on a 10-core machine, timed with `/usr/bin/time`. CPU seconds divided by
+wall seconds gives the cores each encoder actually occupies, which is the
+number that matters now that drawing and encoding overlap.
+
+| Encoder | Wall | fps | CPU | Cores | Size |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `libx264 medium` CRF 18 (current) | 0.59s | 152 | 3.84s | **6.5** | 3.92MB |
+| `libx264 veryfast` CRF 20 | 0.26s | 346 | 1.90s | 7.3 | 2.82MB |
+| `h264_videotoolbox` 12M high | 0.66s | 136 | 0.64s | **1.0** | 4.61MB |
+| `prores_ks` 4444 (current) | 1.08s | 83 | 9.25s | **8.6** | 59.1MB |
+| `prores_videotoolbox` 4444 | 0.57s | 158 | 2.05s | 3.6 | 59.5MB |
+| VP9 CRF 30 row-mt (current) | 8.24s | **10.9** | 26.0s | 3.2 | 2.86MB |
+| VP9 `good` cpu-used 4, CRF 32 | 1.93s | 46.6 | 6.76s | 3.5 | 2.72MB |
+| VP9 `realtime` cpu-used 6, CRF 34 | 0.48s | 188 | 1.90s | 4.0 | 2.80MB |
+
+### For MP4, wall time and CPU diverge — and CPU is what matters
+
+`h264_videotoolbox` is *slower* in isolation than `libx264 medium`, 136 fps
+against 152. It also uses 1.0 core where x264 medium uses 6.5. Since Phase 3
+made drawing and encoding concurrent, and `scene.sync` is 67% of a frame, the
+five and a half cores the hardware encoder leaves free are worth more than its
+own throughput.
+
+This answers the open question the performance document raised: at the encoder
+level minimum wall time and lowest CPU are different choices, but at the
+pipeline level they coincide, because the renderer is what needs the cores. So
+`fast` for MP4 means the hardware encoder. Its cost is file size: 4.61MB
+against 3.92MB, about 18% larger at 12 Mbps.
+
+### ProRes VideoToolbox is better on every axis
+
+1.9x the throughput, a quarter of the CPU, the same file size, and alpha that
+survives byte-for-byte. A direct round-trip of a half-transparent frame through
+both encoders returned `(0,0,255,129)` from an input of `(0,0,255,128)` — the
+same one-step 10-bit rounding from each, with colors exact.
+
+That closes the alpha question for this machine. It cannot close it for every
+Mac, which is why availability is probed at runtime rather than assumed.
+
+The performance document quoted 3.7x for this encoder from an earlier
+measurement; this run shows 1.9x. Same direction, different magnitude, and the
+discrepancy is recorded rather than reconciled.
+
+### The current WebM settings are mistuned
+
+`good` at cpu-used 4 is 4.3x faster than the current configuration *and*
+produces a smaller file. CRF differs between the two, so this is not an
+equal-quality comparison — but at 10.9 fps the shipped settings are the only
+encoder measured that cannot keep up with Phase 3's 42ms frame budget, and they
+are not buying compression for it.
+
+### Speed mappings
+
+`quality` reproduces the pre-speeds settings exactly, so it stays the reference
+for every comparison. Faster speeds are opt-in; nothing changes unless asked
+for.
+
+| Format | Fast | Balanced | Quality |
+| --- | --- | --- | --- |
+| MP4 | `h264_videotoolbox` 12M high | `libx264 veryfast` CRF 20 | `libx264 medium` CRF 18 |
+| WebM | VP9 `realtime` cpu-used 6, CRF 34 | VP9 `good` cpu-used 4, CRF 32 | VP9 CRF 30 row-mt |
+| ProRes | `prores_videotoolbox` 4444 | `prores_videotoolbox` 4444 | `prores_ks` 4444 |
+
+Hardware encoders are probed once per process with a single-frame encode to a
+null output. When one is unavailable the software encoder runs instead and the
+export modal says which encoder was used, so the output never differs silently.
+
+### Not yet measured
+
+These are encoder-only figures. What each speed does to a *whole export*, where
+it competes with `scene.sync` for CPU, has not been measured — and that is the
+number the mappings were chosen for. Nor has visual quality been evaluated:
+`balanced` and `fast` change CRF, so they need review against gradients, fine
+geometry, rapid motion, film grain, and GIF edges before either could be
+proposed as a default.
+
 ## Phase 3 result: overlapped pipeline (2026-09-02)
 
 Same scene and settings throughout: 150 frames, MP4, 1080x1920 at 30fps,

@@ -12,7 +12,7 @@ import { exportVideo, supportsWebCodecs, VideoFormat } from '../lib/videoExport'
 import { exportZipSequence } from '../lib/zipExport';
 import { exportGif } from '../lib/gifExport';
 import { exportNativeImageSequence } from '../lib/imageSequenceExport';
-import { exportNativeVideo } from '../lib/ffmpegExport';
+import { ExportSpeed, exportNativeVideo } from '../lib/ffmpegExport';
 import { getExportErrorMessage } from '../lib/exportErrors';
 import { beginExportProfile } from '../lib/exportProfiler';
 import { isNative, pickDirectoryPath, pickSavePath, saveBlob } from '../lib/native';
@@ -49,10 +49,14 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
   const [exportStartTime, setExportStartTime] = useState<number>(0);
   const [exportDuration, setExportDuration] = useState<number>(3);
   const [exportFps, setExportFps] = useState<number>(30);
+  // Defaults to the settings that shipped before speeds existed, so an export
+  // never quietly changes quality; faster profiles are opt-in.
+  const [exportSpeed, setExportSpeed] = useState<ExportSpeed>('quality');
   const [resumeSequence, setResumeSequence] = useState(false);
   const [pausePreviewDuringExport, setPausePreviewDuringExport] = useState(true);
   const [exportJob, setExportJob] = useState<ExportJob | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   const isCancelExportRef = useRef(false);
   const liveOutputStreamingRef = useRef(liveOutputStreaming);
@@ -72,6 +76,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
 
   const openExportModal = () => {
     setExportError(null);
+    setExportNotice(null);
     setShowExportModal(true);
   };
   const cancelExport = () => {
@@ -168,6 +173,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
   const startExport = async () => {
     isCancelExportRef.current = false;
     setExportError(null);
+    setExportNotice(null);
     const doc = snapshotRenderState();
     const [resW, resH] = exportResolution === 'full' ? [1080, 1920]
                        : exportResolution === 'hd' ? [720, 1280]
@@ -194,6 +200,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
       resolution: `${resW}x${resH}`,
       fps: exportFps,
       duration: exportDuration,
+      speed: exportSpeed,
       renderer: getActiveRendererName(),
       native: isNative(),
       previewPaused: pausePreviewDuringExport
@@ -236,8 +243,12 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
             const ok = await runWithPreviewPaused(() => exportNativeVideo(exportType, {
               ...common,
               savePath,
+              speed: exportSpeed,
               renderRgbaFrame: (t) => frames.frame(t, doc),
               onProgress: frameProgress('Rendering and encoding'),
+              onEncoderFallback: (encoder) => setExportNotice(
+                `Hardware encoding was unavailable, so this export used ${encoder}.`
+              ),
               onFinalizing: () => setExportJob({ label: 'Finalizing video…', percent: 100 })
             }));
             if (ok) setShowExportModal(false);
@@ -295,6 +306,8 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     setExportDuration,
     exportFps,
     setExportFps,
+    exportSpeed,
+    setExportSpeed,
     resumeSequence,
     setResumeSequence,
     pausePreviewDuringExport,
@@ -302,6 +315,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     liveOutputStreaming,
     exportJob,
     exportError,
+    exportNotice,
     handleExportHighRes,
     startExport
   };
