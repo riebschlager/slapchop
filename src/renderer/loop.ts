@@ -60,6 +60,57 @@ export function renderExportFrame(
 }
 
 /**
+ * A source of raw RGBA frames for encoders that take pixels directly.
+ *
+ * Exists so the native video path never round-trips a frame through a Canvas
+ * 2D surface it does not need. Creative modes are unaffected: this sits at the
+ * renderer boundary and reuses the same per-frame draw as `renderExportFrame`.
+ */
+export interface RawFrameSource {
+  /** RGBA bytes for time t, exactly `width * height * 4`. */
+  frame(t: number, state: RenderState): Uint8Array;
+  dispose(): void;
+}
+
+/**
+ * The Canvas 2D fallback has no way to produce pixels without a surface, so it
+ * keeps one scratch canvas for the whole export rather than per frame. The GPU
+ * path allocates nothing here.
+ */
+export function createRawFrameSource(width: number, height: number): RawFrameSource {
+  let scratch: HTMLCanvasElement | null = null;
+
+  return {
+    frame(t, state) {
+      return getExportProfiler().time('frame.render', () => {
+        if (activeGpu) return activeGpu.extractPixels(t, state, width, height);
+
+        if (!scratch) {
+          scratch = document.createElement('canvas');
+          scratch.width = width;
+          scratch.height = height;
+        }
+        renderFrame(scratch, t, state, width, height);
+        const ctx = scratch.getContext('2d');
+        if (!ctx) throw new Error('Could not create the export canvas context.');
+        const { data } = getExportProfiler().time('canvas.readback', () =>
+          ctx.getImageData(0, 0, width, height));
+        return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      });
+    },
+    dispose() {
+      // Drop the backing store rather than waiting on GC; a full-resolution
+      // scratch canvas is ~8MB.
+      if (scratch) {
+        scratch.width = 0;
+        scratch.height = 0;
+        scratch = null;
+      }
+    }
+  };
+}
+
+/**
  * One Pixi renderer per canvas element, for the lifetime of that element.
  *
  * Pixi's WebGL teardown calls `loseContext()`, and `getContext()` keeps

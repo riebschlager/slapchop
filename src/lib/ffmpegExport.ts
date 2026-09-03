@@ -3,22 +3,24 @@ import { getExportProfiler } from './exportProfiler';
 
 export type NativeVideoFormat = VideoFormat | 'prores';
 
-export interface NativeVideoExportOptions extends FrameExportOptions {
+/**
+ * The native path takes pixels rather than a canvas: ffmpeg reads rawvideo, so
+ * a PNG in between would only be encoded here to be decoded there.
+ */
+export interface NativeVideoExportOptions
+  extends Omit<FrameExportOptions, 'renderFrame'> {
   savePath: string;
+  /** RGBA bytes for time t, exactly `width * height * 4`. */
+  renderRgbaFrame: (t: number) => Uint8Array;
   onFinalizing?: () => void;
 }
 
-function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(async (blob) => {
-      if (!blob) {
-        reject(new Error('Could not encode a frame for ffmpeg.'));
-        return;
-      }
-      resolve(new Uint8Array(await blob.arrayBuffer()));
-    }, 'image/png');
-  });
-}
+/**
+ * Tauri sends a payload that *is* a buffer view as an octet-stream body, but
+ * expands one nested in an object into a JSON array of integers. So the frame
+ * has to be the entire payload, and the job identifier travels in a header.
+ */
+const VIDEO_JOB_HEADER = 'x-slapchop-video-job';
 
 export function getPartialVideoPath(savePath: string, id: string): string {
   const slash = Math.max(savePath.lastIndexOf('/'), savePath.lastIndexOf('\\'));
@@ -39,7 +41,7 @@ export async function exportNativeVideo(
   opts: NativeVideoExportOptions
 ): Promise<boolean> {
   const {
-    fps, duration, startTime = 0, renderFrame, savePath,
+    width, height, fps, duration, startTime = 0, renderRgbaFrame, savePath,
     onProgress, onFinalizing, isCancelled
   } = opts;
   const totalFrames = Math.round(fps * duration);
@@ -47,7 +49,6 @@ export async function exportNativeVideo(
   const partialPath = getPartialVideoPath(savePath, crypto.randomUUID());
   const { invoke } = await import('@tauri-apps/api/core');
   const { remove, rename } = await import('@tauri-apps/plugin-fs');
-  const canvas = document.createElement('canvas');
   let jobId: string | null = null;
   const profiler = getExportProfiler();
 
@@ -57,6 +58,8 @@ export async function exportNativeVideo(
         format,
         fps,
         totalFrames,
+        width,
+        height,
         outputPath: partialPath
       }));
     for (let n = 0; n < totalFrames; n++) {
@@ -66,14 +69,15 @@ export async function exportNativeVideo(
         return false;
       }
 
-      renderFrame(canvas, (startFrame + n) / fps);
-      const frame = await profiler.timeAsync('png.encode', () => canvasToPngBytes(canvas));
+      const frame = renderRgbaFrame((startFrame + n) / fps);
       // Covers Tauri IPC plus the Rust-side pipe write, so it absorbs ffmpeg's
       // backpressure once the OS pipe buffer fills. Pairing it with the payload
       // size is what separates a per-byte transport cost from encoder stalls.
       profiler.recordBytes('ipc.writeFrame', frame.byteLength);
       await profiler.timeAsync('ipc.writeFrame', () =>
-        invoke('write_native_video_frame', { jobId, frame }));
+        invoke('write_native_video_frame', frame, {
+          headers: { [VIDEO_JOB_HEADER]: jobId as string }
+        }));
       profiler.countFrame();
       onProgress?.(n + 1, totalFrames);
       await profiler.timeAsync('loop.yield', () =>

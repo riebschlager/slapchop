@@ -98,15 +98,15 @@ in the desktop app, so offline exports never drop frames.
 
 - **MP4 (H.264)** — the default; plays in QuickTime and uploads anywhere
 - **WebM (VP9)**
-- **ProRes 4444** *(desktop app only)* — frame-exact PNGs streamed through the
-  bundled ffmpeg sidecar (`prores_ks`, alpha-capable) for VJ/editing pipelines
+- **ProRes 4444** *(desktop app only)* — frame-exact raw RGBA streamed through
+  the bundled ffmpeg sidecar (`prores_ks`, alpha-capable) for VJ/editing pipelines
 - **Animated GIF** — quantized and encoded off-thread via gifenc
 - **Frame sequences** — PNG or JPEG files written incrementally to a selected
   folder in the desktop app, with frame-range and resume support; browsers use ZIP
 
 Desktop MP4, WebM, and ProRes exports stream rendered frames directly through the
-bundled ffmpeg sidecar and write video incrementally, so their memory use does not
-grow with duration. Desktop exports accept a start time and durations up to six
+bundled ffmpeg sidecar as raw RGBA and write video incrementally, so their memory
+use does not grow with duration. Desktop exports accept a start time and durations up to six
 hours per job. The desktop app pauses its live preview by default while rendering
 animation frames, then resumes from the same playback time; an active TouchDesigner
 Live Output stream keeps the preview running. Animated GIF and browser exports

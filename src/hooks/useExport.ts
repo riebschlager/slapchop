@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { getDocumentSnapshot, useStore } from '../store';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState } from '../renderer/render2d';
-import { getActiveRendererName, getPlaybackTime, renderExportFrame } from '../renderer/loop';
+import {
+  createRawFrameSource,
+  getActiveRendererName,
+  getPlaybackTime,
+  renderExportFrame
+} from '../renderer/loop';
 import { suspendLivePreviewRendering } from '../renderer/livePreviewSuspension';
 import { exportVideo, supportsWebCodecs, VideoFormat } from '../lib/videoExport';
 import { exportZipSequence } from '../lib/zipExport';
@@ -224,13 +229,21 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
         const extension = exportType === 'prores' ? 'mov' : exportType;
         const savePath = await pickSavePath(`slapchop-video-${ts}-${exportDuration}s.${extension}`);
         if (savePath) {
-          const ok = await runWithPreviewPaused(() => exportNativeVideo(exportType, {
-            ...common,
-            savePath,
-            onProgress: frameProgress('Rendering and encoding'),
-            onFinalizing: () => setExportJob({ label: 'Finalizing video…', percent: 100 })
-          }));
-          if (ok) setShowExportModal(false);
+          // ffmpeg reads rawvideo, so frames go straight from the renderer to
+          // the encoder without a canvas or PNG in between.
+          const frames = createRawFrameSource(resW, resH);
+          try {
+            const ok = await runWithPreviewPaused(() => exportNativeVideo(exportType, {
+              ...common,
+              savePath,
+              renderRgbaFrame: (t) => frames.frame(t, doc),
+              onProgress: frameProgress('Rendering and encoding'),
+              onFinalizing: () => setExportJob({ label: 'Finalizing video…', percent: 100 })
+            }));
+            if (ok) setShowExportModal(false);
+          } finally {
+            frames.dispose();
+          }
         }
       } else if (supportsWebCodecs()) {
         const blob = await exportVideo(exportType as VideoFormat, {

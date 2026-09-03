@@ -24,6 +24,11 @@ struct PendingFiles(Mutex<Vec<String>>);
 struct NativeVideoJob {
     child: Child,
     stderr_thread: JoinHandle<String>,
+    /// Exactly `width * height * 4`. Every frame body must match it, so a
+    /// mis-sized write cannot silently shear the raw video stream.
+    frame_bytes: usize,
+    frames_written: u32,
+    total_frames: u32,
 }
 
 struct NativeVideoExports(Mutex<HashMap<String, NativeVideoJob>>);
@@ -81,9 +86,11 @@ fn spawn_native_video_job(
     format: &str,
     fps: u32,
     total_frames: u32,
+    width: u32,
+    height: u32,
     output_path: &Path,
 ) -> Result<NativeVideoJob, String> {
-    let args = native_video_args(format, fps, total_frames, output_path)?;
+    let args = native_video_args(format, fps, total_frames, width, height, output_path)?;
     let mut child = Command::new(ffmpeg_path()?)
         .args(args)
         .stdin(Stdio::piped())
@@ -105,15 +112,36 @@ fn spawn_native_video_job(
     Ok(NativeVideoJob {
         child,
         stderr_thread,
+        frame_bytes: frame_bytes(width, height)?,
+        frames_written: 0,
+        total_frames,
     })
+}
+
+/// The exact body size one raw RGBA frame must have. Also the single place
+/// that bounds a frame, so an absurd resolution cannot be used to make the
+/// webview allocate without limit.
+fn frame_bytes(width: u32, height: u32) -> Result<usize, String> {
+    if !(16..=7680).contains(&width) || !(16..=7680).contains(&height) {
+        return Err("Video dimensions must be between 16 and 7680 pixels.".to_string());
+    }
+    // yuv420p subsamples by two in both directions, so odd dimensions would be
+    // silently padded by ffmpeg and desynchronize the raw stream.
+    if width % 2 != 0 || height % 2 != 0 {
+        return Err("Video dimensions must be even.".to_string());
+    }
+    Ok(width as usize * height as usize * 4)
 }
 
 fn native_video_args(
     format: &str,
     fps: u32,
     total_frames: u32,
+    width: u32,
+    height: u32,
     output_path: &Path,
 ) -> Result<Vec<String>, String> {
+    frame_bytes(width, height)?;
     if !(1..=120).contains(&fps) {
         return Err("Video frame rate must be between 1 and 120 fps.".to_string());
     }
@@ -146,12 +174,17 @@ fn native_video_args(
         "-hide_banner".into(),
         "-loglevel".into(),
         "error".into(),
+        // Raw RGBA in, so neither side spends time on a PNG the encoder would
+        // immediately throw away. rawvideo carries no header, so the geometry
+        // has to be declared here and enforced per frame on the write path.
         "-f".into(),
-        "image2pipe".into(),
+        "rawvideo".into(),
+        "-pixel_format".into(),
+        "rgba".into(),
+        "-video_size".into(),
+        format!("{width}x{height}"),
         "-framerate".into(),
         fps.to_string(),
-        "-vcodec".into(),
-        "png".into(),
         "-i".into(),
         "pipe:0".into(),
         "-frames:v".into(),
@@ -209,15 +242,18 @@ fn native_video_args(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn start_native_video_export(
     format: String,
     fps: u32,
     total_frames: u32,
+    width: u32,
+    height: u32,
     output_path: String,
     state: tauri::State<'_, NativeVideoExports>,
 ) -> Result<String, String> {
     let output_path = PathBuf::from(output_path);
-    let job = spawn_native_video_job(&format, fps, total_frames, &output_path)?;
+    let job = spawn_native_video_job(&format, fps, total_frames, width, height, &output_path)?;
     let id = format!(
         "{}-{}",
         std::process::id(),
@@ -231,28 +267,72 @@ fn start_native_video_export(
     Ok(id)
 }
 
+/// Header carrying the job identifier, because the frame itself has to be the
+/// whole invoke payload for Tauri to send it as a raw body rather than
+/// expanding it into a JSON array of integers.
+const VIDEO_JOB_HEADER: &str = "x-slapchop-video-job";
+
+/// Job identifiers are generated as `<pid>-<counter>`. Validating the shape
+/// before it is used as a map key keeps an arbitrary header value from
+/// reaching further into the export manager than a lookup miss.
+fn validate_job_id(raw: &str) -> Result<&str, String> {
+    if raw.is_empty() || raw.len() > 64 || !raw.bytes().all(|b| b.is_ascii_digit() || b == b'-') {
+        return Err("The native video export job identifier is malformed.".to_string());
+    }
+    Ok(raw)
+}
+
+/// Stream one raw RGBA frame to ffmpeg.
+///
+/// Deliberately synchronous: the write inherits OS pipe backpressure, and the
+/// frontend awaits each call, so frames reach ffmpeg's stdin in order and no
+/// more than one frame is ever held on this side.
 #[tauri::command]
 fn write_native_video_frame(
-    job_id: String,
-    frame: Vec<u8>,
+    request: tauri::ipc::Request<'_>,
     state: tauri::State<'_, NativeVideoExports>,
 ) -> Result<(), String> {
-    if frame.is_empty() || frame.len() > 64 * 1024 * 1024 {
-        return Err("The encoded export frame has an invalid size.".to_string());
-    }
+    let job_id = request
+        .headers()
+        .get(VIDEO_JOB_HEADER)
+        .ok_or_else(|| "The export frame is missing its job identifier.".to_string())?
+        .to_str()
+        .map_err(|_| "The native video export job identifier is malformed.".to_string())
+        .and_then(validate_job_id)?;
+
+    let tauri::ipc::InvokeBody::Raw(frame) = request.body() else {
+        return Err("Export frames must be sent as a raw request body.".to_string());
+    };
+
     let mut jobs = state
         .0
         .lock()
         .map_err(|_| "The native video export manager is unavailable.".to_string())?;
     let job = jobs
-        .get_mut(&job_id)
+        .get_mut(job_id)
         .ok_or_else(|| "The native video export job is no longer running.".to_string())?;
+
+    // rawvideo has no per-frame header, so a short or long body would shift
+    // every following frame instead of failing. Reject it here.
+    if frame.len() != job.frame_bytes {
+        return Err(format!(
+            "Expected {} bytes for a raw export frame but received {}.",
+            job.frame_bytes,
+            frame.len()
+        ));
+    }
+    if job.frames_written >= job.total_frames {
+        return Err("The native video export already received every frame.".to_string());
+    }
+
     job.child
         .stdin
         .as_mut()
         .ok_or_else(|| "ffmpeg is no longer accepting export frames.".to_string())?
-        .write_all(&frame)
-        .map_err(|error| format!("Could not send an export frame to ffmpeg: {error}"))
+        .write_all(frame)
+        .map_err(|error| format!("Could not send an export frame to ffmpeg: {error}"))?;
+    job.frames_written += 1;
+    Ok(())
 }
 
 fn wait_for_native_video(mut job: NativeVideoJob) -> Result<NativeVideoStatus, String> {
@@ -371,62 +451,200 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{ffmpeg_path, native_video_args, spawn_native_video_job, wait_for_native_video};
+    use super::{
+        ffmpeg_path, frame_bytes, native_video_args, spawn_native_video_job, validate_job_id,
+        wait_for_native_video,
+    };
     use std::{fs, io::Write, path::Path, process::Command};
 
     #[test]
     fn builds_h264_args_for_an_absolute_mp4_path() {
-        let args = native_video_args("mp4", 30, 300, Path::new("/tmp/export.mp4")).unwrap();
+        let args =
+            native_video_args("mp4", 30, 300, 1080, 1920, Path::new("/tmp/export.mp4")).unwrap();
         assert!(args.windows(2).any(|pair| pair == ["-c:v", "libx264"]));
         assert!(args.windows(2).any(|pair| pair == ["-pix_fmt", "yuv420p"]));
     }
 
     #[test]
     fn rejects_a_mismatched_container_extension() {
-        let error = native_video_args("prores", 30, 300, Path::new("/tmp/export.mp4")).unwrap_err();
+        let error = native_video_args("prores", 30, 300, 1080, 1920, Path::new("/tmp/export.mp4"))
+            .unwrap_err();
         assert!(error.contains(".mov"));
     }
 
     #[test]
-    fn closing_stdin_finalizes_a_streamed_mp4() {
-        let ffmpeg = ffmpeg_path().unwrap();
-        let png = Command::new(&ffmpeg)
+    fn declares_raw_rgba_input_geometry_for_every_format() {
+        for (format, extension) in [("mp4", "mp4"), ("webm", "webm"), ("prores", "mov")] {
+            let path = format!("/tmp/export.{extension}");
+            let args = native_video_args(format, 30, 300, 720, 1280, Path::new(&path)).unwrap();
+            assert!(args.windows(2).any(|pair| pair == ["-f", "rawvideo"]));
+            assert!(args
+                .windows(2)
+                .any(|pair| pair == ["-pixel_format", "rgba"]));
+            assert!(args
+                .windows(2)
+                .any(|pair| pair == ["-video_size", "720x1280"]));
+            // A leftover PNG decoder would make ffmpeg reject the raw stream.
+            assert!(!args.iter().any(|arg| arg == "image2pipe"));
+            assert!(!args.iter().any(|arg| arg == "png"));
+        }
+    }
+
+    #[test]
+    fn prores_keeps_its_alpha_pixel_format() {
+        let args =
+            native_video_args("prores", 30, 90, 540, 960, Path::new("/tmp/export.mov")).unwrap();
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["-pix_fmt", "yuva444p10le"]));
+    }
+
+    #[test]
+    fn frame_bytes_matches_rgba_and_rejects_unusable_geometry() {
+        assert_eq!(frame_bytes(1080, 1920), Ok(1080 * 1920 * 4));
+        assert!(frame_bytes(1081, 1920).is_err(), "odd width");
+        assert!(frame_bytes(1080, 1921).is_err(), "odd height");
+        assert!(frame_bytes(8, 1920).is_err(), "below the minimum");
+        assert!(frame_bytes(1080, 10_000).is_err(), "above the maximum");
+    }
+
+    #[test]
+    fn rejects_odd_dimensions_before_spawning_ffmpeg() {
+        let error = native_video_args("mp4", 30, 300, 1081, 1920, Path::new("/tmp/export.mp4"))
+            .unwrap_err();
+        assert!(error.contains("even"), "{error}");
+    }
+
+    #[test]
+    fn validates_the_job_identifier_shape() {
+        assert_eq!(validate_job_id("4321-7"), Ok("4321-7"));
+        assert!(validate_job_id("").is_err());
+        assert!(validate_job_id("../etc/passwd").is_err());
+        assert!(validate_job_id("4321 7").is_err());
+        assert!(validate_job_id(&"1".repeat(65)).is_err());
+    }
+
+    /// Decode a finished export back to RGBA so pixel-level claims can be
+    /// checked instead of assumed. Returns one frame's worth of bytes at a
+    /// time, plus the total frame count.
+    fn decode_to_rgba(path: &Path, frame_bytes: usize) -> (Vec<u8>, usize) {
+        let decoded = Command::new(ffmpeg_path().unwrap())
             .args([
                 "-hide_banner",
                 "-loglevel",
                 "error",
-                "-f",
-                "lavfi",
                 "-i",
-                "color=c=red:s=32x48:r=30",
-                "-frames:v",
-                "1",
+                path.to_str().unwrap(),
                 "-f",
-                "image2pipe",
-                "-vcodec",
-                "png",
+                "rawvideo",
+                "-pix_fmt",
+                "rgba",
                 "pipe:1",
             ])
             .output()
             .unwrap();
-        assert!(png.status.success());
+        assert!(
+            decoded.status.success(),
+            "{}",
+            String::from_utf8_lossy(&decoded.stderr)
+        );
+        assert_eq!(
+            decoded.stdout.len() % frame_bytes,
+            0,
+            "decoded output is not a whole number of {frame_bytes}-byte frames"
+        );
+        let frames = decoded.stdout.len() / frame_bytes;
+        (decoded.stdout, frames)
+    }
 
+    /// A frame whose top half and bottom half differ, so a vertical flip is
+    /// detectable, in colors whose channel order is unambiguous after a
+    /// round-trip through yuv420p.
+    fn split_frame(width: u32, height: u32, alpha: u8) -> Vec<u8> {
+        let mut frame = Vec::with_capacity(width as usize * height as usize * 4);
+        for y in 0..height {
+            for _ in 0..width {
+                let top = y < height / 2;
+                frame.extend_from_slice(&[
+                    if top { 255 } else { 0 },
+                    0,
+                    if top { 0 } else { 255 },
+                    alpha,
+                ]);
+            }
+        }
+        frame
+    }
+
+    /// End-to-end proof of the raw geometry contract: exact-size RGBA bodies
+    /// in, a readable container out with the expected frame count, and the
+    /// same orientation and channel order coming back.
+    #[test]
+    fn streams_raw_rgba_into_a_decodable_mp4() {
+        let (width, height, frames) = (32u32, 48u32, 3u32);
         let output = std::env::temp_dir().join(format!(
-            "slapchop-native-video-test-{}.mp4",
+            "slapchop-raw-video-test-{}.mp4",
             std::process::id()
         ));
-        let mut job = spawn_native_video_job("mp4", 30, 3, &output).unwrap();
-        for _ in 0..3 {
-            job.child
-                .stdin
-                .as_mut()
-                .unwrap()
-                .write_all(&png.stdout)
-                .unwrap();
+        let mut job = spawn_native_video_job("mp4", 30, frames, width, height, &output).unwrap();
+        assert_eq!(job.frame_bytes, width as usize * height as usize * 4);
+
+        let frame = split_frame(width, height, 255);
+        assert_eq!(frame.len(), job.frame_bytes);
+        for _ in 0..frames {
+            job.child.stdin.as_mut().unwrap().write_all(&frame).unwrap();
         }
         let status = wait_for_native_video(job).unwrap();
         assert_eq!(status.code, Some(0), "{}", status.stderr);
-        assert!(fs::metadata(&output).unwrap().len() > 0);
+
+        let frame_bytes = width as usize * height as usize * 4;
+        let (decoded, decoded_frames) = decode_to_rgba(&output, frame_bytes);
+        assert_eq!(decoded_frames, frames as usize, "frame count must be exact");
+
+        // Top-left stays red and bottom-left stays blue: no vertical flip, and
+        // R and B were not swapped. Tolerances absorb the yuv420p round-trip.
+        let top_left = &decoded[0..3];
+        let bottom_row = (height as usize - 1) * width as usize * 4;
+        let bottom_left = &decoded[bottom_row..bottom_row + 3];
+        assert!(
+            top_left[0] > 180 && top_left[2] < 80,
+            "expected red at the top, got {top_left:?}"
+        );
+        assert!(
+            bottom_left[2] > 180 && bottom_left[0] < 80,
+            "expected blue at the bottom, got {bottom_left:?}"
+        );
+        fs::remove_file(output).unwrap();
+    }
+
+    /// ProRes 4444 is the one format whose alpha has to survive, and it is the
+    /// reason the raw input format is rgba rather than a 3-channel layout.
+    #[test]
+    fn preserves_prores_4444_alpha_through_a_raw_export() {
+        let (width, height) = (32u32, 48u32);
+        let output = std::env::temp_dir().join(format!(
+            "slapchop-raw-prores-test-{}.mov",
+            std::process::id()
+        ));
+        let mut job = spawn_native_video_job("prores", 30, 2, width, height, &output).unwrap();
+
+        let frame = split_frame(width, height, 128);
+        for _ in 0..2 {
+            job.child.stdin.as_mut().unwrap().write_all(&frame).unwrap();
+        }
+        let status = wait_for_native_video(job).unwrap();
+        assert_eq!(status.code, Some(0), "{}", status.stderr);
+
+        let frame_bytes = width as usize * height as usize * 4;
+        let (decoded, frames) = decode_to_rgba(&output, frame_bytes);
+        assert_eq!(frames, 2);
+        // Half-transparent in, half-transparent out. ProRes 4444 stores alpha
+        // at reduced precision, so this is a range rather than an equality.
+        assert!(
+            (100..=155).contains(&decoded[3]),
+            "expected alpha near 128, got {}",
+            decoded[3]
+        );
         fs::remove_file(output).unwrap();
     }
 }

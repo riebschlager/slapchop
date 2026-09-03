@@ -244,6 +244,35 @@ export class PixiSceneRenderer {
    * a new GPU render target and DOM canvas for every frame.
    */
   extract(t: number, state: RenderState, width: number, height: number, target: HTMLCanvasElement): void {
+    const extracted = this.renderToPixels(t, state, width, height);
+    if (target.width !== width) target.width = width;
+    if (target.height !== height) target.height = height;
+    const ctx = target.getContext('2d');
+    if (!ctx) throw new Error('Could not create the export canvas context.');
+    getExportProfiler().time('canvas.copy', () =>
+      ctx.putImageData(new ImageData(extracted.pixels, extracted.width, extracted.height), 0, 0));
+  }
+
+  /**
+   * Render the scene at time t and hand back the RGBA bytes, skipping the
+   * Canvas 2D round-trip that `extract` performs. Callers that pipe frames
+   * straight to an encoder use this; the returned buffer is the same one
+   * `extract` would have copied, so orientation, channel order, and alpha
+   * behavior are identical between the two.
+   *
+   * The buffer belongs to the caller for the duration of the call only — Pixi
+   * allocates a fresh one per readback.
+   */
+  extractPixels(t: number, state: RenderState, width: number, height: number): Uint8Array {
+    const { pixels } = this.renderToPixels(t, state, width, height);
+    return new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength);
+  }
+
+  /**
+   * Shared by both extraction paths. Long exports must not create a new GPU
+   * render target for every frame, hence the reused RenderTexture.
+   */
+  private renderToPixels(t: number, state: RenderState, width: number, height: number) {
     // Stage timings are no-ops unless an export profile is running. On WebGL,
     // `render` only queues work, so the draw cost lands in the readback below.
     const profiler = getExportProfiler();
@@ -257,14 +286,7 @@ export class PixiSceneRenderer {
     const exportTarget = this.exportTarget;
     profiler.time('gpu.draw', () =>
       this.renderer.render({ container: this.stage, target: exportTarget }));
-    const extracted = profiler.time('gpu.readback', () =>
-      this.renderer.extract.pixels(exportTarget));
-    if (target.width !== width) target.width = width;
-    if (target.height !== height) target.height = height;
-    const ctx = target.getContext('2d');
-    if (!ctx) throw new Error('Could not create the export canvas context.');
-    profiler.time('canvas.copy', () =>
-      ctx.putImageData(new ImageData(extracted.pixels, extracted.width, extracted.height), 0, 0));
+    return profiler.time('gpu.readback', () => this.renderer.extract.pixels(exportTarget));
   }
 
   destroy() {
