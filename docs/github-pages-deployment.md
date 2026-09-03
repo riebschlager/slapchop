@@ -249,17 +249,110 @@ paths must remain valid.
 
 After the Pages build, inspect `dist/index.html` and confirm that:
 
-- [ ] JavaScript and stylesheet URLs begin with `/slapchop/`.
-- [ ] The favicon resolves beneath `/slapchop/`.
-- [ ] Worker and dynamic-import chunks resolve beneath `/slapchop/assets/`.
-- [ ] No required runtime asset points to the domain root by mistake.
-- [ ] The generated site contains no downloaded ffmpeg binary or Tauri bundle.
+- [x] JavaScript and stylesheet URLs begin with `/slapchop/`.
+- [x] The favicon resolves beneath `/slapchop/`.
+- [x] Worker and dynamic-import chunks resolve beneath `/slapchop/assets/`.
+- [x] No required runtime asset points to the domain root by mistake.
+- [x] The generated site contains no downloaded ffmpeg binary or Tauri bundle.
 
 In repository settings, select **GitHub Actions** as the Pages source and
 enforce HTTPS.
 
+#### Phase 1 record (2026-09-03)
+
+**Phase 2 landed before this phase by mistake, which turned out to be
+harmless.** Phase 2 changed only application code — `src/lib/videoCapabilities.ts`,
+`src/lib/videoExport.ts`, `src/lib/exportErrors.ts`, `src/hooks/useExport.ts`,
+and `src/components/modals/ExportModal.tsx`. It touched neither `vite.config.ts`
+nor `package.json` nor any build input, so there was no ordering hazard and
+nothing to redo.
+
+**The base path lives in one place.** `package.json` gains
+`"build:pages": "vite build --base=/slapchop/"`. This is the plan's second
+preference rather than its first, chosen deliberately: a named script keeps the
+base in exactly one place *and* lets the Pages build be reproduced locally,
+which is what made the asset inspection below possible without a deployment. A
+future custom domain changes that single flag to `--base=/`.
+
+`vite.config.ts` is untouched and sets no `base`, so `npm run build` stays
+root-relative. Tauri's `beforeBuildCommand` still runs `npm run build`, and the
+root-based output was re-verified after the Pages build: `dist/index.html` went
+back to `src="/assets/index-*.js"`.
+
+**Workflow.** `.github/workflows/deploy-pages.yml` triggers on pushes to `main`
+and on `workflow_dispatch`; grants only `contents: read`, `pages: write`, and
+`id-token: write`; serializes on a `github-pages` concurrency group with
+`cancel-in-progress: false` so queued pushes reach Pages in order rather than
+being dropped; runs `npm ci`, then typecheck, lint, and tests *before*
+`npm run build:pages`, so a failed check cannot deploy; and uploads only `dist/`.
+Node is pinned to 24 to match the Phase 0 baseline. `actions/configure-pages@v5`
+runs before the build purely so the job fails early and legibly if the
+repository's Pages source has not been set to GitHub Actions.
+
+`npm ci` on `ubuntu-latest` was checked against the committed lockfile, which
+carries the Linux `@esbuild/*` and `@rollup/*` optional packages, so the
+platform-specific-dependency failure mode does not apply. There is no
+`postinstall` hook, so CI never runs `scripts/fetch-ffmpeg.sh`.
+
+**No SPA fallback is needed.** The app is a single page and uses query
+parameters (`?renderer=`), not client-side routes, so a hard refresh at
+`/slapchop/` resolves to `index.html` directly and no `404.html` copy is
+required. `.nojekyll` is also unnecessary: `upload-pages-artifact` and
+`deploy-pages` serve the artifact as-is without a Jekyll build, and Vite emits
+no underscore-prefixed paths.
+
+**Asset inspection of the real Pages build.** `npm run build:pages` rewrote
+every reference in `dist/index.html` beneath the subpath:
+
+```
+<link rel="icon" type="image/png" href="/slapchop/favicon.png" />
+<script type="module" crossorigin src="/slapchop/assets/index-*.js"></script>
+<link rel="stylesheet" crossorigin href="/slapchop/assets/index-*.css">
+```
+
+Sweeping every emitted HTML, JS, and CSS file for root-absolute string literals
+outside `/slapchop/` returned only `"/$"` and `"/&"`, which are regex fragments
+in minified code rather than URLs. Worker URLs are absolute and base-aware
+(`/slapchop/assets/gifWorker-*.js`, `/slapchop/assets/zipWorker-*.js`), and
+dynamic imports are emitted relative (`import("./WebGPURenderer-*.js")`), so
+both resolve beneath the subpath. The artifact is 2.0 MB and contains exactly
+`index.html`, `favicon.png`, and `assets/` — no ffmpeg sidecar, Tauri bundle,
+`.env`, project file, or sample media.
+
+**Subpath load test in a real browser.** The Pages build was served under a
+`/slapchop/` prefix by a local static server that refuses anything outside that
+prefix — so a root-absolute asset would 404 rather than silently succeed — and
+loaded in headless Chrome 152 over CDP with network and runtime events
+captured:
+
+| URL | Failed requests | HTTP >= 400 | Console errors | App mounted |
+| --- | --- | --- | --- | --- |
+| `/slapchop/` | none | none | none | Yes, one canvas |
+| `/slapchop/?renderer=webgl` | none | none | none | Yes, one canvas |
+| `/slapchop/?renderer=2d` | none | none | none | Yes, one canvas |
+
+`document.baseURI` stayed under `/slapchop/` in all three, and the query
+parameters survived. Both worker chunks were additionally fetched (HTTP 200) and
+instantiated as real module workers from their subpath URLs, since an export is
+otherwise the only thing that would load them. No Tauri initialization error
+appeared, which also settles that Phase 4 item early.
+
+**Automated checks.** `npm run typecheck`, `npm run lint`, `npm test`
+(29 files / 276 tests), `npm run build`, and `npm run build:pages` all pass. The
+two pre-existing build warnings from the Phase 0 baseline are unchanged.
+
+**Two steps remain, and neither can be done from a work tree.**
+
+1. In repository settings, set the Pages source to **GitHub Actions** and
+   enforce HTTPS.
+2. Commit and push to `main`, which is what triggers the first deployment.
+
+Until both are done, the exit criterion below is unmet: the workflow is correct
+and the artifact is verified, but nothing has been deployed.
+
 **Exit criterion:** a push to `main` produces a successful Pages deployment and
-the application loads at the target URL without asset 404s.
+the application loads at the target URL without asset 404s. Not yet met; see
+the two remaining steps above.
 
 ### Phase 2: Harden browser capability handling
 

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port=3000",
     "build": "vite build",
+    "build:pages": "vite build --base=/slapchop/",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",

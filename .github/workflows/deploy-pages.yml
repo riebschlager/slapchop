@@ -1,0 +1,76 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Controlled redeployment and rollback verification.
+  workflow_dispatch:
+
+# Least privilege: read the checkout, publish the Pages artifact, and let the
+# deploy job mint its OIDC token. Nothing here needs write access to the repo.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Serialize deployments so a slower older run cannot overwrite a newer release.
+# Queued runs are not cancelled: every push to main should reach Pages in order.
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Matches the Node used for the Phase 0 baseline in
+          # docs/github-pages-deployment.md.
+          node-version: '24'
+          cache: npm
+
+      - name: Install from the committed lockfile
+        run: npm ci
+
+      # A failed check must prevent deployment, so these run before the build
+      # and outside the deploy job.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      # Fails early and clearly if the repository's Pages source has not been
+      # set to GitHub Actions yet.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      # Pages serves the app from /slapchop/, so the root-relative default
+      # would 404 every asset. Tauri keeps calling plain `npm run build`
+      # through beforeBuildCommand, which must stay root-based.
+      - name: Build for Pages
+        run: npm run build:pages
+
+      - name: Upload the built site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
