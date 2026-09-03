@@ -1,6 +1,6 @@
 # Video export performance
 
-- **Status:** Phase 0 complete; Phase 2 next (see the sequencing decision below)
+- **Status:** Phases 0 and 2 complete (3.77x measured); Phase 3 next
 - **Date:** 2026-09-02
 - **Scope:** Shared browser and Tauri animation-export pipeline
 
@@ -363,6 +363,18 @@ used.
 scenes, memory remains bounded during a long export, and pixel-level reference
 tests show no new orientation, color, or alpha errors before lossy encoding.
 
+Implemented. Measured at **3.77x** on the baseline scene (52.83s to 14.03s at
+1080x1920 MP4), with `png.encode` removed entirely and `frame.render`
+unchanged. Automated pixel-level coverage decodes the output back to RGBA and
+asserts exact frame count, no vertical flip, unswapped red and blue, and
+surviving ProRes 4444 alpha. Still outstanding: a long-export memory check, and
+visual confirmation against a real scene rather than a 32x48 test frame.
+
+The measurement also showed transport and ffmpeg taking turns rather than
+overlapping — `ipc.writeFrame` reports 111.3 MiB/s where the discard probe
+reached 192.9 MiB/s — which is what makes Phase 3 the next phase. See
+[`video-export-benchmark.md`](./video-export-benchmark.md).
+
 ### Phase 3: Improve backpressure and overlap
 
 After Phase 2 measurements, overlap only stages that demonstrably block one
@@ -484,12 +496,19 @@ further. Raw transport runs at 197.8 MiB/s, so a full-resolution frame costs
 1. **Phase 2** — raw RGBA transport. Projected 5.7x serial, with a realistic
    landing zone nearer 4.5x once the ffmpeg pipe write and the rgba to yuv420p
    conversion are accounted for.
-2. **Phase 3** — bounded overlap, immediately after. With transport at 41ms and
-   rendering at 20ms, hiding rendering behind the in-flight write is the whole
-   remaining gain: 8.6x cumulative against the baseline.
+2. **Phase 3** — bounded overlap, immediately after, and worth more than first
+   estimated. Phase 2 measured `ipc.writeFrame` as `transport + ffmpeg` where
+   it could be `max(transport, ffmpeg)`: a bounded producer/consumer queue on
+   the Rust side lets ffmpeg encode frame *n* while frame *n+1* crosses the
+   bridge, and hiding the 19ms draw behind the in-flight write is on top of
+   that. Estimated ~5.0x cumulative for the draw overlap alone and ~7.8x with
+   both, floored by the probe's 41ms pure-transport figure.
 3. **Phase 1, VP9 first** — VP9's current settings cost roughly 105ms per frame,
-   so WebM becomes codec-bound as soon as transport improves, while MP4 (~10ms)
-   and ProRes (~18ms) stay transport-bound and gain little from codec changes.
+   so WebM becomes codec-bound as soon as transport improves. Partially revised
+   by the Phase 2 measurement: because ffmpeg's consumption is inline in the
+   blocking write, codec choice affects MP4 wall time too, to the tune of
+   roughly 29ms of a 91ms frame. Overlap still comes first, since it recovers
+   the same time without trading quality.
 
 Batching frames into a single invoke is explicitly *not* worth pursuing: the
 probe measured only 1.00ms of fixed cost per invoke, so there is no per-call

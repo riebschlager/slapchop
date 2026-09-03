@@ -158,6 +158,71 @@ therefore JSON-serialized per frame. `recordBytes('ipc.writeFrame', ...)` was
 added after these runs so the next baseline reports actual PNG bytes and a
 MiB/s figure, which will confirm the per-byte cost directly.
 
+## Phase 2 result: raw RGBA transport (2026-09-02)
+
+Same machine, project, and settings as the baseline above: 150 frames, MP4,
+1080x1920 at 30fps, WebGL, preview paused.
+
+| | Baseline | Phase 2 | Change |
+| --- | ---: | ---: | ---: |
+| Elapsed | 52.83s | 14.03s | **3.77x** |
+| Effective fps | 2.84 | 10.69 | 3.76x |
+| `ipc.writeFrame` median | 265ms | 70ms | 3.8x |
+| `png.encode` median | 50ms | — | removed |
+| `frame.render` median | 20ms | 19ms | unchanged |
+| Total per frame | 349ms | 91ms | 3.8x |
+
+`png.encode` no longer appears, and `frame.render` is unchanged, which is the
+expected signature: Phase 2 touched transport only and left the draw alone.
+
+### Transport is no longer the whole story
+
+The payload row reports **111.3 MiB/s**, against the 192.9 MiB/s the discard
+probe measured for the identical 7.91MiB body. The 29ms difference is ffmpeg's
+own per-frame work — the pipe copy, the rgba to yuv420p conversion, and the
+x264 encode — and it is *serialized* with transport rather than overlapped.
+
+A raw frame is roughly 8.29MB against a pipe buffer of about 64KB, so
+`write_all` blocks until ffmpeg has drained nearly the whole frame; ffmpeg then
+leaves to encode while the writer waits on the next chunk. The two costs take
+turns instead of running together.
+
+This was predicted as a 70-80ms landing zone and came in at 91ms, so the
+earlier projection was about 15% optimistic. The cause is understood rather
+than mysterious, and it points at a specific fix.
+
+### What that implies for Phase 3
+
+`ipc.writeFrame` is now `transport + ffmpeg`, when it could be
+`max(transport, ffmpeg)`. A bounded producer/consumer queue on the Rust side —
+the frame handed to a writer thread, one or two frames in flight, ordering
+preserved — would let ffmpeg encode frame *n* while frame *n+1* crosses the
+bridge. Combined with hiding the 19ms draw behind the in-flight write, the
+per-frame floor becomes the largest single stage rather than the sum:
+
+| Arrangement | Per frame | 150 frames | vs baseline |
+| --- | ---: | ---: | ---: |
+| Phase 2, fully serial (measured) | 91ms | 14.03s | 3.77x |
+| Overlap draw with write | ~70ms | ~10.5s | ~5.0x |
+| Also overlap ffmpeg with transport | ~45ms | ~6.8s | ~7.8x |
+
+The last row is an estimate bounded below by the probe's 41ms pure-transport
+figure, which is the floor no amount of overlapping can beat.
+
+### And a partial revision on codecs
+
+Because ffmpeg's consumption is now inline in the blocking write, codec choice
+does affect wall time again — roughly 29ms of a 91ms frame is ffmpeg. That is
+smaller than the pre-Phase-2 reasoning implied it would be, but it is no longer
+negligible for MP4. Overlap should still come first: it addresses the same 29ms
+without trading any quality.
+
+The larger byte-side idea, for later consideration: ffmpeg ultimately wants
+yuv420p at 1.5 bytes per pixel, and we send rgba at 4. Producing the planes on
+the GPU would shrink both the readback and the transport by about 2.7x and
+delete the swscale conversion, at the cost of real renderer complexity and a
+new set of color-correctness risks.
+
 ## Raw IPC transport probe (2026-09-02)
 
 Measured with `src/lib/ipcProbe.ts` against the discard-only commands in
