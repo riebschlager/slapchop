@@ -25,6 +25,11 @@ const AVC_CODECS = ['avc1.640033', 'avc1.4d0033', 'avc1.420033'];
 // VP9 profile 0, 8-bit; level 4.1 covers 1080p60, 1.0 as a permissive fallback.
 const VP9_CODECS = ['vp09.00.41.08', 'vp09.00.10.08'];
 
+/** Frames the encoder may have queued before the loop stops feeding it. */
+const QUEUE_HIGH_WATER = 2;
+/** Frames between UI yields when the encoder is keeping up. */
+const UI_YIELD_INTERVAL = 8;
+
 /** ~0.15 bits per pixel per frame, clamped to a sane range. */
 export function pickBitrate(width: number, height: number, fps: number): number {
   const raw = Math.round(width * height * fps * 0.15);
@@ -116,11 +121,16 @@ export async function exportVideo(
 
       onProgress?.(n + 1, totalFrames);
 
-      // Backpressure, and a yield per frame so the UI thread keeps painting.
+      // Wait only while the encoder is actually behind. The previous version
+      // scheduled a timeout every frame even with an empty queue, which cost a
+      // macrotask per frame for nothing.
       await profiler.timeAsync('webcodecs.backpressure', async () => {
-        do {
+        while (encoder.encodeQueueSize > QUEUE_HIGH_WATER) {
           await new Promise((r) => setTimeout(r));
-        } while (encoder.encodeQueueSize > 2);
+        }
+        // Still yield periodically, or a fast encoder would starve the UI
+        // thread for the whole export and make cancellation feel stuck.
+        if (n % UI_YIELD_INTERVAL === 0) await new Promise((r) => setTimeout(r));
       });
     }
 

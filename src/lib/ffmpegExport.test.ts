@@ -86,6 +86,88 @@ describe('exportNativeVideo raw frame transport', () => {
     expect(times).toEqual([2, 2.5, 3]);
   });
 
+  it('draws the next frame while the previous write is still in flight', async () => {
+    const events: string[] = [];
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'start_native_video_export') return 'job-7';
+      if (cmd === 'finish_native_video_export') return { code: 0, stderr: '' };
+      if (cmd === 'write_native_video_frame') {
+        events.push('write-start');
+        // Two macrotasks, so the write outlives the loop's own single-turn UI
+        // yield. A real write is ~70ms against a ~0.5ms yield.
+        await new Promise((r) => setTimeout(r));
+        await new Promise((r) => setTimeout(r));
+        events.push('write-end');
+      }
+      return undefined;
+    });
+
+    await exportNativeVideo('mp4', baseOptions({
+      renderRgbaFrame: () => {
+        events.push('render');
+        return new Uint8Array(WIDTH * HEIGHT * 4);
+      }
+    }));
+
+    // Serial execution draws exactly one frame before the first write
+    // completes. Overlapping draws the next one too.
+    const untilFirstWriteEnd = events.slice(0, events.indexOf('write-end'));
+    expect(untilFirstWriteEnd.filter((e) => e === 'render').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps exactly one write in flight so frames reach ffmpeg in order', async () => {
+    let concurrent = 0;
+    let peak = 0;
+    const order: number[] = [];
+    let issued = 0;
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'start_native_video_export') return 'job-7';
+      if (cmd === 'finish_native_video_export') return { code: 0, stderr: '' };
+      if (cmd === 'write_native_video_frame') {
+        const seq = issued++;
+        concurrent++;
+        peak = Math.max(peak, concurrent);
+        await new Promise((r) => setTimeout(r));
+        order.push(seq);
+        concurrent--;
+      }
+      return undefined;
+    });
+
+    await exportNativeVideo('mp4', baseOptions({ duration: 3 }));
+
+    expect(peak).toBe(1);
+    expect(order).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('lets the in-flight write settle before cancelling the job', async () => {
+    const events: string[] = [];
+    let rendered = 0;
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'start_native_video_export') return 'job-7';
+      if (cmd === 'finish_native_video_export') return { code: 0, stderr: '' };
+      if (cmd === 'write_native_video_frame') {
+        await new Promise((r) => setTimeout(r));
+        events.push('write-end');
+      }
+      if (cmd === 'cancel_native_video_export') events.push('cancel');
+      return undefined;
+    });
+
+    const ok = await exportNativeVideo('mp4', baseOptions({
+      renderRgbaFrame: () => {
+        rendered++;
+        return new Uint8Array(WIDTH * HEIGHT * 4);
+      },
+      isCancelled: () => rendered >= 2
+    }));
+
+    expect(ok).toBe(false);
+    // Cancelling underneath an in-flight write would race Rust reading bytes
+    // the frame still owns.
+    expect(events).toEqual(['write-end', 'write-end', 'cancel']);
+  });
+
   it('installs the finished file atomically from the partial path', async () => {
     await expect(exportNativeVideo('mp4', baseOptions())).resolves.toBe(true);
 

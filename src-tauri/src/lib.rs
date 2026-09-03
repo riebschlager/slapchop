@@ -5,6 +5,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
+        mpsc::{sync_channel, SyncSender},
         Mutex,
     },
     thread::JoinHandle,
@@ -21,14 +22,75 @@ mod ipc_probe;
 // "slapchop://files-opened" ping, so a file is never opened twice.
 struct PendingFiles(Mutex<Vec<String>>);
 
+/// Frames held between the frontend and ffmpeg's stdin. Small on purpose: the
+/// point is to let ffmpeg encode frame n while frame n+1 crosses the IPC
+/// bridge, not to buffer an export. At 1080x1920 each frame is 8.29MB, so the
+/// queue plus the frame in the writer's hands caps this side near 25MB.
+const FRAME_QUEUE_DEPTH: usize = 2;
+
 struct NativeVideoJob {
     child: Child,
     stderr_thread: JoinHandle<String>,
+    /// Bounded hand-off to the writer thread. Dropping it signals EOF.
+    frames: Option<SyncSender<Vec<u8>>>,
+    /// Owns ffmpeg's stdin and writes queued frames in order.
+    writer_thread: Option<JoinHandle<Result<(), String>>>,
     /// Exactly `width * height * 4`. Every frame body must match it, so a
     /// mis-sized write cannot silently shear the raw video stream.
     frame_bytes: usize,
-    frames_written: u32,
+    frames_queued: u32,
     total_frames: u32,
+}
+
+impl NativeVideoJob {
+    /// Hand one frame to the writer thread. Blocks while the writer is behind,
+    /// so OS pipe backpressure still reaches the frontend and frames cannot
+    /// accumulate without bound.
+    fn queue_frame(&mut self, frame: Vec<u8>) -> Result<(), String> {
+        let sender = self
+            .frames
+            .as_ref()
+            .ok_or_else(|| "ffmpeg is no longer accepting export frames.".to_string())?;
+        if sender.send(frame).is_err() {
+            // The receiver only hangs up when the writer thread has exited,
+            // which it does on a write error. Its message is the useful one.
+            self.frames = None;
+            return Err(self
+                .join_writer()
+                .unwrap_or_else(|| "ffmpeg stopped accepting export frames.".to_string()));
+        }
+        self.frames_queued += 1;
+        Ok(())
+    }
+
+    /// Drain the queue and close ffmpeg's stdin, surfacing a deferred write
+    /// error. Writes are asynchronous now, so a failure may not be visible
+    /// until the frame that caused it is actually written.
+    fn finish_writes(&mut self) -> Result<(), String> {
+        self.frames = None;
+        match self.join_writer() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    fn join_writer(&mut self) -> Option<String> {
+        match self.writer_thread.take()?.join() {
+            Ok(Ok(())) => None,
+            Ok(Err(error)) => Some(error),
+            Err(_) => Some("The native video writer stopped unexpectedly.".to_string()),
+        }
+    }
+
+    /// Abandon queued frames and stop ffmpeg. Killing the child first makes a
+    /// blocked `write_all` fail, so the writer thread cannot be left parked on
+    /// a full pipe.
+    fn abort(&mut self) {
+        let _ = self.child.kill();
+        self.frames = None;
+        let _ = self.join_writer();
+        let _ = self.child.wait();
+    }
 }
 
 struct NativeVideoExports(Mutex<HashMap<String, NativeVideoJob>>);
@@ -37,8 +99,7 @@ impl Drop for NativeVideoExports {
     fn drop(&mut self) {
         if let Ok(jobs) = self.0.get_mut() {
             for (_, mut job) in jobs.drain() {
-                let _ = job.child.kill();
-                let _ = job.child.wait();
+                job.abort();
                 let _ = job.stderr_thread.join();
             }
         }
@@ -98,6 +159,10 @@ fn spawn_native_video_job(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("Could not start the bundled ffmpeg sidecar: {error}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "Could not open the ffmpeg input pipe.".to_string())?;
     let mut stderr = child
         .stderr
         .take()
@@ -109,11 +174,26 @@ fn spawn_native_video_job(
         }
         message
     });
+    // The writer owns stdin for the rest of the job, so dropping this thread's
+    // handle at the end of the loop is what sends EOF and makes ffmpeg flush
+    // its encoder and write the container trailer.
+    let (frames, queue) = sync_channel::<Vec<u8>>(FRAME_QUEUE_DEPTH);
+    let writer_thread = std::thread::spawn(move || {
+        while let Ok(frame) = queue.recv() {
+            stdin
+                .write_all(&frame)
+                .map_err(|error| format!("Could not send an export frame to ffmpeg: {error}"))?;
+        }
+        Ok(())
+    });
+
     Ok(NativeVideoJob {
         child,
         stderr_thread,
+        frames: Some(frames),
+        writer_thread: Some(writer_thread),
         frame_bytes: frame_bytes(width, height)?,
-        frames_written: 0,
+        frames_queued: 0,
         total_frames,
     })
 }
@@ -321,24 +401,20 @@ fn write_native_video_frame(
             frame.len()
         ));
     }
-    if job.frames_written >= job.total_frames {
+    if job.frames_queued >= job.total_frames {
         return Err("The native video export already received every frame.".to_string());
     }
 
-    job.child
-        .stdin
-        .as_mut()
-        .ok_or_else(|| "ffmpeg is no longer accepting export frames.".to_string())?
-        .write_all(frame)
-        .map_err(|error| format!("Could not send an export frame to ffmpeg: {error}"))?;
-    job.frames_written += 1;
-    Ok(())
+    // The request only lends its body, so the writer thread needs its own
+    // copy. One 8.29MB memcpy per frame buys the overlap between ffmpeg's
+    // encode and the next frame's trip across the IPC bridge.
+    job.queue_frame(frame.clone())
 }
 
 fn wait_for_native_video(mut job: NativeVideoJob) -> Result<NativeVideoStatus, String> {
-    // Taking and dropping stdin sends EOF, which tells ffmpeg to flush its
+    // Drain the queue and close stdin. EOF is what tells ffmpeg to flush its
     // encoder and write the container trailer before wait() returns.
-    drop(job.child.stdin.take());
+    let write_result = job.finish_writes();
     let status = job
         .child
         .wait()
@@ -347,6 +423,15 @@ fn wait_for_native_video(mut job: NativeVideoJob) -> Result<NativeVideoStatus, S
         .stderr_thread
         .join()
         .map_err(|_| "The ffmpeg error reader stopped unexpectedly.".to_string())?;
+    // A deferred write failure is more specific than a nonzero exit code, but
+    // ffmpeg's own message usually explains why the write failed.
+    if let Err(error) = write_result {
+        return Err(if stderr.trim().is_empty() {
+            error
+        } else {
+            format!("{error}\n{}", stderr.trim())
+        });
+    }
     Ok(NativeVideoStatus {
         code: status.code(),
         stderr,
@@ -380,10 +465,7 @@ fn cancel_native_video_export(
         .map_err(|_| "The native video export manager is unavailable.".to_string())?
         .remove(&job_id);
     if let Some(mut job) = job {
-        job.child
-            .kill()
-            .map_err(|error| format!("Could not stop ffmpeg: {error}"))?;
-        let _ = job.child.wait();
+        job.abort();
         let _ = job.stderr_thread.join();
     }
     Ok(())
@@ -455,7 +537,7 @@ mod tests {
         ffmpeg_path, frame_bytes, native_video_args, spawn_native_video_job, validate_job_id,
         wait_for_native_video,
     };
-    use std::{fs, io::Write, path::Path, process::Command};
+    use std::{fs, path::Path, process::Command};
 
     #[test]
     fn builds_h264_args_for_an_absolute_mp4_path() {
@@ -592,7 +674,7 @@ mod tests {
         let frame = split_frame(width, height, 255);
         assert_eq!(frame.len(), job.frame_bytes);
         for _ in 0..frames {
-            job.child.stdin.as_mut().unwrap().write_all(&frame).unwrap();
+            job.queue_frame(frame.clone()).unwrap();
         }
         let status = wait_for_native_video(job).unwrap();
         assert_eq!(status.code, Some(0), "{}", status.stderr);
@@ -617,6 +699,57 @@ mod tests {
         fs::remove_file(output).unwrap();
     }
 
+    /// The queue must not silently swallow a frame, and EOF must still reach
+    /// ffmpeg once the queue drains.
+    #[test]
+    fn queued_frames_all_reach_ffmpeg_in_order() {
+        let (width, height, frames) = (32u32, 48u32, 12u32);
+        let output = std::env::temp_dir().join(format!(
+            "slapchop-queue-order-test-{}.mp4",
+            std::process::id()
+        ));
+        let mut job = spawn_native_video_job("mp4", 30, frames, width, height, &output).unwrap();
+
+        // More frames than the queue is deep, so the writer has to keep up
+        // while queue_frame blocks rather than dropping anything.
+        assert!(frames as usize > super::FRAME_QUEUE_DEPTH);
+        for i in 0..frames {
+            let alpha = 255 - i as u8;
+            job.queue_frame(split_frame(width, height, alpha)).unwrap();
+        }
+        assert_eq!(job.frames_queued, frames);
+
+        let status = wait_for_native_video(job).unwrap();
+        assert_eq!(status.code, Some(0), "{}", status.stderr);
+        let frame_bytes = width as usize * height as usize * 4;
+        let (_, decoded_frames) = decode_to_rgba(&output, frame_bytes);
+        assert_eq!(decoded_frames, frames as usize);
+        fs::remove_file(output).unwrap();
+    }
+
+    /// Aborting must not leave the writer thread parked on a full pipe.
+    #[test]
+    fn aborting_releases_the_writer_thread() {
+        let (width, height) = (32u32, 48u32);
+        let output = std::env::temp_dir().join(format!(
+            "slapchop-queue-abort-test-{}.mp4",
+            std::process::id()
+        ));
+        let mut job = spawn_native_video_job("mp4", 30, 600, width, height, &output).unwrap();
+        for _ in 0..4 {
+            let _ = job.queue_frame(split_frame(width, height, 255));
+        }
+
+        job.abort();
+        assert!(job.frames.is_none());
+        assert!(
+            job.writer_thread.is_none(),
+            "the writer thread was not joined"
+        );
+        let _ = job.stderr_thread.join();
+        let _ = fs::remove_file(output);
+    }
+
     /// ProRes 4444 is the one format whose alpha has to survive, and it is the
     /// reason the raw input format is rgba rather than a 3-channel layout.
     #[test]
@@ -630,7 +763,7 @@ mod tests {
 
         let frame = split_frame(width, height, 128);
         for _ in 0..2 {
-            job.child.stdin.as_mut().unwrap().write_all(&frame).unwrap();
+            job.queue_frame(frame.clone()).unwrap();
         }
         let status = wait_for_native_video(job).unwrap();
         assert_eq!(status.code, Some(0), "{}", status.stderr);
