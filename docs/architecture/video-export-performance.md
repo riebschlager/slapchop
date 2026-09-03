@@ -475,6 +475,26 @@ recorded rows already identify the dominant stage, and a grain-heavy scene
 inflates PNG size, so it is more useful afterwards as a Phase 2 validation case
 that should show a larger-than-average win.
 
+#### Refined by the raw-transport probe
+
+The transport probe recorded in the benchmark document sharpens the order
+further. Raw transport runs at 197.8 MiB/s, so a full-resolution frame costs
+41ms and transport remains the dominant stage after Phase 2:
+
+1. **Phase 2** — raw RGBA transport. Projected 5.7x serial, with a realistic
+   landing zone nearer 4.5x once the ffmpeg pipe write and the rgba to yuv420p
+   conversion are accounted for.
+2. **Phase 3** — bounded overlap, immediately after. With transport at 41ms and
+   rendering at 20ms, hiding rendering behind the in-flight write is the whole
+   remaining gain: 8.6x cumulative against the baseline.
+3. **Phase 1, VP9 first** — VP9's current settings cost roughly 105ms per frame,
+   so WebM becomes codec-bound as soon as transport improves, while MP4 (~10ms)
+   and ProRes (~18ms) stay transport-bound and gain little from codec changes.
+
+Batching frames into a single invoke is explicitly *not* worth pursuing: the
+probe measured only 1.00ms of fixed cost per invoke, so there is no per-call
+overhead to amortize.
+
 ## Open decisions
 
 - Should `balanced` replace the current defaults, or should speed profiles be
@@ -485,11 +505,15 @@ that should show a larger-than-average win.
   fast VP9?
 - Does VideoToolbox ProRes preserve the required alpha and color behavior on
   every supported Mac?
-- Can Tauri raw IPC sustain full-resolution 60 fps without excessive copying?
-  This is now the blocking question for the next phase rather than one of
-  several. The baseline shows the current *nested-argument* path costs
-  approximately 275ms per 1080x1920 PNG frame; Phase 2 must establish what a
-  raw request body costs for the 8.29MB uncompressed frame that replaces it.
+- ~~Can Tauri raw IPC sustain full-resolution 60 fps without excessive
+  copying?~~ **Answered: no at 60 fps, and not at 1:1 for 30 fps either, but it
+  is still a large win.** A raw request body moves 197.8 MiB/s with 1.00ms of
+  fixed cost per invoke, so a 7.91MiB frame costs 41ms against a 33.33ms 30fps
+  budget. That replaces a 275ms JSON-serialized PNG frame, so the dominant
+  stage improves about 6.7x while carrying 4x the bytes. Transport stays the
+  dominant stage afterwards; batching will not help, because the fixed
+  per-invoke cost is negligible. Measurements in
+  [`video-export-benchmark.md`](./video-export-benchmark.md).
 - Does the supported WKWebView version offer a reliable WebCodecs encoder that
   could eventually replace some native ffmpeg work while still streaming output
   to disk?

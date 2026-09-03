@@ -13,6 +13,8 @@ use std::{
 use serde::Serialize;
 use tauri::Manager;
 
+mod ipc_probe;
+
 // .slapchop files opened from Finder (double-click / drag onto Dock icon) arrive
 // as RunEvent::Opened, possibly before the webview has loaded. They are queued
 // here; the frontend drains the queue on startup and whenever it hears the
@@ -326,7 +328,10 @@ pub fn run() {
             start_native_video_export,
             write_native_video_frame,
             finish_native_video_export,
-            cancel_native_video_export
+            cancel_native_video_export,
+            ipc_probe::probe_raw_frame,
+            ipc_probe::probe_json_frame,
+            ipc_probe::probe_report
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

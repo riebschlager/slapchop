@@ -158,6 +158,90 @@ therefore JSON-serialized per frame. `recordBytes('ipc.writeFrame', ...)` was
 added after these runs so the next baseline reports actual PNG bytes and a
 MiB/s figure, which will confirm the per-byte cost directly.
 
+## Raw IPC transport probe (2026-09-02)
+
+Measured with `src/lib/ipcProbe.ts` against the discard-only commands in
+`src-tauri/src/ipc_probe.rs`, in `npm run tauri dev`. No encoder attached, so
+this is the transport ceiling rather than an export figure.
+
+| Frame | Uncompressed | Median per invoke | Throughput |
+| --- | ---: | ---: | ---: |
+| 1080x1920 | 7.91 MiB | 41ms | 192.9 MiB/s |
+| 720x1280 | 3.52 MiB | 20ms | 175.8 MiB/s |
+| 540x960 | 1.98 MiB | 11ms | 179.8 MiB/s |
+
+A two-point fit on the extremes gives **197.8 MiB/s of bandwidth plus 1.00ms of
+fixed cost per invoke**, and predicts the middle row at 18.8ms against 20ms
+observed. Two conclusions follow from the shape alone:
+
+- **Raw transport is linear in payload size**, unlike the JSON path, whose cost
+  grew 8.6x for 4x the pixels. That is the expected signature of a copy rather
+  than a per-element transformation.
+- **Batching frames into one invoke would buy nothing.** At 1ms of fixed cost
+  per call, there is no per-invoke overhead worth amortizing.
+
+### Is it fast enough?
+
+Not for real-time-equivalent throughput at full resolution: 41ms exceeds the
+33.33ms budget of a 30fps frame, so the probe prints `TRANSPORT-BOUND`. That
+label means transport becomes the *new dominant stage*, not that the change
+fails — offline export has never needed to run at 1:1. Against the recorded
+baseline it is a large win:
+
+| | per frame | 150 frames | vs baseline |
+| --- | ---: | ---: | ---: |
+| Baseline (PNG over JSON) | 349ms | 52.83s | 1x |
+| Raw transport, serial | 61ms | 9.2s | 5.7x |
+| Raw transport, overlapped (Phase 3) | 41ms | 6.2s | 8.6x |
+
+The dominant stage drops from 275ms to 41ms *while carrying roughly four times
+the bytes* — about 6.7x on that stage, with the 54ms PNG encode removed
+outright.
+
+The overlapped row is why Phase 3 is worth doing straight after Phase 2: once
+transport is 41ms and rendering is 20ms, hiding rendering behind the in-flight
+write is the whole remaining gain, and both are already deterministic functions
+of `(time, document state)`.
+
+### What this projection excludes
+
+The probe discards the bytes in Rust. The real path additionally has to:
+
+- `write_all` the frame into the ffmpeg stdin pipe, which for 8.29MB per frame
+  is roughly 127 iterations of a 64KB pipe buffer and blocks until ffmpeg
+  drains it;
+- have ffmpeg read 4x more input per frame and run an rgba to yuv420p
+  conversion that was previously folded into PNG decoding.
+
+So 61ms per frame is an optimistic floor, not a forecast. A realistic landing
+zone is nearer 70-80ms, or roughly 4.5x, and the Phase 2 exit criteria should
+be measured rather than assumed.
+
+### Consequence for codec work
+
+After Phase 2, formats separate by encoder cost per frame at 1080x1920, using
+the encoder-only figures from the performance document:
+
+| Format | Encoder cost/frame | Against 41ms transport |
+| --- | ---: | --- |
+| MP4 (`libx264 medium`) | ~10ms | transport-bound |
+| ProRes (`prores_ks` 4444) | ~18ms | transport-bound |
+| WebM (VP9, current settings) | ~105ms | **codec-bound** |
+
+VP9's current configuration becomes the dominant stage for WebM the moment
+transport improves. Phase 1 is therefore not uniformly deferred: its VP9 work
+is the next thing WebM needs, while MP4 and ProRes gain little from codec
+changes until transport improves again.
+
+### Measurement caveats
+
+WKWebView coarsens `performance.now()` to 1ms, so each median carries about
+±1ms — roughly ±2.4% at 41ms and ±9% at 11ms. The JSON control arm was measured
+in an unoptimized Rust build, where serde_json is substantially slower than in
+release; its JavaScript half (`Array.from` plus `JSON.stringify`) is unaffected
+by Rust build mode. The raw arm is nearly build-mode independent because it
+does almost no work in Rust.
+
 ### Consequence for sequencing
 
 Phase 1 (codec profiles) and Phase 2 (raw RGBA transport) were swapped for this
