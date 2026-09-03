@@ -5,6 +5,7 @@ import {
   isLivePreviewRenderingSuspended,
   subscribeToLivePreviewSuspension
 } from './livePreviewSuspension';
+import { getExportProfiler } from '../lib/exportProfiler';
 
 // The playback clock lives here, outside React. Components that need the
 // current time (hit testing, selection overlays) read it imperatively.
@@ -48,11 +49,14 @@ export function renderExportFrame(
   width: number,
   height: number
 ) {
-  if (activeGpu) {
-    activeGpu.extract(t, state, width, height, target);
-  } else {
-    renderFrame(target, t, state, width, height);
-  }
+  const profiler = getExportProfiler();
+  profiler.time('frame.render', () => {
+    if (activeGpu) {
+      activeGpu.extract(t, state, width, height, target);
+    } else {
+      renderFrame(target, t, state, width, height);
+    }
+  });
 }
 
 /**

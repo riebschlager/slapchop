@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getDocumentSnapshot, useStore } from '../store';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState } from '../renderer/render2d';
-import { getPlaybackTime, renderExportFrame } from '../renderer/loop';
+import { getActiveRendererName, getPlaybackTime, renderExportFrame } from '../renderer/loop';
 import { suspendLivePreviewRendering } from '../renderer/livePreviewSuspension';
 import { exportVideo, supportsWebCodecs, VideoFormat } from '../lib/videoExport';
 import { exportZipSequence } from '../lib/zipExport';
@@ -9,6 +9,7 @@ import { exportGif } from '../lib/gifExport';
 import { exportNativeImageSequence } from '../lib/imageSequenceExport';
 import { exportNativeVideo } from '../lib/ffmpegExport';
 import { getExportErrorMessage } from '../lib/exportErrors';
+import { beginExportProfile } from '../lib/exportProfiler';
 import { isNative, pickDirectoryPath, pickSavePath, saveBlob } from '../lib/native';
 
 export type ExportType = 'mp4' | 'webm' | 'prores' | 'gif' | 'zip' | 'sequence';
@@ -181,6 +182,18 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     const frameProgress = (verb: string) => (done: number, total: number) =>
       setExportJob({ label: `${verb} frame ${done}/${total}…`, percent: (done / total) * 100 });
 
+    // Opt-in stage timing (see docs/architecture/video-export-benchmark.md).
+    // No-op unless ?profileExport=1 or the localStorage flag is set.
+    const { finish: finishProfile } = beginExportProfile(`${exportType} export`, {
+      exportType,
+      resolution: `${resW}x${resH}`,
+      fps: exportFps,
+      duration: exportDuration,
+      renderer: getActiveRendererName(),
+      native: isNative(),
+      previewPaused: pausePreviewDuringExport
+    });
+
     setExportJob({ label: 'Preparing export…', percent: 0 });
     try {
       if (exportType === 'sequence') {
@@ -232,6 +245,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
       console.error('Export failed:', e);
       setExportError(getExportErrorMessage(e));
     } finally {
+      finishProfile();
       setExportJob(null);
     }
   };

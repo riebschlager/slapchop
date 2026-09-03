@@ -1,4 +1,5 @@
 import type { FrameExportOptions, VideoFormat } from './videoExport';
+import { getExportProfiler } from './exportProfiler';
 
 export type NativeVideoFormat = VideoFormat | 'prores';
 
@@ -48,14 +49,16 @@ export async function exportNativeVideo(
   const { remove, rename } = await import('@tauri-apps/plugin-fs');
   const canvas = document.createElement('canvas');
   let jobId: string | null = null;
+  const profiler = getExportProfiler();
 
   try {
-    jobId = await invoke<string>('start_native_video_export', {
-      format,
-      fps,
-      totalFrames,
-      outputPath: partialPath
-    });
+    jobId = await profiler.timeAsync('ffmpeg.start', () =>
+      invoke<string>('start_native_video_export', {
+        format,
+        fps,
+        totalFrames,
+        outputPath: partialPath
+      }));
     for (let n = 0; n < totalFrames; n++) {
       if (isCancelled?.()) {
         await invoke('cancel_native_video_export', { jobId }).catch(() => {});
@@ -64,19 +67,25 @@ export async function exportNativeVideo(
       }
 
       renderFrame(canvas, (startFrame + n) / fps);
-      await invoke('write_native_video_frame', {
-        jobId,
-        frame: await canvasToPngBytes(canvas)
-      });
+      const frame = await profiler.timeAsync('png.encode', () => canvasToPngBytes(canvas));
+      // Covers Tauri IPC plus the Rust-side pipe write, so it absorbs ffmpeg's
+      // backpressure once the OS pipe buffer fills. Pairing it with the payload
+      // size is what separates a per-byte transport cost from encoder stalls.
+      profiler.recordBytes('ipc.writeFrame', frame.byteLength);
+      await profiler.timeAsync('ipc.writeFrame', () =>
+        invoke('write_native_video_frame', { jobId, frame }));
+      profiler.countFrame();
       onProgress?.(n + 1, totalFrames);
-      await new Promise((resolve) => setTimeout(resolve));
+      await profiler.timeAsync('loop.yield', () =>
+        new Promise<void>((resolve) => setTimeout(resolve)));
     }
 
     onFinalizing?.();
-    const status = await invoke<{ code: number | null; stderr: string }>(
-      'finish_native_video_export',
-      { jobId }
-    );
+    const status = await profiler.timeAsync('ffmpeg.finalize', () =>
+      invoke<{ code: number | null; stderr: string }>(
+        'finish_native_video_export',
+        { jobId }
+      ));
     jobId = null;
     if (status.code !== 0) {
       const detail = status.stderr.trim() || 'ffmpeg did not provide an error message.';

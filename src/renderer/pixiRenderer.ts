@@ -22,6 +22,7 @@ import { DuotoneFilter } from './filters/duotoneFilter';
 import { ScanlinesFilter } from './filters/scanlinesFilter';
 import { GifData, Layer, PolygonLayer, PolygonPoint } from '../types';
 import { getGifFrameIndexAtTime } from '../lib/gifUtils';
+import { getExportProfiler } from '../lib/exportProfiler';
 import {
   applyMotion,
   getDeformedPoints,
@@ -243,20 +244,27 @@ export class PixiSceneRenderer {
    * a new GPU render target and DOM canvas for every frame.
    */
   extract(t: number, state: RenderState, width: number, height: number, target: HTMLCanvasElement): void {
-    this.sync(t, state, width, height);
+    // Stage timings are no-ops unless an export profile is running. On WebGL,
+    // `render` only queues work, so the draw cost lands in the readback below.
+    const profiler = getExportProfiler();
+    profiler.time('scene.sync', () => this.sync(t, state, width, height));
     if (!this.exportTarget || this.exportTargetW !== width || this.exportTargetH !== height) {
       this.exportTarget?.destroy(true);
       this.exportTarget = RenderTexture.create({ width, height });
       this.exportTargetW = width;
       this.exportTargetH = height;
     }
-    this.renderer.render({ container: this.stage, target: this.exportTarget });
-    const extracted = this.renderer.extract.pixels(this.exportTarget);
+    const exportTarget = this.exportTarget;
+    profiler.time('gpu.draw', () =>
+      this.renderer.render({ container: this.stage, target: exportTarget }));
+    const extracted = profiler.time('gpu.readback', () =>
+      this.renderer.extract.pixels(exportTarget));
     if (target.width !== width) target.width = width;
     if (target.height !== height) target.height = height;
     const ctx = target.getContext('2d');
     if (!ctx) throw new Error('Could not create the export canvas context.');
-    ctx.putImageData(new ImageData(extracted.pixels, extracted.width, extracted.height), 0, 0);
+    profiler.time('canvas.copy', () =>
+      ctx.putImageData(new ImageData(extracted.pixels, extracted.width, extracted.height), 0, 0));
   }
 
   destroy() {

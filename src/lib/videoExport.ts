@@ -1,5 +1,6 @@
 import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from 'mp4-muxer';
 import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from 'webm-muxer';
+import { getExportProfiler } from './exportProfiler';
 
 export type VideoFormat = 'mp4' | 'webm';
 
@@ -94,33 +95,41 @@ export async function exportVideo(
   encoder.configure(config);
 
   const canvas = document.createElement('canvas');
+  const profiler = getExportProfiler();
   try {
     for (let n = 0; n < totalFrames; n++) {
       if (isCancelled?.()) return null;
       if (encodeError) throw encodeError;
 
       renderFrame(canvas, startTime + n / fps);
-      const frame = new VideoFrame(canvas, {
-        timestamp: Math.round((n * 1_000_000) / fps),
-        duration: Math.round(1_000_000 / fps)
+      // `encode` only queues; the encoder's real cost surfaces in the
+      // backpressure wait below.
+      profiler.time('webcodecs.submit', () => {
+        const frame = new VideoFrame(canvas, {
+          timestamp: Math.round((n * 1_000_000) / fps),
+          duration: Math.round(1_000_000 / fps)
+        });
+        encoder.encode(frame, { keyFrame: n % 150 === 0 });
+        frame.close();
       });
-      encoder.encode(frame, { keyFrame: n % 150 === 0 });
-      frame.close();
+      profiler.countFrame();
 
       onProgress?.(n + 1, totalFrames);
 
       // Backpressure, and a yield per frame so the UI thread keeps painting.
-      do {
-        await new Promise((r) => setTimeout(r));
-      } while (encoder.encodeQueueSize > 2);
+      await profiler.timeAsync('webcodecs.backpressure', async () => {
+        do {
+          await new Promise((r) => setTimeout(r));
+        } while (encoder.encodeQueueSize > 2);
+      });
     }
 
-    await encoder.flush();
+    await profiler.timeAsync('webcodecs.flush', () => encoder.flush());
     if (encodeError) throw encodeError;
   } finally {
     if (encoder.state !== 'closed') encoder.close();
   }
 
-  muxer.finalize();
+  profiler.time('mux.finalize', () => muxer.finalize());
   return new Blob([target.buffer!], { type: format === 'mp4' ? 'video/mp4' : 'video/webm' });
 }
