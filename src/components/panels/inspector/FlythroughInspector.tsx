@@ -23,19 +23,19 @@ export default function FlythroughInspector() {
 
   return (
     <div className="flex flex-col">
-      <div className="px-3 py-3 border-b border-cyan-950/80 bg-[radial-gradient(circle_at_top_right,rgba(8,145,178,0.12),transparent_55%)]">
+      <div className="px-3 py-3 border-b border-ui-border bg-ui-surface">
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center gap-1.5 text-cyan-300">
+            <div className="flex items-center gap-1.5 text-ui-text">
               <Orbit className="w-3.5 h-3.5" />
               <h2 className="text-xs font-bold uppercase tracking-[0.16em]">Flight Director</h2>
             </div>
-            <p className="text-[10px] text-gray-500 mt-1">{assets.length} GIF sources · seeded field</p>
+            <p className="text-[10px] text-ui-text-subtle mt-1">{assets.length} GIF sources · seeded field</p>
           </div>
           <button
             type="button"
             onClick={reseed}
-            className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-cyan-200 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-800/60 rounded transition-colors"
+            className="flex items-center gap-1 rounded border border-ui-border bg-ui-surface-raised px-2 py-1 text-[10px] font-semibold text-ui-text-muted transition-colors hover:border-ui-accent hover:text-ui-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
             title="Generate a new deterministic arrangement"
           >
             <Dices className="w-3 h-3" />
@@ -44,9 +44,9 @@ export default function FlythroughInspector() {
         </div>
       </div>
 
-      <section className="p-3 space-y-3 border-b border-gray-800">
-        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-          <Gauge className="w-3 h-3 text-cyan-400" />
+      <section className="p-3 space-y-3 border-b border-ui-border">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+          <Gauge className="w-3 h-3" />
           Particle Field
         </div>
         <Slider label="Population" display={`${Math.round(config.particleCount)} planes`} value={config.particleCount} min={1} max={160} step={1} onChange={particleCount => update({ particleCount })} />
@@ -62,9 +62,9 @@ export default function FlythroughInspector() {
         </div>
       </section>
 
-      <section className="p-3 space-y-3 border-b border-gray-800">
-        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-          <PanelsTopLeft className="w-3 h-3 text-cyan-400" />
+      <section className="p-3 space-y-3 border-b border-ui-border">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+          <PanelsTopLeft className="w-3 h-3" />
           Plane & Lens
         </div>
         <Select label="GIF Plane" value={config.plane} options={PLANE_OPTIONS} onChange={plane => update({ plane })} />
@@ -72,8 +72,8 @@ export default function FlythroughInspector() {
         <Slider label="Opacity" display={`${Math.round(config.opacity * 100)}%`} value={config.opacity} min={0.05} max={1} step={0.01} onChange={opacity => update({ opacity })} />
       </section>
 
-      <section className="p-3 pb-1 border-b border-gray-800">
-        <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 block mb-2">Modulation</label>
+      <section className="p-3 pb-1 border-b border-ui-border">
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted block mb-2">Modulation</label>
         <MotionControl label="Velocity Pulse" config={config.motionSpeed} onChange={motionSpeed => update({ motionSpeed })} maxAmplitude={1200} stepAmplitude={20} />
         <MotionControl label="Horizontal Drift" config={config.motionDriftX} onChange={motionDriftX => update({ motionDriftX })} maxAmplitude={2400} stepAmplitude={20} />
         <MotionControl label="Vertical Drift" config={config.motionDriftY} onChange={motionDriftY => update({ motionDriftY })} maxAmplitude={3200} stepAmplitude={20} />
@@ -82,8 +82,8 @@ export default function FlythroughInspector() {
       </section>
 
       <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Void Color</label>
-        <input type="color" value={canvasBg} onChange={event => setCanvasBg(event.target.value)} className="w-8 h-6 rounded cursor-pointer border-0 bg-gray-800 p-0" />
+        <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider">Void Color</label>
+        <input type="color" value={canvasBg} onChange={event => setCanvasBg(event.target.value)} className="w-8 h-6 rounded cursor-pointer border-0 bg-ui-surface p-0" />
       </div>
       <MasterFxPanel />
     </div>

@@ -65,7 +65,7 @@ export default function Symmetry3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; o
           <Slider label="Copies" value={params.helixInstances} min={2} max={48} step={1} onChange={(helixInstances) => updateParams({ helixInstances })} />
           <Slider label="Turns" display={params.helixTurns.toFixed(2)} value={params.helixTurns} min={0.25} max={10} step={0.25} onChange={(helixTurns) => updateParams({ helixTurns })} />
           <Slider label="Rise per Full Length" display={`${Math.round(params.helixRise)}px`} value={params.helixRise} min={0} max={2000} step={10} onChange={(helixRise) => updateParams({ helixRise })} />
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800">
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-ui-border">
             <Slider size="sm" label="Origin X" display={`${Math.round(params.originX)}px`} value={params.originX} min={-1000} max={1000} step={5} onChange={(originX) => updateParams({ originX })} />
             <Slider size="sm" label="Origin Z" display={`${Math.round(params.originZ)}px`} value={params.originZ} min={-1000} max={1000} step={5} onChange={(originZ) => updateParams({ originZ })} />
           </div>
@@ -87,7 +87,7 @@ export default function Symmetry3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; o
         <div className="space-y-2">
           <Slider label="Shell Count" value={params.sphericalShellCount} min={2} max={200} step={2} onChange={(sphericalShellCount) => updateParams({ sphericalShellCount })} />
           <Slider label="Shell Radius" display={`${Math.round(params.sphericalShellRadius)}px`} value={params.sphericalShellRadius} min={10} max={1500} step={10} onChange={(sphericalShellRadius) => updateParams({ sphericalShellRadius })} />
-          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-800">
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-ui-border">
             <Slider size="sm" label="Origin X" value={params.originX} min={-1000} max={1000} step={5} onChange={(originX) => updateParams({ originX })} />
             <Slider size="sm" label="Origin Y" value={params.originY} min={-1000} max={1000} step={5} onChange={(originY) => updateParams({ originY })} />
             <Slider size="sm" label="Origin Z" value={params.originZ} min={-1000} max={1000} step={5} onChange={(originZ) => updateParams({ originZ })} />

@@ -15,19 +15,19 @@ export default function PolygonStyleTab({ polygon, onChange }: { polygon: Polygo
       />
       <Select
         label="Blend Mode"
-        className="pt-2 border-t border-gray-800"
+        className="pt-2 border-t border-ui-border"
         value={polygon.blendMode}
         options={BLEND_MODES}
         onChange={(blendMode) => onChange({ blendMode })}
       />
-      <div className="pt-2 border-t border-gray-800 space-y-2">
+      <div className="pt-2 border-t border-ui-border space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-[11px] text-gray-400">Stroke Border</label>
+          <label className="text-[11px] text-ui-text-muted">Stroke Border</label>
           <input
             type="color"
             value={polygon.strokeColor === 'transparent' ? '#ffffff' : polygon.strokeColor}
             onChange={(e) => onChange({ strokeColor: e.target.value })}
-            className="w-6 h-5 rounded cursor-pointer border-0 bg-gray-800 p-0"
+            className="w-6 h-5 rounded cursor-pointer border-0 bg-ui-surface p-0"
           />
         </div>
         <Slider
@@ -38,13 +38,13 @@ export default function PolygonStyleTab({ polygon, onChange }: { polygon: Polygo
           onChange={(strokeWidth) => onChange({ strokeWidth })}
         />
       </div>
-      <div className="pt-2 border-t border-gray-800 flex items-center justify-between">
-        <label className="text-[11px] text-gray-400">Fallback Fill Color</label>
+      <div className="pt-2 border-t border-ui-border flex items-center justify-between">
+        <label className="text-[11px] text-ui-text-muted">Fallback Fill Color</label>
         <input
           type="color"
           value={polygon.fillColor || '#6366f1'}
           onChange={(e) => onChange({ fillColor: e.target.value })}
-          className="w-6 h-5 rounded cursor-pointer border-0 bg-gray-800 p-0"
+          className="w-6 h-5 rounded cursor-pointer border-0 bg-ui-surface p-0"
         />
       </div>
     </div>

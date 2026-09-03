@@ -96,12 +96,12 @@ function DeformerSection({ title, enabled, onToggle, children }: {
   children: ReactNode;
 }) {
   return (
-    <div className="border border-gray-800 rounded bg-gray-800/30 p-2">
+    <div className="border border-ui-border rounded bg-ui-surface p-2">
       <div className="flex items-center justify-between">
-        <label className="text-[11px] font-semibold text-gray-300">{title}</label>
+        <label className="text-[11px] font-semibold text-ui-text">{title}</label>
         <Toggle checked={enabled} onChange={onToggle} title={`${title} enabled`} />
       </div>
-      {enabled && <div className="mt-2 pt-2 border-t border-gray-800/50 space-y-2">{children}</div>}
+      {enabled && <div className="mt-2 pt-2 border-t border-ui-border/50 space-y-2">{children}</div>}
     </div>
   );
 }

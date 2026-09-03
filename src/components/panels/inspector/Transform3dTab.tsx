@@ -37,8 +37,8 @@ export default function Transform3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; 
         onChange={([pivotX, pivotY, pivotZ]) => onChange({ pivotX, pivotY, pivotZ })}
       />
 
-      <div className="pt-2 border-t border-gray-800 space-y-2">
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block">Motion Modulators</label>
+      <div className="pt-2 border-t border-ui-border space-y-2">
+        <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block">Motion Modulators</label>
         <MotionControl label="Position X" config={mesh.motionX} onChange={c => onChange({ motionX: c })} maxAmplitude={500} stepAmplitude={5} />
         <MotionControl label="Position Y" config={mesh.motionY} onChange={c => onChange({ motionY: c })} maxAmplitude={500} stepAmplitude={5} />
         <MotionControl label="Position Z" config={mesh.motionZ} onChange={c => onChange({ motionZ: c })} maxAmplitude={500} stepAmplitude={5} />
@@ -67,7 +67,7 @@ function AxisRow({ label, values, min, max, step, display, onChange }: {
   const [x, y, z] = values;
   return (
     <div>
-      <label className="text-[11px] text-gray-400 mb-1 block">{label}</label>
+      <label className="text-[11px] text-ui-text-muted mb-1 block">{label}</label>
       <div className="grid grid-cols-3 gap-2">
         <Slider size="sm" label="X" display={display ? display(x) : undefined} value={x} min={min} max={max} step={step} onChange={(v) => onChange([v, y, z])} />
         <Slider size="sm" label="Y" display={display ? display(y) : undefined} value={y} min={min} max={max} step={step} onChange={(v) => onChange([x, v, z])} />

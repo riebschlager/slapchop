@@ -7,7 +7,7 @@ export default function PolygonPatternTab({ polygon, onChange }: { polygon: Poly
   return (
     <div className="space-y-3">
       {pattern === 'voronoi' && (
-        <div className="text-[11px] leading-relaxed text-gray-500">
+        <div className="text-[11px] leading-relaxed text-ui-text-subtle">
           Voronoi partitions this polygon into deterministic texture shards. It is a Polygon-mode effect, not a layer symmetry.
         </div>
       )}

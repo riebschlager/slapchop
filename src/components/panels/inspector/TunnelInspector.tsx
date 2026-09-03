@@ -22,8 +22,8 @@ const PALETTE_PRESETS = [
 
 function SectionTitle({ icon: Icon, children }: { icon: typeof Circle; children: string }) {
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-      <Icon className="size-3 text-teal-400" />
+    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+      <Icon className="size-3" />
       {children}
     </div>
   );
@@ -43,19 +43,19 @@ export default function TunnelInspector() {
 
   return (
     <div className="flex flex-col">
-      <div className="border-b border-teal-950/80 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.14),transparent_58%)] px-3 py-3">
+      <div className="border-b border-ui-border bg-ui-surface px-3 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-1.5 text-teal-300">
+            <div className="flex items-center gap-1.5 text-ui-text">
               <Circle className="size-3.5" />
               <h2 className="text-xs font-bold uppercase tracking-[0.16em]">Tunnel Director</h2>
             </div>
-            <p className="mt-1 text-[10px] text-gray-500">{assets.length} sources · {config.sides}-sided endless field</p>
+            <p className="mt-1 text-[10px] text-ui-text-subtle">{assets.length} sources · {config.sides}-sided endless field</p>
           </div>
           <button
             type="button"
             onClick={reseed}
-            className="flex items-center gap-1 rounded border border-teal-800/60 bg-teal-950/60 px-2 py-1 text-[10px] font-semibold text-teal-200 transition-colors hover:bg-teal-900/60"
+            className="flex items-center gap-1 rounded border border-ui-border bg-ui-surface-raised px-2 py-1 text-[10px] font-semibold text-ui-text-muted transition-colors hover:border-ui-accent hover:text-ui-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
             title="Generate a new deterministic shuffled sequence"
           >
             <Dices className="size-3" />
@@ -64,7 +64,7 @@ export default function TunnelInspector() {
         </div>
       </div>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={Circle}>Tunnel Geometry</SectionTitle>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Sides" display={Math.round(config.sides)} value={config.sides} min={3} max={24} step={1} onChange={sides => update({
@@ -79,7 +79,7 @@ export default function TunnelInspector() {
         <Slider label="Pane Gap" display={`${Math.round(config.paneGap * 100)}%`} value={config.paneGap} min={0} max={0.35} step={0.01} onChange={paneGap => update({ paneGap })} />
       </section>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={Route}>Path & Travel</SectionTitle>
         <Slider label="Travel Speed" display={`${Math.round(config.speed)} u/s`} value={config.speed} min={-2400} max={2400} step={20} onChange={speed => update({ speed })} />
         <div className="grid grid-cols-2 gap-3">
@@ -96,7 +96,7 @@ export default function TunnelInspector() {
         </div>
       </section>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={Camera}>Camera</SectionTitle>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Field of View" display={`${Math.round(config.fov)}°`} value={config.fov} min={30} max={120} step={1} onChange={fov => update({ fov })} />
@@ -108,7 +108,7 @@ export default function TunnelInspector() {
         <MotionControl label="Roll Drift" config={config.motionCameraRoll} onChange={motionCameraRoll => update({ motionCameraRoll })} maxAmplitude={180} stepAmplitude={1} />
       </section>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={ImageIcon}>Wallpaper Pattern</SectionTitle>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="GIF Every" display={`${Math.round(config.gifEvery)} pane${Math.round(config.gifEvery) === 1 ? '' : 's'}`} value={config.gifEvery} min={1} max={Math.max(1, config.sides)} step={1} onChange={gifEvery => update({ gifEvery })} />
@@ -121,19 +121,19 @@ export default function TunnelInspector() {
           <Slider size="sm" label="UV Offset Y" display={config.textureOffsetY.toFixed(2)} value={config.textureOffsetY} min={-0.5} max={0.5} step={0.01} onChange={textureOffsetY => update({ textureOffsetY })} />
         </div>
         <Select label="Unfilled Panes" value={config.nonGifFill} options={FILL_OPTIONS} onChange={nonGifFill => update({ nonGifFill })} />
-        <div className="flex items-center justify-between rounded border border-gray-800 bg-gray-800/30 p-2">
+        <div className="flex items-center justify-between rounded border border-ui-border bg-ui-surface p-2">
           <div className="flex items-center gap-2">
-            <Shuffle className="size-3.5 text-teal-400" />
+            <Shuffle className="size-3.5 text-ui-text-muted" />
             <div>
-              <div className="text-[11px] font-semibold text-gray-300">Seeded Shuffle</div>
-              <div className="text-[9px] text-gray-600">Ordered ring cycling when off</div>
+              <div className="text-[11px] font-semibold text-ui-text">Seeded Shuffle</div>
+              <div className="text-[9px] text-ui-text-subtle">Ordered ring cycling when off</div>
             </div>
           </div>
           <Toggle checked={config.shuffle} onChange={shuffle => update({ shuffle })} title="Toggle seeded asset shuffle" />
         </div>
       </section>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={Palette}>Pane Palette</SectionTitle>
         <div className="flex flex-wrap gap-1.5">
           {PALETTE_PRESETS.map(preset => (
@@ -141,7 +141,7 @@ export default function TunnelInspector() {
               key={preset.name}
               type="button"
               onClick={() => update({ palette: [...preset.colors] })}
-              className="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-[9px] font-semibold text-gray-400 transition-colors hover:border-teal-700 hover:text-teal-200"
+              className="rounded border border-ui-border bg-ui-surface px-2 py-1 text-[9px] font-semibold text-ui-text-muted transition-colors hover:border-ui-accent hover:text-ui-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
             >
               {preset.name}
             </button>
@@ -149,11 +149,11 @@ export default function TunnelInspector() {
         </div>
         <div className="grid grid-cols-2 gap-2">
           {config.palette.map((color, index) => (
-            <div key={`${index}-${color}`} className="flex items-center gap-2 rounded border border-gray-800 bg-gray-950/50 p-1.5">
+            <div key={`${index}-${color}`} className="flex items-center gap-2 rounded border border-ui-border bg-ui-canvas p-1.5">
               <input type="color" value={color} onChange={event => updatePalette(index, event.target.value)} className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0" aria-label={`Palette color ${index + 1}`} />
-              <span className="min-w-0 flex-1 truncate font-mono text-[9px] text-gray-500">{color}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-[9px] text-ui-text-subtle">{color}</span>
               {config.palette.length > 2 && (
-                <button type="button" onClick={() => update({ palette: config.palette.filter((_, itemIndex) => itemIndex !== index) })} className="text-gray-700 hover:text-red-300" aria-label={`Remove palette color ${index + 1}`}>
+                <button type="button" onClick={() => update({ palette: config.palette.filter((_, itemIndex) => itemIndex !== index) })} className="text-ui-text-subtle hover:text-red-300" aria-label={`Remove palette color ${index + 1}`}>
                   <X className="size-3" />
                 </button>
               )}
@@ -161,25 +161,25 @@ export default function TunnelInspector() {
           ))}
         </div>
         {config.palette.length < 8 && (
-          <button type="button" onClick={() => update({ palette: [...config.palette, '#ffffff'] })} className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-gray-700 py-1.5 text-[10px] text-gray-500 transition-colors hover:border-teal-800 hover:text-teal-300">
+          <button type="button" onClick={() => update({ palette: [...config.palette, '#ffffff'] })} className="flex w-full items-center justify-center gap-1 rounded border border-dashed border-ui-border py-1.5 text-[10px] text-ui-text-subtle transition-colors hover:border-ui-accent hover:text-ui-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent">
             <Plus className="size-3" /> Add color
           </button>
         )}
       </section>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <div className="flex items-center justify-between">
           <SectionTitle icon={CloudFog}>Void & Fog</SectionTitle>
           <Toggle checked={config.fogEnabled} onChange={fogEnabled => update({ fogEnabled })} title="Toggle depth fog" />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <label className="text-[10px] text-gray-400">
+          <label className="text-[10px] text-ui-text-muted">
             <span className="mb-1 block">Void Color</span>
-            <input type="color" value={config.voidColor} onChange={event => update({ voidColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-gray-700 bg-gray-950 p-0.5" />
+            <input type="color" value={config.voidColor} onChange={event => update({ voidColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-ui-border bg-ui-canvas p-0.5" />
           </label>
-          <label className="text-[10px] text-gray-400">
+          <label className="text-[10px] text-ui-text-muted">
             <span className="mb-1 block">Fog Color</span>
-            <input type="color" value={config.fogColor} onChange={event => update({ fogColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-gray-700 bg-gray-950 p-0.5" />
+            <input type="color" value={config.fogColor} onChange={event => update({ fogColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-ui-border bg-ui-canvas p-0.5" />
           </label>
         </div>
         {config.fogEnabled && (
@@ -187,7 +187,7 @@ export default function TunnelInspector() {
         )}
       </section>
 
-      <div className="px-3 pt-3 text-[9px] uppercase tracking-[0.18em] text-teal-800">
+      <div className="px-3 pt-3 text-[9px] uppercase tracking-[0.18em] text-ui-text-subtle">
         Infinite surface · deterministic time
       </div>
       <MasterFxPanel />

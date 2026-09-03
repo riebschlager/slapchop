@@ -5,7 +5,7 @@ import Slider from '../../../controls/Slider';
 export default function PolygonMotionTab({ polygon, onChange }: { polygon: PolygonLayer; onChange: (updates: Partial<PolygonLayer>) => void }) {
   return (
     <div className="space-y-2 pb-1">
-      <div className="pb-2 mb-1 border-b border-gray-800">
+      <div className="pb-2 mb-1 border-b border-ui-border">
         <MotionControl
           label="Vertex Deformation (Jelly)"
           config={polygon.vertexNoise}
@@ -18,7 +18,7 @@ export default function PolygonMotionTab({ polygon, onChange }: { polygon: Polyg
         {polygon.vertexNoise && polygon.vertexNoise.type !== 'none' && (
           <Slider
             size="xs"
-            className="-mt-2 border border-t-0 border-gray-800 p-2 rounded-b bg-gray-800/30"
+            className="-mt-2 border border-t-0 border-ui-border p-2 rounded-b bg-ui-surface"
             label="Incoherence (desync per vertex)"
             display={`${Math.round(polygon.vertexNoise.incoherence * 100)}%`}
             value={polygon.vertexNoise.incoherence}

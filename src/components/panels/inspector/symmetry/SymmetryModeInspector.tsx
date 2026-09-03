@@ -44,7 +44,7 @@ export default function SymmetryModeInspector() {
       />
       <Segmented
         label="Layer properties"
-        className="mb-3 border-b border-gray-800 pb-2"
+        className="mb-3 border-b border-ui-border pb-2"
         value={tab}
         onChange={setTab}
         options={TAB_OPTIONS}

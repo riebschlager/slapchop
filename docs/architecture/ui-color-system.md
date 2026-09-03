@@ -1,6 +1,6 @@
 # Unified UI color system
 
-- **Status:** Accepted; Phases 0-1 complete, Phases 2-5 pending
+- **Status:** Accepted; Phases 0-1 and 3 complete, Phases 2, 4-5 pending
 - **Date:** 2026-09-03
 - **Scope:** Application chrome, shared controls, interaction states, panels,
   modals, and on-canvas editing affordances
@@ -227,6 +227,54 @@ user-selectable creative palettes are excluded.
 Review the remaining symmetry, polygon, and 3D inspector tabs at the same time
 so indigo emphasis does not survive in texture, style, transform, deformation,
 or subject-header controls.
+
+Done, and taken slightly wider than the file list: `src/components/panels/inspector/`
+is now free of every hue class except the amber and red status roles, so the
+whole subtree reads from the palette rather than half of it. Six things came out
+of the implementation:
+
+- **What carries mode identity, decided.** The four inspector headers now share
+  one recipe — a `ui-surface` band on `ui-border`, mode icon and name in
+  `ui-text`, source count in `ui-text-subtle`. The radial-gradient washes and
+  per-hue borders are gone. Identity is the icon glyph, the mode's own name
+  (Flight Director, Tunnel Director, Voronoi Field, Noise Horizon), and its
+  section vocabulary, which is what the ADR asked for and what the Phase 0
+  baseline flagged as the open question.
+- **Section-title icons no longer carry a hue at all.** They were the mode
+  accent (`cyan-400`, `teal-400`, `lime-400`, `orange-400`); tinting them green
+  instead would have sprayed the interaction colour across every section label.
+  They now inherit their label's `ui-text-muted`, and green is left to mean
+  interaction.
+- **GIF Voronoi's twelve `accent-lime-400` track overrides are removed**, so its
+  ranges finally pick up `Slider`'s own green. This was Phase 0's finding 2; the
+  props are deleted rather than retargeted, because `Slider` owns the accent.
+- **The preset chips repeat Phase 1's focus lesson.** The selected chip in
+  `TextureTab`, `Texture3dTab`, and `LayerStyleTab` is a bright `ui-accent` fill
+  with `ui-accent-contrast` text, so its focus ring needs a 1px `ui-panel`
+  offset to be visible — the same problem `Segmented`'s `focusOffset` solves.
+  These chips also put `ui-accent-strong` into the built CSS for the first time.
+  The three magenta tokens are still unused; they land with Master FX in Phase 2.
+- **Several controls gained a focus indicator they never had.** The four Reseed
+  buttons, the palette preset and add-colour buttons, the preset chips, and the
+  `SubjectHeader` name field (which indicated focus with a 1px border alone) now
+  use the established green ring; the 3D texture upload label takes
+  `focus-within` since its file input is visually hidden.
+- **The modes read half-migrated until Phase 2 lands.** `StackPanel`'s four
+  per-mode upload headers, `TunnelAssetRow`, and `GifVoronoiAssetRow` are still
+  cyan/teal/lime/orange, and they sit directly beside a now-neutral inspector.
+  Phase 0 filed them under mode-specific chrome while this document's Phase 2
+  owns those files; they stay in Phase 2, but the seam is visible in the
+  meantime.
+
+Amber and red survive only in their documented roles: the `Geometry3dTab` and
+`Symmetry3dTab` caution notes, the `LayerSymmetryTab` and `PolygonPatternTab`
+origin hints, the `SubjectHeader` hidden-layer `EyeOff`, and the destructive
+hovers on delete and remove-swatch. Palette presets, `<input type="color">`
+values, and the `#6366f1` fallback fill are untouched authored content.
+
+Verified with `npm run typecheck`, `npm run lint`, `npm test` (284 passing), and
+`npm run build`, then by screenshotting all four GIF-mode inspectors and the 3D
+mesh Texture and Geometry tabs in headless Chromium against the dev server.
 
 ### Phase 4: Migrate overlays and modals
 

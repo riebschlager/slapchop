@@ -15,8 +15,8 @@ export default function TextureTab({ polygon, onChange }: { polygon: PolygonLaye
       <div>
         <Slider
           label="Texture Scale"
-          labelClassName="font-semibold text-indigo-300"
-          displayClassName="text-indigo-400 font-bold"
+          labelClassName="font-semibold text-ui-text"
+          displayClassName="text-ui-text font-bold"
           display={`${polygon.textureScale.toFixed(2)}x`}
           trackClassName="h-1.5"
           value={polygon.textureScale}
@@ -29,10 +29,10 @@ export default function TextureTab({ polygon, onChange }: { polygon: PolygonLaye
               key={sVal}
               onClick={() => onChange({ textureScale: sVal })}
               className={cn(
-                "py-1 text-[10px] rounded font-mono border transition-colors",
+                "py-1 text-[10px] rounded font-mono border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel",
                 polygon.textureScale === sVal
-                  ? "bg-indigo-600 text-white border-indigo-400 font-bold"
-                  : "bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-gray-200"
+                  ? "bg-ui-accent text-ui-accent-contrast border-ui-accent-strong font-bold"
+                  : "bg-ui-canvas text-ui-text-muted border-ui-border hover:border-ui-border-strong hover:text-ui-text"
               )}
             >
               {sVal}x
@@ -41,11 +41,11 @@ export default function TextureTab({ polygon, onChange }: { polygon: PolygonLaye
         </div>
       </div>
 
-      <div className="pt-2 border-t border-gray-800">
+      <div className="pt-2 border-t border-ui-border">
         <Slider
-          label={<><Film className="w-3.5 h-3.5 text-indigo-400" /> Animated GIF Speed</>}
-          labelClassName="text-gray-300 flex items-center gap-1"
-          displayClassName="text-gray-300"
+          label={<><Film className="w-3.5 h-3.5" /> Animated GIF Speed</>}
+          labelClassName="text-ui-text flex items-center gap-1"
+          displayClassName="text-ui-text"
           display={`${formatRate(polygon.gifSpeed ?? 1)}x`}
           value={polygon.gifSpeed ?? 1}
           min={0} max={5} step={0.001}
@@ -58,10 +58,10 @@ export default function TextureTab({ polygon, onChange }: { polygon: PolygonLaye
               key={spd}
               onClick={() => onChange({ gifSpeed: spd })}
               className={cn(
-                "py-1 text-[10px] rounded font-mono border transition-colors",
+                "py-1 text-[10px] rounded font-mono border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel",
                 (polygon.gifSpeed ?? 1) === spd
-                  ? "bg-indigo-600 text-white border-indigo-400 font-bold"
-                  : "bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-gray-200"
+                  ? "bg-ui-accent text-ui-accent-contrast border-ui-accent-strong font-bold"
+                  : "bg-ui-canvas text-ui-text-muted border-ui-border hover:border-ui-border-strong hover:text-ui-text"
               )}
             >
               {spd}x
@@ -72,14 +72,14 @@ export default function TextureTab({ polygon, onChange }: { polygon: PolygonLaye
 
       <Slider
         label="Texture Rotation"
-        className="pt-2 border-t border-gray-800"
+        className="pt-2 border-t border-ui-border"
         display={`${Math.round(polygon.textureRotation)}°`}
         value={polygon.textureRotation}
         min={0} max={360} step={1}
         onChange={(textureRotation) => onChange({ textureRotation })}
       />
 
-      <div className="pt-2 border-t border-gray-800 grid grid-cols-2 gap-2">
+      <div className="pt-2 border-t border-ui-border grid grid-cols-2 gap-2">
         <Slider
           size="sm"
           label="Offset X"

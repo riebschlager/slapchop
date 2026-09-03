@@ -8,8 +8,8 @@ import MasterFxPanel from '../MasterFxPanel';
 
 function SectionTitle({ icon: Icon, children }: { icon: typeof Mountain; children: string }) {
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-      <Icon className="size-3 text-orange-400" />
+    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+      <Icon className="size-3" />
       {children}
     </div>
   );
@@ -27,22 +27,22 @@ export default function LandscapeInspector() {
 
   return (
     <div className="flex flex-col">
-      <div className="border-b border-orange-950/80 bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.18),transparent_62%)] px-3 py-3">
+      <div className="border-b border-ui-border bg-ui-surface px-3 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-1.5 text-orange-300">
+            <div className="flex items-center gap-1.5 text-ui-text">
               <Mountain className="size-3.5" />
               <h2 className="text-xs font-bold uppercase tracking-[0.16em]">Noise Horizon</h2>
             </div>
-            <p className="mt-1 text-[10px] text-gray-500">{terrainAssets.length} terrain GIFs · {skySources.length} sky folders</p>
+            <p className="mt-1 text-[10px] text-ui-text-subtle">{terrainAssets.length} terrain GIFs · {skySources.length} sky folders</p>
           </div>
-          <button type="button" onClick={reseed} className="flex items-center gap-1 rounded border border-orange-800/60 bg-orange-950/50 px-2 py-1 text-[10px] font-semibold text-orange-200 transition-colors hover:border-orange-600 hover:bg-orange-900/50">
+          <button type="button" onClick={reseed} className="flex items-center gap-1 rounded border border-ui-border bg-ui-surface-raised px-2 py-1 text-[10px] font-semibold text-ui-text-muted transition-colors hover:border-ui-accent hover:text-ui-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent">
             <Dices className="size-3" /> Reseed
           </button>
         </div>
       </div>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={Grid3X3}>Terrain Mesh</SectionTitle>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Columns" display={Math.round(config.meshColumns)} value={config.meshColumns} min={4} max={28} step={1} onChange={meshColumns => update({ meshColumns })} />
@@ -58,10 +58,10 @@ export default function LandscapeInspector() {
         </div>
         <Slider label="Plateaus" display={`${Math.round(config.plateauAmount * 100)}%`} value={config.plateauAmount} min={0} max={1} step={0.01} onChange={plateauAmount => update({ plateauAmount })} />
         <MotionControl label="Relief Pulse" config={config.motionHeightScale} onChange={motionHeightScale => update({ motionHeightScale })} maxAmplitude={1600} stepAmplitude={25} />
-        <div className="flex items-center justify-between rounded border border-gray-800 bg-gray-800/30 p-2">
+        <div className="flex items-center justify-between rounded border border-ui-border bg-ui-surface p-2">
           <div>
-            <div className="text-[11px] font-semibold text-gray-300">Wire Grid</div>
-            <div className="text-[9px] text-gray-600">Trace the displaced topology</div>
+            <div className="text-[11px] font-semibold text-ui-text">Wire Grid</div>
+            <div className="text-[9px] text-ui-text-subtle">Trace the displaced topology</div>
           </div>
           <div className="flex items-center gap-2">
             <input type="color" value={config.wireframeColor} onChange={event => update({ wireframeColor: event.target.value })} className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0" aria-label="Wire grid color" />
@@ -70,7 +70,7 @@ export default function LandscapeInspector() {
         </div>
       </section>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={ImageIcon}>Terrain Mapping</SectionTitle>
         <Slider label="Tile Crop" display={`${config.terrainTextureScale.toFixed(2)}×`} value={config.terrainTextureScale} min={0.5} max={3} step={0.01} onChange={terrainTextureScale => update({ terrainTextureScale })} />
         <div className="grid grid-cols-2 gap-3">
@@ -78,13 +78,13 @@ export default function LandscapeInspector() {
           <Slider size="sm" label="Offset Y" display={config.terrainTextureOffsetY.toFixed(2)} value={config.terrainTextureOffsetY} min={-1} max={1} step={0.01} onChange={terrainTextureOffsetY => update({ terrainTextureOffsetY })} />
         </div>
         <Slider label="GIF Speed" display={`${config.terrainGifSpeed.toFixed(2)}×`} value={config.terrainGifSpeed} min={0} max={3} step={0.01} scale="log" minPositive={0.05} onChange={terrainGifSpeed => update({ terrainGifSpeed })} />
-        <div className="flex items-center justify-between rounded border border-gray-800 bg-gray-800/30 p-2">
-          <div className="text-[11px] font-semibold text-gray-300">Seeded Shuffle</div>
+        <div className="flex items-center justify-between rounded border border-ui-border bg-ui-surface p-2">
+          <div className="text-[11px] font-semibold text-ui-text">Seeded Shuffle</div>
           <Toggle checked={config.terrainShuffle} onChange={terrainShuffle => update({ terrainShuffle })} title="Toggle terrain source shuffle" />
         </div>
       </section>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={Camera}>Flight Camera</SectionTitle>
         <Slider label="Flight Speed" display={Math.round(config.flightSpeed)} value={config.flightSpeed} min={0} max={2600} step={10} scale="log" minPositive={1} onChange={flightSpeed => update({ flightSpeed })} />
         <div className="grid grid-cols-2 gap-3">
@@ -101,12 +101,12 @@ export default function LandscapeInspector() {
           <MotionControl label="Lens Breathing" config={config.motionFov} onChange={motionFov => update({ motionFov })} maxAmplitude={40} stepAmplitude={1} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <label className="text-[10px] text-gray-400"><span className="mb-1 block">Fog</span><input type="color" value={config.fogColor} onChange={event => update({ fogColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-gray-700 bg-gray-950 p-0.5" /></label>
+          <label className="text-[10px] text-ui-text-muted"><span className="mb-1 block">Fog</span><input type="color" value={config.fogColor} onChange={event => update({ fogColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-ui-border bg-ui-canvas p-0.5" /></label>
           <Slider size="sm" label="Density" display={config.fogDensity.toFixed(5)} value={config.fogDensity} min={0} max={0.0006} step={0.00001} onChange={fogDensity => update({ fogDensity })} />
         </div>
       </section>
 
-      <section className="space-y-3 border-b border-gray-800 p-3">
+      <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={Sun}>Concentric Sky</SectionTitle>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Sun X" display={Math.round(config.skyCenterX)} value={config.skyCenterX} min={-540} max={540} step={5} onChange={skyCenterX => update({ skyCenterX })} />
@@ -120,14 +120,14 @@ export default function LandscapeInspector() {
           <MotionControl label="Sun Drift Y" config={config.motionSkyCenterY} onChange={motionSkyCenterY => update({ motionSkyCenterY })} maxAmplitude={960} stepAmplitude={5} />
           <MotionControl label="Ring Breathing" config={config.motionSkyRingWidth} onChange={motionSkyRingWidth => update({ motionSkyRingWidth })} maxAmplitude={210} stepAmplitude={5} />
         </div>
-        <label className="text-[10px] text-gray-400"><span className="mb-1 block">Sky Ground</span><input type="color" value={config.skyBackgroundColor} onChange={event => update({ skyBackgroundColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-gray-700 bg-gray-950 p-0.5" /></label>
+        <label className="text-[10px] text-ui-text-muted"><span className="mb-1 block">Sky Ground</span><input type="color" value={config.skyBackgroundColor} onChange={event => update({ skyBackgroundColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-ui-border bg-ui-canvas p-0.5" /></label>
       </section>
 
       {selectedSkySource && (
-        <section className="space-y-3 border-b border-orange-950/70 bg-orange-950/10 p-3">
+        <section className="space-y-3 border-b border-ui-border bg-ui-surface p-3">
           <SectionTitle icon={Waves}>Selected Sky Folder</SectionTitle>
-          <div className="text-[11px] font-semibold text-orange-200">{selectedSkySource.name}</div>
-          <div className="text-[9px] uppercase tracking-wider text-orange-800">{selectedSkySource.assets.length} GIFs · one tiled GIF per assigned ring</div>
+          <div className="text-[11px] font-semibold text-ui-text">{selectedSkySource.name}</div>
+          <div className="text-[9px] uppercase tracking-wider text-ui-text-subtle">{selectedSkySource.assets.length} GIFs · one tiled GIF per assigned ring</div>
           <Slider label="Tile Size" display={`${selectedSkySource.textureScale.toFixed(2)}×`} value={selectedSkySource.textureScale} min={0.35} max={3} step={0.01} onChange={textureScale => updateSkySource(selectedSkySource.id, { textureScale })} />
           <div className="grid grid-cols-2 gap-3">
             <Slider size="sm" label="Offset X" display={selectedSkySource.textureOffsetX.toFixed(2)} value={selectedSkySource.textureOffsetX} min={-2} max={2} step={0.01} onChange={textureOffsetX => updateSkySource(selectedSkySource.id, { textureOffsetX })} />
@@ -144,7 +144,7 @@ export default function LandscapeInspector() {
         </section>
       )}
 
-      <div className="px-3 pt-3 text-[9px] uppercase tracking-[0.18em] text-orange-900"><Play className="mr-1 inline size-2.5" />Frame-exact flyover · folder-mapped horizon</div>
+      <div className="px-3 pt-3 text-[9px] uppercase tracking-[0.18em] text-ui-text-subtle"><Play className="mr-1 inline size-2.5" />Frame-exact flyover · folder-mapped horizon</div>
       <MasterFxPanel />
     </div>
   );

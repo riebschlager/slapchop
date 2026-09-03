@@ -28,8 +28,8 @@ export default function Texture3dTab({ mesh, onChange, onUploadTexture }: {
 }) {
   return (
     <div className="space-y-3">
-      <label className="flex items-center justify-center gap-2 w-full py-1.5 bg-gray-800/80 hover:bg-gray-700 rounded-md cursor-pointer transition-colors text-xs text-gray-300 border border-gray-700">
-        <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
+      <label className="flex items-center justify-center gap-2 w-full py-1.5 bg-ui-surface hover:bg-ui-surface-raised rounded-md cursor-pointer transition-colors text-xs text-ui-text border border-ui-border focus-within:ring-2 focus-within:ring-ui-accent">
+        <ImageIcon className="w-3.5 h-3.5" />
         {mesh.src ? 'Replace Texture / GIF' : 'Upload Texture / GIF'}
         <input
           type="file" accept="image/*" className="hidden"
@@ -38,24 +38,24 @@ export default function Texture3dTab({ mesh, onChange, onUploadTexture }: {
       </label>
 
       {!mesh.src && (
-        <div className="flex items-center justify-between pb-2 border-b border-gray-800">
-          <label className="text-[11px] text-gray-400">Fallback Fill Color</label>
+        <div className="flex items-center justify-between pb-2 border-b border-ui-border">
+          <label className="text-[11px] text-ui-text-muted">Fallback Fill Color</label>
           <input
             type="color"
             value={mesh.fillColor || '#6366f1'}
             onChange={(e) => onChange({ fillColor: e.target.value })}
-            className="w-6 h-5 rounded cursor-pointer border-0 bg-gray-800 p-0"
+            className="w-6 h-5 rounded cursor-pointer border-0 bg-ui-surface p-0"
           />
         </div>
       )}
 
       {mesh.gifData && (
-        <div className="pb-2 border-b border-gray-800 space-y-2">
+        <div className="pb-2 border-b border-ui-border space-y-2">
           <Slider
             label={<><Film className="w-3.5 h-3.5" /> GIF Speed</>}
             headerClassName="mb-2"
-            labelClassName="font-semibold text-indigo-400 flex items-center gap-1"
-            displayClassName="text-gray-300"
+            labelClassName="font-semibold text-ui-text flex items-center gap-1"
+            displayClassName="text-ui-text"
             display={`${formatRate(mesh.gifSpeed ?? 1)}x`}
             value={mesh.gifSpeed ?? 1}
             min={0} max={5} step={0.001}
@@ -68,10 +68,10 @@ export default function Texture3dTab({ mesh, onChange, onUploadTexture }: {
                 key={spd}
                 onClick={() => onChange({ gifSpeed: spd })}
                 className={cn(
-                  "py-1 text-[10px] rounded font-mono transition-colors border",
+                  "py-1 text-[10px] rounded font-mono transition-colors border focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel",
                   (mesh.gifSpeed ?? 1) === spd
-                    ? "bg-indigo-600 text-white border-indigo-500 font-bold"
-                    : "bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-gray-200"
+                    ? "bg-ui-accent text-ui-accent-contrast border-ui-accent-strong font-bold"
+                    : "bg-ui-canvas text-ui-text-muted border-ui-border hover:border-ui-border-strong hover:text-ui-text"
                 )}
               >
                 {spd}x
@@ -88,13 +88,13 @@ export default function Texture3dTab({ mesh, onChange, onUploadTexture }: {
         <Slider size="sm" label="UV Offset Y" display={mesh.uvOffsetY.toFixed(2)} value={mesh.uvOffsetY} min={-2} max={2} step={0.05} onChange={(uvOffsetY) => onChange({ uvOffsetY })} />
       </div>
       <div className="flex items-center justify-between">
-        <label className="text-[11px] text-gray-400">Repeat UV (tile)</label>
+        <label className="text-[11px] text-ui-text-muted">Repeat UV (tile)</label>
         <Toggle checked={mesh.uvRepeat} onChange={(uvRepeat) => onChange({ uvRepeat })} title="Repeat UV" />
       </div>
 
       <Select
         label="Blend Mode"
-        className="pt-2 border-t border-gray-800"
+        className="pt-2 border-t border-ui-border"
         value={mesh.blendMode}
         options={BLEND_MODES}
         onChange={(blendMode) => onChange({ blendMode })}
@@ -106,29 +106,29 @@ export default function Texture3dTab({ mesh, onChange, onUploadTexture }: {
         onChange={(shadingModel) => onChange({ shadingModel })}
       />
 
-      <div className="pt-2 border-t border-gray-800 space-y-2">
+      <div className="pt-2 border-t border-ui-border space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-[11px] text-gray-400">Double-Sided</label>
+          <label className="text-[11px] text-ui-text-muted">Double-Sided</label>
           <Toggle checked={mesh.doubleSided} onChange={(doubleSided) => onChange({ doubleSided })} title="Double-Sided" />
         </div>
         <div className="flex items-center justify-between">
-          <label className="text-[11px] text-gray-400">Depth Test</label>
+          <label className="text-[11px] text-ui-text-muted">Depth Test</label>
           <Toggle checked={mesh.depthTest} onChange={(depthTest) => onChange({ depthTest })} title="Depth Test" />
         </div>
         <div className="flex items-center justify-between">
-          <label className="text-[11px] text-gray-400">Wireframe</label>
+          <label className="text-[11px] text-ui-text-muted">Wireframe</label>
           <Toggle checked={mesh.wireframe} onChange={(wireframe) => onChange({ wireframe })} title="Wireframe" />
         </div>
         {mesh.wireframe && (
           <div className="grid grid-cols-2 gap-2 items-end">
             <Slider size="sm" label="Line Width" display={`${mesh.wireframeWidth}px`} value={mesh.wireframeWidth} min={1} max={10} step={1} onChange={(wireframeWidth) => onChange({ wireframeWidth })} />
             <div className="flex items-center justify-between pb-1.5">
-              <label className="text-[10px] text-gray-400">Color</label>
+              <label className="text-[10px] text-ui-text-muted">Color</label>
               <input
                 type="color"
                 value={mesh.wireframeColor}
                 onChange={(e) => onChange({ wireframeColor: e.target.value })}
-                className="w-6 h-5 rounded cursor-pointer border-0 bg-gray-800 p-0"
+                className="w-6 h-5 rounded cursor-pointer border-0 bg-ui-surface p-0"
               />
             </div>
           </div>

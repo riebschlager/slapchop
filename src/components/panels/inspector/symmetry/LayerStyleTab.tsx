@@ -20,19 +20,19 @@ export default function LayerStyleTab({ layer, onChange }: { layer: Layer; onCha
       />
       <Select
         label="Blend Mode"
-        className="pt-2 border-t border-gray-800"
+        className="pt-2 border-t border-ui-border"
         value={layer.blendMode}
         options={BLEND_MODES}
         onChange={(blendMode) => onChange({ blendMode })}
       />
 
       {layer.gifData && (
-        <div className="pt-2 border-t border-gray-800 space-y-2">
+        <div className="pt-2 border-t border-ui-border space-y-2">
           <Slider
             label={<><Film className="w-3.5 h-3.5" /> GIF Speed</>}
             headerClassName="mb-2"
-            labelClassName="font-semibold text-indigo-400 flex items-center gap-1"
-            displayClassName="text-gray-300"
+            labelClassName="font-semibold text-ui-text flex items-center gap-1"
+            displayClassName="text-ui-text"
             display={`${formatRate(layer.gifSpeed ?? 1)}x`}
             value={layer.gifSpeed ?? 1}
             min={0} max={5} step={0.001}
@@ -45,10 +45,10 @@ export default function LayerStyleTab({ layer, onChange }: { layer: Layer; onCha
                 key={speed}
                 onClick={() => onChange({ gifSpeed: speed })}
                 className={cn(
-                  'py-1 text-[10px] rounded font-mono transition-colors border',
+                  'py-1 text-[10px] rounded font-mono transition-colors border focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel',
                   (layer.gifSpeed ?? 1) === speed
-                    ? 'bg-indigo-600 text-white border-indigo-500 font-bold'
-                    : 'bg-gray-950 text-gray-400 border-gray-800 hover:border-gray-700 hover:text-gray-200'
+                    ? 'bg-ui-accent text-ui-accent-contrast border-ui-accent-strong font-bold'
+                    : 'bg-ui-canvas text-ui-text-muted border-ui-border hover:border-ui-border-strong hover:text-ui-text'
                 )}
               >
                 {speed}x

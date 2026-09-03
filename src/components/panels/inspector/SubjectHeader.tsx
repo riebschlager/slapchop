@@ -14,28 +14,28 @@ export default function SubjectHeader({ name, hidden, onRename, onToggleHidden, 
   onDelete: () => void;
 }): ReactNode {
   return (
-    <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
+    <div className="flex items-center justify-between mb-2 pb-2 border-b border-ui-border">
       <input
         type="text"
         value={name}
         onChange={(e) => onRename(e.target.value)}
-        className="bg-transparent text-xs font-semibold text-gray-200 border-b border-transparent hover:border-gray-700 focus:border-indigo-500 focus:bg-gray-950 px-1 py-0.5 outline-none rounded truncate flex-1 mr-2"
+        className="bg-transparent text-xs font-semibold text-ui-text border-b border-transparent hover:border-ui-border-strong focus:border-ui-accent focus:bg-ui-canvas focus:ring-2 focus:ring-ui-accent px-1 py-0.5 outline-none rounded truncate flex-1 mr-2"
         title="Click to rename"
       />
       <div className="flex items-center gap-0.5 shrink-0">
-        <button onClick={onToggleHidden} className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title={hidden ? 'Show' : 'Hide'}>
+        <button onClick={onToggleHidden} className="p-1 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors" title={hidden ? 'Show' : 'Hide'}>
           {hidden ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
         </button>
-        <button onClick={onDuplicate} className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Duplicate">
+        <button onClick={onDuplicate} className="p-1 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors" title="Duplicate">
           <Copy className="w-3.5 h-3.5" />
         </button>
-        <button onClick={onMoveUp} className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Move Up in Order">
+        <button onClick={onMoveUp} className="p-1 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors" title="Move Up in Order">
           <ChevronUp className="w-3.5 h-3.5" />
         </button>
-        <button onClick={onMoveDown} className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Move Down in Order">
+        <button onClick={onMoveDown} className="p-1 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors" title="Move Down in Order">
           <ChevronDown className="w-3.5 h-3.5" />
         </button>
-        <button onClick={onDelete} className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-red-400 transition-colors" title="Delete">
+        <button onClick={onDelete} className="p-1 hover:bg-ui-surface rounded text-ui-text-muted hover:text-red-400 transition-colors" title="Delete">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>

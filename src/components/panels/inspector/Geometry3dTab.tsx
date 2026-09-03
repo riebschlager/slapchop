@@ -11,9 +11,9 @@ import Slider from '../../controls/Slider';
 export default function Geometry3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; onChange: (updates: Partial<Mesh3dLayer>) => void }) {
   return (
     <div className="space-y-3">
-      <div className="pb-2 border-b border-gray-800 flex items-center justify-between">
-        <label className="text-[11px] text-gray-400">Primitive</label>
-        <span className="text-xs font-mono text-gray-200 capitalize">{mesh.primitive.replace('-', ' ')}</span>
+      <div className="pb-2 border-b border-ui-border flex items-center justify-between">
+        <label className="text-[11px] text-ui-text-muted">Primitive</label>
+        <span className="text-xs font-mono text-ui-text capitalize">{mesh.primitive.replace('-', ' ')}</span>
       </div>
 
       {mesh.primitive === 'plane' && (
@@ -103,7 +103,7 @@ export default function Geometry3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; o
 
       {mesh.primitive === 'extruded-polygon' && (
         <>
-          <div className="text-[11px] text-gray-500">
+          <div className="text-[11px] text-ui-text-subtle">
             Contour points are drawn on canvas, same as Tiled GIF polygons — not yet wired for 3D mode's viewport.
           </div>
           <DimSlider label="Extrusion Depth" value={mesh.depth} min={2} max={500} onChange={(depth) => onChange({ depth })} />
@@ -137,7 +137,7 @@ function SubdivRow({ xLabel, yLabel, x, y, min, max, onChange }: {
   onChange: (x: number, y: number) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800">
+    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-ui-border">
       <Slider size="sm" label={xLabel} display={x.toString()} value={x} min={min} max={max} step={1} onChange={(v) => onChange(v, y)} />
       <Slider size="sm" label={yLabel} display={y.toString()} value={y} min={min} max={max} step={1} onChange={(v) => onChange(x, v)} />
     </div>

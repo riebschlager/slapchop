@@ -26,12 +26,12 @@ export default function SceneTab() {
   return (
     <div className="flex flex-col">
       <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Canvas Background</label>
+        <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider">Canvas Background</label>
         <input
           type="color"
           value={canvasBg}
           onChange={(e) => onUpdateCanvasBg(e.target.value)}
-          className="w-8 h-6 rounded cursor-pointer border-0 bg-gray-800 p-0"
+          className="w-8 h-6 rounded cursor-pointer border-0 bg-ui-surface p-0"
         />
       </div>
 
@@ -40,8 +40,8 @@ export default function SceneTab() {
           Master FX rather than in one of the per-mesh 3D inspector tabs —
           it stays reachable via the Scene row even with nothing selected. */}
       {appMode === '3d' && (
-        <div className="px-3 pb-3 space-y-3 border-b border-gray-800">
-          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block">Camera</label>
+        <div className="px-3 pb-3 space-y-3 border-b border-ui-border">
+          <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider block">Camera</label>
           <Select
             label="Projection"
             value={camera3d.projection}
