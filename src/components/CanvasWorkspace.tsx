@@ -45,6 +45,15 @@ const GIZMO_AXES: { key: 'x' | 'y' | 'z'; label: string; dir: Vec3; color: strin
   { key: 'z', label: 'Z', dir: [0, 0, 1], color: '#60a5fa' }
 ];
 
+// SVG overlay strokes. These have to be literals rather than Tailwind classes
+// because they are painted as SVG presentation attributes, so they mirror the
+// palette in docs/architecture/ui-color-system.md by hand: amber keeps its
+// established drawing role, green marks interaction (the closing vertex and the
+// selection outline that traces a polygon out past the frame).
+const OVERLAY_DRAW_STROKE = '#f59e0b';      // amber-500, in-progress edges
+const OVERLAY_DRAW_RUBBER_BAND = '#fbbf24'; // amber-400, cursor-follow segment
+const OVERLAY_ACCENT = '#28c76f';           // ui-accent
+
 // Arm length in canvas pixels. Converted to world units at the mesh's own
 // depth every frame so the gizmo stays the same on-screen size no matter how
 // far the camera is dollied out.
@@ -856,7 +865,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     <div
       ref={wrapRef}
       className={cn(
-        "flex-1 bg-gray-950 flex items-center justify-center relative overflow-hidden select-none",
+        "flex-1 bg-ui-canvas flex items-center justify-center relative overflow-hidden select-none",
         isDrawingPolygon ? "cursor-crosshair" : ""
       )}
       onClick={handleWorkspaceClick}
@@ -871,9 +880,9 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           in the side columns. Its measured height drives the top handle
           gutter above, so this stays the sole floating element by design. */}
       <div className="absolute top-4 left-6 flex items-center z-20 pointer-events-none">
-        <div ref={statusPillRef} className="flex items-center gap-2 pointer-events-auto bg-gray-900/80 backdrop-blur border border-gray-800 px-3 py-1.5 rounded-full text-xs text-gray-300 shadow-lg">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-semibold text-white">
+        <div ref={statusPillRef} className="flex items-center gap-2 pointer-events-auto bg-ui-panel/80 backdrop-blur border border-ui-border px-3 py-1.5 rounded-full text-xs text-ui-text-muted shadow-lg">
+          <span className="w-2 h-2 rounded-full bg-ui-accent animate-pulse" />
+          <span className="font-semibold text-ui-text">
             {appMode === 'symmetry'
               ? 'Symmetry Canvas'
               : appMode === 'polygon'
@@ -886,14 +895,14 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                       ? 'GIF Tunnel'
                       : appMode === 'gif-voronoi' ? 'GIF Voronoi' : 'GIF Landscape'}
           </span>
-          <span className="text-gray-500 font-mono">1080x1920</span>
+          <span className="text-ui-text-subtle font-mono">1080x1920</span>
           {appMode === '3d' && (
-            <span className="text-gray-500 border-l border-gray-700 pl-2">
+            <span className="text-ui-text-subtle border-l border-ui-border-strong pl-2">
               Alt-drag orbit · Shift-drag pan · Scroll zoom
             </span>
           )}
           {import.meta.env.DEV && (
-            <span ref={fpsRef} className="text-emerald-400 font-mono" />
+            <span ref={fpsRef} className="text-ui-accent font-mono" />
           )}
         </div>
       </div>
@@ -939,7 +948,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           // the frame stay visible. Anything that must stay inside the frame
           // clips itself.
           "relative shadow-2xl transition-all duration-75",
-          isDraggingOver ? "ring-4 ring-indigo-500/50" : "",
+          isDraggingOver ? "ring-4 ring-ui-accent/50" : "",
           isDrawingPolygon
             ? "cursor-crosshair"
             : appMode === '3d' && camera3dNavArmed ? "cursor-grab" : "cursor-default"
@@ -964,16 +973,16 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
 
         {appMode === 'flythrough' && flythroughAssets.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="px-4 py-3 rounded-lg border border-cyan-900/60 bg-black/65 backdrop-blur-sm text-center shadow-[0_0_40px_rgba(6,182,212,0.08)]">
-              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-500">No flight library</div>
-              <div className="mt-1 text-xs text-gray-500">Choose a GIF folder in the Stack panel</div>
+            <div className="px-4 py-3 rounded-lg border border-ui-border bg-ui-canvas/95 backdrop-blur-sm text-center">
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-ui-text-muted">No flight library</div>
+              <div className="mt-1 text-xs text-ui-text-subtle">Choose a GIF folder in the Stack panel</div>
             </div>
           </div>
         )}
 
         {appMode === 'tunnel' && tunnelAssets.length === 0 && (
           <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center">
-            <div className="rounded-full border border-teal-950/70 bg-black/60 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-teal-700 backdrop-blur-sm">
+            <div className="rounded-full border border-ui-border bg-ui-canvas/95 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-ui-text-muted backdrop-blur-sm">
               Palette tunnel · add wallpaper sources in the Stack
             </div>
           </div>
@@ -981,18 +990,18 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
 
         {appMode === 'gif-voronoi' && gifVoronoiAssets.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="border border-emerald-950/80 bg-black/65 px-4 py-3 text-center shadow-[0_0_48px_rgba(132,204,22,0.08)] backdrop-blur-sm [clip-path:polygon(8%_0,100%_0,92%_100%,0_100%)]">
-              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-lime-600">Unpopulated field</div>
-              <div className="mt-1 text-xs text-gray-500">Choose a GIF folder in the Stack panel</div>
+            <div className="border border-ui-border bg-ui-canvas/95 px-4 py-3 text-center backdrop-blur-sm [clip-path:polygon(8%_0,100%_0,92%_100%,0_100%)]">
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-ui-text-muted">Unpopulated field</div>
+              <div className="mt-1 text-xs text-ui-text-subtle">Choose a GIF folder in the Stack panel</div>
             </div>
           </div>
         )}
 
         {appMode === 'landscape' && (landscapeTerrainAssets.length === 0 || landscapeSkySources.length === 0) && (
           <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center">
-            <div className="rounded border border-orange-950/80 bg-black/70 px-4 py-2 text-center shadow-[0_0_48px_rgba(249,115,22,0.08)] backdrop-blur-sm">
-              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-500">Landscape scaffold active</div>
-              <div className="mt-1 text-[10px] text-gray-500">{landscapeTerrainAssets.length === 0 ? 'Add terrain GIFs' : 'Add sky folders'} in the Stack panel</div>
+            <div className="rounded border border-ui-border bg-ui-canvas/95 px-4 py-2 text-center backdrop-blur-sm">
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-ui-text-muted">Landscape scaffold active</div>
+              <div className="mt-1 text-[10px] text-ui-text-subtle">{landscapeTerrainAssets.length === 0 ? 'Add terrain GIFs' : 'Add sky folders'} in the Stack panel</div>
             </div>
           </div>
         )}
@@ -1012,7 +1021,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                   <polyline
                     points={drawingPoints.map(p => `${(CANVAS_WIDTH / 2 + p.x) * scale},${(CANVAS_HEIGHT / 2 + p.y) * scale}`).join(' ')}
                     fill="none"
-                    stroke="#f59e0b"
+                    stroke={OVERLAY_DRAW_STROKE}
                     strokeWidth={2}
                     strokeDasharray="4 4"
                   />
@@ -1023,7 +1032,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                     y1={(CANVAS_HEIGHT / 2 + drawingPoints[drawingPoints.length - 1].y) * scale}
                     x2={(CANVAS_WIDTH / 2 + mouseCanvasPos.x) * scale}
                     y2={(CANVAS_HEIGHT / 2 + mouseCanvasPos.y) * scale}
-                    stroke="#fbbf24"
+                    stroke={OVERLAY_DRAW_RUBBER_BAND}
                     strokeWidth={2}
                   />
                 )}
@@ -1033,7 +1042,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                     cx={(CANVAS_WIDTH / 2 + pt.x) * scale}
                     cy={(CANVAS_HEIGHT / 2 + pt.y) * scale}
                     r={i === 0 ? 8 : 5}
-                    fill={i === 0 ? "#10b981" : "#f59e0b"}
+                    fill={i === 0 ? OVERLAY_ACCENT : OVERLAY_DRAW_STROKE}
                     stroke="#ffffff"
                     strokeWidth={2}
                   />
@@ -1057,7 +1066,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                         .map(p => `${(CANVAS_WIDTH / 2 + p.x) * scale},${(CANVAS_HEIGHT / 2 + p.y) * scale}`)
                         .join(' ')}
                       fill="none"
-                      stroke="#818cf8"
+                      stroke={OVERLAY_ACCENT}
                       strokeWidth={1.5}
                       strokeDasharray="6 4"
                       opacity={0.7}
@@ -1065,7 +1074,11 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                   </svg>
                 )}
 
-                {/* Center Translation Handle */}
+                {/* Center Translation Handle. Grab handles sit on authored
+                    artwork rather than app chrome, so they use the darker
+                    ui-accent-strong: it clears 3:1 against both a white and a
+                    black frame, where plain ui-accent only manages 2.2:1 on
+                    white. Hover brightens to the primary accent. */}
                 {(() => {
                   const center = clampHandleToBounds(
                     getPolygonCentroid(selectedPolygon.points),
@@ -1079,7 +1092,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                         top: `${(CANVAS_HEIGHT / 2 + center.y) * scale}px`
                       }}
                       className={cn(
-                        "absolute w-6 h-6 -ml-3 -mt-3 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20",
+                        "absolute w-6 h-6 -ml-3 -mt-3 rounded-full bg-ui-accent-strong/90 hover:bg-ui-accent border-2 shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20",
                         center.pinned ? "border-amber-400 border-dashed" : "border-white"
                       )}
                       title={center.pinned
@@ -1108,7 +1121,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                         "absolute w-4 h-4 -ml-2 -mt-2 rounded-full shadow-md pointer-events-auto cursor-move hover:scale-150 transition-transform z-20",
                         vertex.pinned
                           ? "bg-amber-200 border-2 border-amber-500 border-dashed"
-                          : "bg-white border-2 border-indigo-600"
+                          : "bg-white border-2 border-ui-accent-strong"
                       )}
                       title={vertex.pinned
                         ? `Vertex ${i + 1} (off screen — drag to bring it back)`
@@ -1162,13 +1175,13 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                   key={`layer-select-outline-${inst.isPrimary ? 'primary' : 'sym'}-${idx}`}
                   className={cn(
                     "absolute border-2 pointer-events-none rounded",
-                    inst.isPrimary ? "border-indigo-400 border-dashed" : "border-indigo-500/30 border-dotted"
+                    inst.isPrimary ? "border-ui-accent border-dashed" : "border-ui-accent/30 border-dotted"
                   )}
                 >
                   {inst.isPrimary && (
                     <div
                       onMouseDown={(e) => handleLayerCenterMouseDown(e, selectedLayer.id)}
-                      className="absolute top-1/2 left-1/2 -ml-3.5 -mt-3.5 w-7 h-7 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
+                      className="absolute top-1/2 left-1/2 -ml-3.5 -mt-3.5 w-7 h-7 rounded-full bg-ui-accent-strong/90 hover:bg-ui-accent border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
                       title="Drag to Move GIF / Layer"
                     >
                       <div className="w-2 h-2 rounded-full bg-white" />
@@ -1234,11 +1247,15 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
               ))}
             </svg>
 
-            {/* Center handle: free move across the view plane. */}
+            {/* Center handle: free move across the view plane. Graphite rather
+                than the green every other center handle uses — inside the gizmo
+                hue is the axis label, and ui-accent reads close enough to the Y
+                arm to be mistaken for it. The white ring and dot still mark it
+                as the grabbable target. */}
             <div
               ref={gizmoCenterRef}
               onMouseDown={(e) => handleGizmoMouseDown(e, 'center')}
-              className="absolute w-6 h-6 -ml-3 -mt-3 rounded-full bg-indigo-600/90 hover:bg-indigo-500 border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
+              className="absolute w-6 h-6 -ml-3 -mt-3 rounded-full bg-ui-surface-raised hover:bg-ui-border-strong border-2 border-white shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20"
               title="Drag to move across the view plane"
             >
               <div className="w-1.5 h-1.5 rounded-full bg-white" />
@@ -1251,7 +1268,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                 ref={(el) => { gizmoHandleRefs.current[i] = el; }}
                 onMouseDown={(e) => handleGizmoMouseDown(e, i)}
                 style={{ backgroundColor: axis.color }}
-                className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full border-2 border-white shadow-lg pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center text-[9px] font-bold text-gray-950 transition-transform hover:scale-125 z-20"
+                className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full border-2 border-white shadow-lg pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center text-[9px] font-bold text-ui-canvas transition-transform hover:scale-125 z-20"
                 title={`Drag to move along ${axis.label}`}
               >
                 {axis.label}

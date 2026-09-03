@@ -33,10 +33,10 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 text-gray-100 shadow-2xl relative">
+      <div className="bg-ui-panel border border-ui-border rounded-2xl w-full max-w-md p-6 text-ui-text shadow-2xl relative">
         <button
           onClick={() => setShowLiveOutputModal(false)}
-          className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-800 transition-colors"
+          className="absolute top-4 right-4 text-ui-text-muted hover:text-ui-text p-1 rounded-lg hover:bg-ui-surface transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
           aria-label="Close live output settings"
         >
           <X className="w-5 h-5" />
@@ -45,11 +45,11 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
         <div className="flex items-center gap-2 mb-1">
           <Radio className={cn(
             "w-5 h-5",
-            liveOutputStreaming ? "text-emerald-400" : "text-indigo-400"
+            liveOutputStreaming ? "text-ui-accent" : "text-ui-text-muted"
           )} />
-          <h3 className="text-lg font-bold text-white">TouchDesigner Live Output</h3>
+          <h3 className="text-lg font-bold text-ui-text">TouchDesigner Live Output</h3>
         </div>
-        <p className="text-xs text-gray-400 mb-5">
+        <p className="text-xs text-ui-text-muted mb-5">
           Stream the live 1080×1920 canvas over WebRTC using TouchDesigner&apos;s signaling server.
         </p>
 
@@ -63,7 +63,7 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
 
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
+            <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider block mb-1">
               Signaling Server
             </label>
             <input
@@ -72,9 +72,9 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
               onChange={(event) => setLiveOutputUrl(event.target.value)}
               disabled={liveOutputConnected}
               spellCheck={false}
-              className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs font-mono text-white disabled:text-gray-500 disabled:cursor-not-allowed outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-ui-canvas border border-ui-border-strong rounded-lg px-3 py-2 text-xs font-mono text-ui-text disabled:text-ui-text-subtle disabled:cursor-not-allowed outline-none focus:ring-2 focus:ring-ui-accent"
             />
-            <p className="text-[10px] text-gray-500 mt-1">
+            <p className="text-[10px] text-ui-text-subtle mt-1">
               TouchDesigner&apos;s signalingServer COMP defaults to port 9980.
             </p>
           </div>
@@ -84,8 +84,8 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
             liveOutputState.phase === 'error' || liveOutputActionError
               ? "bg-red-950/40 border-red-900 text-red-300"
               : liveOutputStreaming
-                ? "bg-emerald-950/40 border-emerald-800 text-emerald-300"
-                : "bg-gray-950 border-gray-800 text-gray-300"
+                ? "bg-ui-accent/10 border-ui-accent/50 text-ui-accent-hover"
+                : "bg-ui-canvas border-ui-border text-ui-text-muted"
           )}>
             <div className="flex items-center gap-2">
               <span className={cn(
@@ -93,8 +93,8 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
                 liveOutputState.phase === 'error' || liveOutputActionError
                   ? "bg-red-500"
                   : liveOutputStreaming
-                    ? "bg-emerald-500 animate-pulse"
-                    : liveOutputConnected ? "bg-amber-500" : "bg-gray-600"
+                    ? "bg-ui-accent animate-pulse"
+                    : liveOutputConnected ? "bg-amber-500" : "bg-ui-border-strong"
               )} />
               <span>{liveOutputActionError ?? liveOutputState.message}</span>
             </div>
@@ -103,14 +103,14 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
           {liveOutputConnected && (
             <>
               <div>
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
+                <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider block mb-1">
                   Receiver
                 </label>
                 <select
                   value={selectedReceiverAddress}
                   onChange={(event) => setSelectedReceiverAddress(event.target.value)}
                   disabled={liveOutputState.receivers.length === 0 || liveOutputBusy || liveOutputStreaming}
-                  className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white disabled:text-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full bg-ui-canvas border border-ui-border-strong rounded-lg px-3 py-2 text-xs text-ui-text disabled:text-ui-text-subtle outline-none focus:ring-2 focus:ring-ui-accent"
                 >
                   {liveOutputState.receivers.length === 0 && (
                     <option value="">No receivers discovered</option>
@@ -126,14 +126,14 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">
+                <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider block mb-1">
                   Frame Rate
                 </label>
                 <select
                   value={liveOutputFps}
                   onChange={(event) => setLiveOutputFps(parseInt(event.target.value))}
                   disabled={liveOutputBusy || liveOutputStreaming}
-                  className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-xs text-white disabled:text-gray-500 outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full bg-ui-canvas border border-ui-border-strong rounded-lg px-3 py-2 text-xs text-ui-text disabled:text-ui-text-subtle outline-none focus:ring-2 focus:ring-ui-accent"
                 >
                   <option value={30}>30 FPS — recommended</option>
                   <option value={60}>60 FPS</option>
@@ -143,22 +143,22 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
           )}
 
           {liveOutputStreaming && liveOutputMetrics && (
-            <div className="rounded-lg bg-gray-950 border border-gray-800 px-3 py-3">
-              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            <div className="rounded-lg bg-ui-canvas border border-ui-border px-3 py-3">
+              <div className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider mb-2">
                 Outbound Encoder
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <div>
-                  <div className="text-[10px] text-gray-500">Source</div>
-                  <div className="font-mono text-gray-200">
+                  <div className="text-[10px] text-ui-text-subtle">Source</div>
+                  <div className="font-mono text-ui-text">
                     {liveOutputMetrics.sourceWidth}×{liveOutputMetrics.sourceHeight}
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-gray-500">Encoded</div>
+                  <div className="text-[10px] text-ui-text-subtle">Encoded</div>
                   <div className={cn(
                     "font-mono",
-                    liveOutputDownscaled ? "text-amber-300" : "text-emerald-300"
+                    liveOutputDownscaled ? "text-amber-300" : "text-ui-accent-hover"
                   )}>
                     {liveOutputMetrics.encodedWidth !== undefined
                       && liveOutputMetrics.encodedHeight !== undefined
@@ -167,16 +167,16 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-gray-500">Encoded FPS</div>
-                  <div className="font-mono text-gray-200">
+                  <div className="text-[10px] text-ui-text-subtle">Encoded FPS</div>
+                  <div className="font-mono text-ui-text">
                     {liveOutputMetrics.framesPerSecond === undefined
                       ? 'Measuring…'
                       : liveOutputMetrics.framesPerSecond.toFixed(1)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-gray-500">Send Rate</div>
-                  <div className="font-mono text-gray-200">
+                  <div className="text-[10px] text-ui-text-subtle">Send Rate</div>
+                  <div className="font-mono text-ui-text">
                     {liveOutputMetrics.bitrateMbps === undefined
                       ? 'Measuring…'
                       : `${liveOutputMetrics.bitrateMbps.toFixed(1)} Mbps`}
@@ -185,7 +185,7 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
               </div>
               {liveOutputMetrics.qualityLimitationReason
                 && liveOutputMetrics.qualityLimitationReason !== 'none' && (
-                <div className="mt-2 pt-2 border-t border-gray-800 text-[10px] text-amber-300">
+                <div className="mt-2 pt-2 border-t border-ui-border text-[10px] text-amber-300">
                   WebRTC reports a {liveOutputMetrics.qualityLimitationReason} quality limit.
                 </div>
               )}
@@ -198,16 +198,16 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
             </div>
           )}
 
-          <div className="rounded-lg bg-indigo-950/20 border border-indigo-900/60 px-3 py-2 text-[10px] leading-relaxed text-indigo-200/80">
+          <div className="rounded-lg bg-ui-surface border border-ui-border px-3 py-2 text-[10px] leading-relaxed text-ui-text-muted">
             In TouchDesigner, connect signalingClient and webRTC COMPs to the active signalingServer,
             then use a Video Stream In TOP in WebRTC mode followed by a Null TOP.
           </div>
 
-          <div className="pt-3 border-t border-gray-800 flex items-center justify-between gap-2">
+          <div className="pt-3 border-t border-ui-border flex items-center justify-between gap-2">
             {liveOutputConnected ? (
               <button
                 onClick={disconnectLiveOutput}
-                className="px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg text-xs font-medium transition-colors"
+                className="px-3 py-2 text-ui-text-muted hover:text-ui-text hover:bg-ui-surface rounded-lg text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
               >
                 Disconnect
               </button>
@@ -218,7 +218,7 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
             {liveOutputStreaming || liveOutputState.phase === 'negotiating' ? (
               <button
                 onClick={stopLiveOutput}
-                className="px-5 py-2 bg-red-700 hover:bg-red-600 text-white font-semibold rounded-lg text-xs transition-colors"
+                className="px-5 py-2 bg-red-700 hover:bg-red-600 text-white font-semibold rounded-lg text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ui-panel"
               >
                 Stop Stream
               </button>
@@ -226,7 +226,7 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
               <button
                 onClick={() => void startLiveOutput()}
                 disabled={!selectedReceiverAddress || liveOutputBusy}
-                className="flex items-center gap-2 px-5 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg text-xs transition-colors"
+                className="flex items-center gap-2 px-5 py-2 bg-ui-accent hover:bg-ui-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-ui-accent-contrast font-semibold rounded-lg text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ui-panel"
               >
                 {liveOutputBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Start Stream
@@ -236,7 +236,7 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
                 onClick={() => void connectLiveOutput()}
                 disabled={liveOutputBusy || blockedReason !== null}
                 title={blockedReason ?? undefined}
-                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold rounded-lg text-xs transition-colors"
+                className="flex items-center gap-2 px-5 py-2 bg-ui-accent hover:bg-ui-accent-hover disabled:opacity-50 text-ui-accent-contrast font-semibold rounded-lg text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ui-panel"
               >
                 {liveOutputBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Find Receivers

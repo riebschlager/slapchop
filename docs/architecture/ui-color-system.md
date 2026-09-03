@@ -1,6 +1,6 @@
 # Unified UI color system
 
-- **Status:** Accepted; Phases 0-1 and 3 complete, Phases 2, 4-5 pending
+- **Status:** Accepted; Phases 0-1 and 3-4 complete, Phases 2 and 5 pending
 - **Date:** 2026-09-03
 - **Scope:** Application chrome, shared controls, interaction states, panels,
   modals, and on-canvas editing affordances
@@ -291,6 +291,77 @@ mesh Texture and Geometry tabs in headless Chromium against the dev server.
    stop/error and amber degraded/warning states.
 5. Ensure overlays and modals use the same neutral elevation and border ladder
    as the docked panels.
+
+Done. `CanvasWorkspace.tsx` and both modals are free of every hue class except
+the amber and red status roles and the RGB gizmo. Six things came out of the
+implementation:
+
+- **On-canvas handles need a different green from UI chrome.** Handles sit on
+  *authored artwork*, not on a known surface, so the worst case is a white
+  frame. `ui-accent` measures 2.2:1 on white; `ui-accent-strong` measures 3.6:1
+  on white and 5.8:1 on black, clearing 3:1 at both extremes — which the indigo
+  it replaces did not (3.3:1 on black). Every grab handle therefore uses
+  `ui-accent-strong` with `hover:bg-ui-accent`, while the instance outlines,
+  which are guides rather than targets, keep the brighter `ui-accent`. This is
+  the first real use of `ui-accent-strong` as the "dark green boundary" its
+  palette-table role describes.
+- **The 3D gizmo center handle is deliberately graphite, not green.** Inside the
+  gizmo, hue is the axis label, and `ui-accent` reads close enough to the Y
+  arm's `#4ade80` to be mistaken for it. It is the one place where the
+  interaction language and the coordinate language actually collide, and the
+  plan protects the coordinate language. A dark fill with the same white ring
+  and dot keeps it obviously grabbable; the capture confirms it is unambiguous
+  sitting directly beside the green Y handle.
+- **Translucent overlays have to be measured against authored color, not
+  chrome.** The four mode empty-state cards float over the canvas, so
+  `bg-ui-canvas/80` put the hint line at 3.2:1 over a white frame. `/95` keeps
+  the frosted look and clears AA over both black and white. The radial-gradient
+  washes and per-hue glows are gone; each card keeps its own copy, placement,
+  and silhouette (Voronoi's clip-path, Tunnel's pill), because shape and
+  vocabulary are what the ADR assigns mode identity to.
+- **The modals repeat Phase 1's focus lesson twice over.** The format chips are
+  a bright `ui-accent` fill and need a 1px `ui-canvas` offset; the encoder-speed
+  and resolution cards carry a `ui-accent` border and need a 1px `ui-panel` one;
+  the primary actions need 2px. Separately, `transition-all` on the format chips
+  and the primary action was animating the new ring *in* over the transition
+  duration — a fade-in focus indicator — so both moved to `transition-colors`.
+  Measured after the change, all eleven Export controls and both Live Output
+  controls paint a full-width `#28c76f` ring within 60ms.
+- **Several modal controls gained indicators they never had.** Every Export
+  button and input, and both Live Output buttons, were relying on the native
+  outline or nothing at all; the Export close button also had no accessible
+  name and now carries one. Neither modal traps focus — pre-existing, and left
+  alone as out of scope for a color phase.
+
+- **The Phase 2 seam is now visible at the trigger, not just the panel.** The
+  Output dock's indigo Export Animation and Live Output buttons in
+  `InspectorPanel.tsx` launch modals that are entirely green, and the indigo
+  `LayerRow` selection sits beside a green on-canvas outline for the same
+  layer. Phase 2 owns both files; the mismatch is expected until it lands.
+
+Amber and red survive only in their documented roles: the drawing instruction
+bar and its actions, the symmetry and polygon origin handles and their pinned
+variants, the in-progress drawing strokes, the export notice and error blocks,
+the live-output error pill and Stop button, the degraded encode plan, the
+downscale and quality-limit metrics, and the `ws://`-blocked notice. The
+connected-but-not-streaming dot stays amber as a transitional state. The RGB
+gizmo and the authored `#6366f1` polygon fill are untouched.
+
+SVG overlay strokes cannot take Tailwind classes, so they are named constants
+at the top of `CanvasWorkspace.tsx` that mirror the palette by hand; the
+polygon off-canvas outline moved from `#818cf8` to the accent green, and the
+first-vertex marker from `#10b981` to the same value, so the drawing overlay
+has one green rather than two.
+
+Verified with `npm run typecheck`, `npm run lint`, `npm test` (284 passing), and
+`npm run build`, then in headless Chromium against the dev server: both modals
+including the ZIP radios and a running export, the four mode empty states, and
+the symmetry, polygon, and 3D handle overlays captured over both black and
+white artwork. Console clean throughout. The states the Phase 0 record listed
+as unreachable in a browser — the connected/streaming green, the ProRes and
+Frames (Folder) chrome, the resume checkbox, the encoder-speed cards, and the
+`ws://`-on-HTTPS notice — are still unreachable and still need a manual pass on
+desktop.
 
 ### Phase 5: Cleanup and documentation
 
