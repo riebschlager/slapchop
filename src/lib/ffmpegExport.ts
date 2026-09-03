@@ -22,6 +22,9 @@ export interface NativeVideoExportOptions
  */
 const VIDEO_JOB_HEADER = 'x-slapchop-video-job';
 
+/** Frames between UI yields. At ~42ms a frame this keeps cancel latency ~0.3s. */
+const UI_YIELD_INTERVAL = 8;
+
 export function getPartialVideoPath(savePath: string, id: string): string {
   const slash = Math.max(savePath.lastIndexOf('/'), savePath.lastIndexOf('\\'));
   const dot = savePath.lastIndexOf('.');
@@ -113,10 +116,14 @@ export async function exportNativeVideo(
 
         profiler.countFrame();
         onProgress?.(n + 1, totalFrames);
-        // A macrotask turn so the window keeps painting and stays cancellable.
-        // Overlapped with the write above rather than serialized after it.
-        await profiler.timeAsync('loop.yield', () =>
-          new Promise<void>((resolve) => setTimeout(resolve)));
+        // Awaiting the previous write already turns the event loop, so this
+        // only needs to guarantee a macrotask often enough that the window
+        // keeps painting and the cancel button still lands. Every frame cost
+        // ~3ms of a ~42ms frame once encoding began competing for CPU.
+        if (n % UI_YIELD_INTERVAL === 0) {
+          await profiler.timeAsync('loop.yield', () =>
+            new Promise<void>((resolve) => setTimeout(resolve)));
+        }
       });
     }
     await settleInFlight();

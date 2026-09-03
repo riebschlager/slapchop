@@ -1,6 +1,6 @@
 # Video export performance
 
-- **Status:** Phases 0 and 2 complete (3.77x measured); Phase 3 next
+- **Status:** Phases 0, 2, and 3 complete (7.61x measured); Phase 1 next
 - **Date:** 2026-09-02
 - **Scope:** Shared browser and Tauri animation-export pipeline
 
@@ -399,6 +399,16 @@ may drop frames to meet real-time constraints.
 bounded, and faster than Phase 2 on at least one representative bottleneck
 case without regressing others materially.
 
+Implemented. **7.61x cumulative** against the baseline (52.83s to 6.94s at
+1080x1920 MP4), with per-frame accounting that closes exactly. Transport fell
+to 7.5% of a frame from 78.1%.
+
+Two lessons are recorded in
+[`video-export-benchmark.md`](./video-export-benchmark.md): overlapping stages
+made them compete for CPU, so `scene.sync` nearly tripled and the gain was
+smaller than a stage-independent projection predicted; and run-to-run variance
+is around 30%, so single-run deltas below that are not evidence.
+
 ### Phase 4: Reassess the rendering boundary
 
 Only after the preceding work, decide whether eliminating JavaScript-visible
@@ -504,11 +514,16 @@ further. Raw transport runs at 197.8 MiB/s, so a full-resolution frame costs
    that. Estimated ~5.0x cumulative for the draw overlap alone and ~7.8x with
    both, floored by the probe's 41ms pure-transport figure.
 3. **Phase 1, VP9 first** — VP9's current settings cost roughly 105ms per frame,
-   so WebM becomes codec-bound as soon as transport improves. Partially revised
-   by the Phase 2 measurement: because ffmpeg's consumption is inline in the
-   blocking write, codec choice affects MP4 wall time too, to the tune of
-   roughly 29ms of a 91ms frame. Overlap still comes first, since it recovers
-   the same time without trading quality.
+   so WebM becomes codec-bound as soon as transport improves. Revised again
+   after Phase 3: MP4 no longer needs codec work for throughput, because
+   `ipc.drain` at 1.87ms shows the encoder has ample slack. What codec settings
+   now buy for MP4 is *CPU*, not wall time — every core ffmpeg does not use is
+   a core the renderer can draw with, which is why `-threads` is capped rather
+   than the preset loosened. WebM's VP9 remains genuinely codec-bound.
+
+4. **Then per-frame scene construction.** After Phase 3, `scene.sync` is 67% of
+   a frame. That is mode-side work, outside the scope of this document, and it
+   should be re-measured once the encoder thread cap lands.
 
 Batching frames into a single invoke is explicitly *not* worth pursuing: the
 probe measured only 1.00ms of fixed cost per invoke, so there is no per-call

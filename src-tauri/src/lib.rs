@@ -249,6 +249,14 @@ fn native_video_args(
         ));
     }
 
+    // Leave the main thread room to draw. x264 defaults to about 1.5 threads
+    // per core, which starves the renderer once encoding overlaps drawing, and
+    // the measured queue has enough slack that a smaller encoder pool still
+    // keeps up. See docs/architecture/video-export-benchmark.md.
+    let encoder_threads = std::thread::available_parallelism()
+        .map(|cores| (cores.get() / 2).max(2))
+        .unwrap_or(2);
+
     let mut args = vec![
         "-y".into(),
         "-hide_banner".into(),
@@ -270,6 +278,8 @@ fn native_video_args(
         "-frames:v".into(),
         total_frames.to_string(),
         "-an".into(),
+        "-threads".into(),
+        encoder_threads.to_string(),
     ];
     match format {
         "mp4" => args.extend(
@@ -579,6 +589,20 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair == ["-pix_fmt", "yuva444p10le"]));
+    }
+
+    #[test]
+    fn caps_encoder_threads_so_the_renderer_keeps_cpu() {
+        let args =
+            native_video_args("mp4", 30, 300, 1080, 1920, Path::new("/tmp/export.mp4")).unwrap();
+        let threads = args
+            .windows(2)
+            .find(|pair| pair[0] == "-threads")
+            .map(|pair| pair[1].parse::<usize>().unwrap())
+            .expect("-threads was not passed");
+        let cores = std::thread::available_parallelism().map_or(2, |c| c.get());
+        assert!(threads >= 2, "at least two encoder threads");
+        assert!(threads <= cores.max(2), "must not exceed the core count");
     }
 
     #[test]

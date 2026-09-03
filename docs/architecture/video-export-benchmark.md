@@ -158,6 +158,74 @@ therefore JSON-serialized per frame. `recordBytes('ipc.writeFrame', ...)` was
 added after these runs so the next baseline reports actual PNG bytes and a
 MiB/s figure, which will confirm the per-byte cost directly.
 
+## Phase 3 result: overlapped pipeline (2026-09-02)
+
+Same scene and settings throughout: 150 frames, MP4, 1080x1920 at 30fps,
+WebGL, preview paused.
+
+| | Baseline | Phase 2 | Phase 3 |
+| --- | ---: | ---: | ---: |
+| Elapsed | 52.83s | 14.03s | **6.94s** |
+| Effective fps | 2.84 | 10.69 | 21.62 |
+| Cumulative | 1x | 3.77x | **7.61x** |
+| Per frame | 349ms | 91ms | 42ms |
+
+Per-frame breakdown, and the accounting now closes exactly:
+
+```text
+loop.frame   41.85 = frame.render 35.69 + loop.yield 3.02 + ipc.drain 1.87 + ipc.submit 1.27
+frame.render 35.69 = scene.sync 28.11 + gpu.readback 7.44 + gpu.draw 0.13
+elapsed       6.94s = loop.frame 6.278s + finalize 0.65s + start 0.003s
+```
+
+### Transport is done
+
+`ipc.submit` plus `ipc.drain` is 3.14ms of a 41.85ms frame — 7.5%, down from
+78.1% at the baseline. `ipc.submit` reports 6244 MiB/s because handing a buffer
+to `fetch` does not copy it synchronously, and `ipc.drain` at 1.87ms means the
+two-frame queue absorbs almost all of ffmpeg's variance. There is no remaining
+transport work worth doing.
+
+### Overlap is not free: the stages compete for CPU
+
+`scene.sync` was 11.05ms at the baseline and 28.11ms here, with nothing in the
+draw path changed between them. The cause is contention. Before Phase 3, ffmpeg
+spent most of its life blocked on the pipe, so the draw had the machine to
+itself; now it encodes concurrently, and `libx264` defaults to roughly 1.5
+threads per core.
+
+The earlier ~45ms-per-frame projection treated the stages as independent and
+therefore over-promised. Overlap delivered 42ms, but only because it also
+handed back about 17ms of draw time.
+
+`-threads` is now capped at half the core count (minimum two). `ipc.drain` at
+1.87ms shows how much slack the encoder has, so a smaller pool should still
+keep up while leaving the renderer cores to draw into.
+
+`loop.yield` reached 3.02ms per frame — 7% of the budget for a `setTimeout`,
+inflated by the same contention. It now fires every eighth frame, which still
+keeps cancel latency near 0.3s because awaiting the previous write already
+turns the event loop.
+
+### Run-to-run variance is significant
+
+An earlier run of functionally identical code measured 10.44s against this
+6.94s — about 30% spread. Any future comparison needs two or three runs, and
+single-run deltas below roughly 30% should not be trusted.
+
+### What is left
+
+| Stage | Per frame | Share | Notes |
+| --- | ---: | ---: | --- |
+| `scene.sync` | 28.11ms | 67% | Rebuilding the Pixi scene graph in JS each frame. Partly contention, partly real work; the split is not yet known. |
+| `gpu.readback` | 7.44ms | 18% | `readPixels` synchronization. Shrinks ~2.7x only if the GPU produces yuv420p planes instead of rgba. |
+| transport | 3.14ms | 7.5% | Done. |
+
+The bottleneck has moved out of the export pipeline and into per-frame scene
+construction, which is mode-side work rather than transport or encoding. It
+should be re-measured after the thread cap, since some of that 28.11ms is
+contention that the cap may return.
+
 ## Phase 2 result: raw RGBA transport (2026-09-02)
 
 Same machine, project, and settings as the baseline above: 150 frames, MP4,
