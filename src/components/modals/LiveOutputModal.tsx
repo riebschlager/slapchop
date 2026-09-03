@@ -1,5 +1,7 @@
 import { Loader2, Radio, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { isNative } from '../../lib/native';
+import { liveOutputBlockedReason } from '../../lib/hostEnvironment';
 import { LiveOutputApi } from '../../hooks/useLiveOutput';
 
 export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
@@ -20,6 +22,14 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
     liveOutputMetrics,
     liveOutputDownscaled
   } = api;
+
+  // Recomputed per render because the user can edit the signaling URL: a
+  // secure endpoint is permitted from a hosted page, a plaintext one is not.
+  const blockedReason = liveOutputBlockedReason({
+    native: isNative(),
+    pageProtocol: window.location.protocol,
+    signalingUrl: liveOutputUrl
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -42,6 +52,14 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
         <p className="text-xs text-gray-400 mb-5">
           Stream the live 1080×1920 canvas over WebRTC using TouchDesigner&apos;s signaling server.
         </p>
+
+        {blockedReason && (
+          <div className="rounded-lg bg-amber-950/30 border border-amber-900 px-3 py-2 mb-4 text-[11px] leading-relaxed text-amber-200">
+            {blockedReason}{' '}
+            Run the desktop app, or a local build over <span className="font-mono">http://</span>,
+            to stream into TouchDesigner.
+          </div>
+        )}
 
         <div className="space-y-4">
           <div>
@@ -216,7 +234,8 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
             ) : (
               <button
                 onClick={() => void connectLiveOutput()}
-                disabled={liveOutputBusy}
+                disabled={liveOutputBusy || blockedReason !== null}
+                title={blockedReason ?? undefined}
                 className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold rounded-lg text-xs transition-colors"
               >
                 {liveOutputBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

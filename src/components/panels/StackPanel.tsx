@@ -370,6 +370,15 @@ export default function StackPanel() {
            </div>
          </div>
 
+         {/* Browser sessions keep the document in memory only; there is no
+             autosave or crash recovery, so the warning belongs beside save/open. */}
+         {!isNative() && (
+           <p className="text-[10px] leading-snug text-amber-300/80 mt-2">
+             Browser session — closing or refreshing this tab discards the
+             document. Save a <span className="font-mono">.slapchop</span> project to keep it.
+           </p>
+         )}
+
          <ModePicker
            label="Editing mode"
            className="mt-3"

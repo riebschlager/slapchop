@@ -505,7 +505,7 @@ rejection.
 **In-memory behavior is stated in the app.** The frame-count line in the export
 modal now reads that browser exports are assembled entirely in memory and capped
 at ten seconds, so a long or full-resolution job can exhaust the tab. The
-browser-versus-desktop table in `README.md` is Phase 3 work and is not done.
+browser-versus-desktop table in `README.md` landed in Phase 3.
 
 **The large-GIF-library recommendation is not done.** It needs a realistic
 asset library rather than code, so it stays open.
@@ -524,22 +524,89 @@ above.
 Add hosted-user documentation and small contextual messages where a native-only
 feature would otherwise be confusing.
 
-- [ ] Add the hosted URL to `README.md`.
-- [ ] Add a compact browser-versus-desktop capability table.
-- [ ] State that source assets and projects are processed locally and are not
+- [x] Add the hosted URL to `README.md`.
+- [x] Add a compact browser-versus-desktop capability table.
+- [x] State that source assets and projects are processed locally and are not
       uploaded by the application.
-- [ ] Warn that refreshing or closing an unsaved browser session loses the
+- [x] Warn that refreshing or closing an unsaved browser session loses the
       current document.
-- [ ] Explain the 10-second browser animation limit and in-memory exports.
-- [ ] Identify ProRes, direct/resumable frame folders, long jobs, native file
+- [x] Explain the 10-second browser animation limit and in-memory exports.
+- [x] Identify ProRes, direct/resumable frame folders, long jobs, native file
       dialogs, file association, and window restore as desktop-only.
-- [ ] Mark TouchDesigner Live Output as unsupported from the hosted edition
+- [x] Mark TouchDesigner Live Output as unsupported from the hosted edition
       until Phase 5 is completed.
-- [ ] Include a link to desktop setup rather than presenting the editions as
+- [x] Include a link to desktop setup rather than presenting the editions as
       feature-equivalent.
 
+#### Phase 3 record (2026-09-03)
+
+**The hosted boundary is documented in `README.md`.** A new **Editions** section
+sits directly under the intro, before the local-development instructions, and
+carries the hosted URL, a "Your work stays on your machine" paragraph, a
+thirteen-row browser-versus-desktop capability table, a "Browser edition limits"
+list, and an explicit desktop-only sentence. The two editions are introduced as
+deliberately non-equivalent — "the browser edition is a short-form studio" —
+rather than as the same product in two wrappers, and the browser bullet links to
+the existing `Desktop app (Tauri)` section for setup.
+
+Three existing sections were corrected rather than duplicated: the scripts table
+now lists `build:pages`, the **Exports** section states the 10-second cap and
+describes the pre-export WebCodecs check and the truthful WebM fallback, and the
+**TouchDesigner live output** section opens by saying the feature needs the
+desktop app or a local `http://` build.
+
+**Live Output is gated on the actual browser rule, not on "is this a browser".**
+The failing condition is mixed content: an HTTPS page may not open a plaintext
+`ws://` socket. Gating on `!isNative()` would have broken `npm run dev`, where
+Live Output works today and must keep working. `src/lib/hostEnvironment.ts` is
+therefore a pure function of the page protocol and the URL the user has actually
+typed:
+
+| Session | Signaling URL | Result |
+| --- | --- | --- |
+| Desktop (Tauri) | any | Allowed |
+| `http://localhost:3000` | `ws://127.0.0.1:9980` | Allowed |
+| Hosted HTTPS page | `ws://127.0.0.1:9980` | Blocked, with the reason shown |
+| Hosted HTTPS page | `wss://…` | Allowed |
+
+The last row matters: hard-disabling Live Output in every hosted session would
+pre-emptively block the secure local endpoint that Phase 5 exists to evaluate.
+When blocked, `LiveOutputModal` renders an amber notice above the form and
+disables **Find Receivers**; the trigger button stays live so the explanation is
+reachable instead of the user meeting a dead control or a raw socket error.
+
+**The refresh warning sits beside save/open, as decision 4 specifies.** A single
+compact amber line under the `StackPanel` header — the row that holds the save
+and open buttons — reads "Browser session — closing or refreshing this tab
+discards the document. Save a .slapchop project to keep it." It renders only when
+`isNative()` is false. No automatic persistence and no `beforeunload` guard were
+added; both are out of scope per the plan's non-goals and its "Follow-up
+opportunities" list.
+
+**Verified in a real browser, on both origins.** Headless Chrome 152 over CDP,
+against the running dev server and against the actual `build:pages` output served
+over HTTPS under `/slapchop/` with a locally generated certificate — so the
+hosted branch was exercised from a genuine `https:` origin rather than simulated:
+
+| Origin | Session warning | Live Output notice | Find Receivers |
+| --- | --- | --- | --- |
+| `http://localhost:3000/` | Shown | Absent | Enabled |
+| `https://localhost:8443/slapchop/` | Shown | Shown | Disabled |
+| `https://localhost:8443/slapchop/`, URL edited to `wss://` | Shown | Cleared live | Re-enabled |
+
+**Automated checks.** `npm run typecheck`, `npm run lint`, `npm test`
+(30 files / 284 tests, including 11 new `hostEnvironment` cases), `npm run build`,
+and `npm run build:pages` all pass. The two pre-existing build warnings recorded
+in the Phase 0 baseline are unchanged.
+
+**Deferred to Phase 4, deliberately.** These claims are documented from the
+Phase 0 and Phase 2 evidence, but have not been re-verified against the live
+deployment: the folder-picker requirement in Safari and Firefox, and the video
+row's "where the codec is supported" wording outside Chrome. Both are already
+tracked by the Phase 4 browser matrix.
+
 **Exit criterion:** a first-time visitor can tell what stays local, what works
-in their browser, and when to use the desktop app.
+in their browser, and when to use the desktop app. Met.
 
 ### Phase 4: Hosted smoke test and release
 
@@ -700,7 +767,7 @@ The GitHub Pages edition is ready when all of the following are true:
 - [ ] The full frontend validation suite passes.
 - [ ] A Tauri smoke test confirms that the default build and native exports were
       not regressed.
-- [ ] README documentation links to both the hosted edition and desktop setup.
+- [x] README documentation links to both the hosted edition and desktop setup.
 
 ## Follow-up opportunities
 

@@ -5,6 +5,63 @@ mode can use the tools and concepts that fit its workflow while sharing a
 1080×1920 output surface and still-image, frame-sequence, video, and live-output
 pipelines.
 
+## Editions
+
+The same codebase ships two ways. They are not feature-equivalent: the browser
+edition is a short-form studio, and the desktop app adds native file access and
+long, incremental exports.
+
+- **Browser edition** — <https://riebschlager.github.io/slapchop/>. Nothing to
+  install; open it and start working.
+- **Desktop app** — build it yourself; see [Desktop app (Tauri)](#desktop-app-tauri).
+
+### Your work stays on your machine
+
+Slapchop has no backend, accounts, sign-in, cloud storage, or telemetry. Images,
+GIFs, folder libraries, `.slapchop` projects, and every export are read,
+rendered, and encoded inside your own browser tab. The application uploads
+nothing; the only network requests it makes are for its own code.
+
+### Browser edition vs. desktop app
+
+| Capability | Browser edition | Desktop app |
+| --- | --- | --- |
+| All seven creative modes | Yes | Yes |
+| Rendering | WebGPU, falling back to WebGL and Canvas 2D | WebGL (what WKWebView supports reliably) |
+| Image and GIF import | File picker and drag-and-drop | Native file dialogs |
+| Folder libraries | Directory picker; current desktop browsers only | Native folder dialogs |
+| `.slapchop` projects | Download and re-upload the file | Native dialogs, file association, double-click to open |
+| PNG still export | Yes | Yes |
+| Animated GIF | Yes, up to 10 seconds | Yes, up to 10 seconds |
+| Frame sequences | ZIP assembled in memory | Written straight to a folder, with frame range and resume |
+| MP4 / WebM | WebCodecs where the codec is supported, otherwise real-time WebM | ffmpeg sidecar, incremental, three encoder speeds |
+| ProRes 4444 | No | Yes |
+| Longest animation export | 10 seconds | 6 hours |
+| Session persistence | None; the document is lost on refresh | Window state is restored |
+| TouchDesigner Live Output | Not supported from the hosted page | Yes |
+
+### Browser edition limits
+
+- **Unsaved work does not survive a refresh.** There is no autosave or crash
+  recovery. Closing or reloading the tab discards the current document — save a
+  `.slapchop` project first.
+- **Exports are assembled in memory.** Animated GIFs, frame-sequence ZIPs,
+  WebCodecs video, and the self-contained `.slapchop` file are all built in the
+  tab rather than streamed to disk, so a long or full-resolution job can exhaust
+  it. Animation exports are capped at 10 seconds for this reason.
+- **Video export depends on the browser's encoder.** Slapchop tests the exact
+  codec, resolution, and frame rate before exporting. If the requested MP4
+  configuration is unavailable, it says so before the export starts and delivers
+  a real-time WebM recording named `.webm` — it never labels WebM as MP4.
+- **Browser support.** Current Chrome and Edge are the primary targets; current
+  Safari and Firefox are best-effort, using the WebGL, Canvas 2D, and
+  MediaRecorder fallbacks.
+
+**Desktop-only:** ProRes 4444, frame sequences written directly to a folder
+with resume, exports longer than 10 seconds, native open/save dialogs,
+`.slapchop` file association, window-state restore, and TouchDesigner Live
+Output.
+
 ## Run locally
 
 ```sh
@@ -33,7 +90,8 @@ lives at `src-tauri/binaries/ffmpeg-aarch64-apple-darwin` (a static arm64 build)
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Start the Vite dev server on port 3000 |
-| `npm run build` | Production build to `dist/` |
+| `npm run build` | Production build to `dist/` (also what Tauri packages) |
+| `npm run build:pages` | Production build for the hosted edition, based at `/slapchop/` |
 | `npm run typecheck` | TypeScript type check |
 | `npm run lint` | ESLint over `src/` |
 | `npm test` | Run the Vitest unit tests |
@@ -116,7 +174,10 @@ animation frames, then resumes from the same playback time; an active TouchDesig
 Live Output stream keeps the preview running. Animated GIF and browser exports
 retain the short-form limit.
 
-Browsers without WebCodecs fall back to real-time MediaRecorder WebM capture.
+Browser exports are assembled in memory and capped at 10 seconds. When WebCodecs
+is missing, or cannot encode the requested codec at the chosen resolution and
+frame rate, Slapchop says so in the export dialog before you start and falls
+back to a real-time MediaRecorder WebM capture, named and typed as WebM.
 
 ## TouchDesigner live output (WebRTC)
 
@@ -124,6 +185,10 @@ Slapchop can stream its live 1080×1920 canvas directly to TouchDesigner without
 rendering a second export frame. The sender uses the browser's WebRTC stack and
 TouchDesigner's built-in Signaling API; no cloud service or Slapchop backend is
 required.
+
+This needs the desktop app or a local `http://` build. TouchDesigner's signaling
+server speaks plaintext `ws://`, and browsers refuse an insecure WebSocket from
+an HTTPS page, so the hosted edition disables Live Output and explains why.
 
 ### TouchDesigner setup
 
