@@ -1,9 +1,8 @@
 import { Clapperboard, Download, Film, Loader2, Repeat, Video, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { isNative } from '../../lib/native';
-import { supportsWebCodecs } from '../../lib/videoExport';
 import { ExportSpeed } from '../../lib/ffmpegExport';
-import { ExportApi, ExportType } from '../../hooks/useExport';
+import { EXPORT_RESOLUTIONS, ExportApi, ExportType } from '../../hooks/useExport';
 
 function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -27,6 +26,7 @@ export default function ExportModal({ api }: { api: ExportApi }) {
     resumeSequence, setResumeSequence,
     exportSpeed, setExportSpeed,
     exportNotice,
+    browserVideoPlan, browserVideoError,
     pausePreviewDuringExport, setPausePreviewDuringExport,
     liveOutputStreaming,
     exportJob,
@@ -37,13 +37,12 @@ export default function ExportModal({ api }: { api: ExportApi }) {
   const native = isNative();
   const durationMax = native && exportType !== 'gif' ? 21_600 : 10;
   const totalFrames = Math.round(exportDuration * exportFps);
-  const [exportWidth, exportHeight] = exportResolution === 'full' ? [1080, 1920]
-    : exportResolution === 'hd' ? [720, 1280]
-    : [540, 960];
+  const [exportWidth, exportHeight] = EXPORT_RESOLUTIONS[exportResolution];
   const uncompressedSequenceBytes = exportWidth * exportHeight * 4 * totalFrames;
   // Encoder speeds only exist for the ffmpeg-backed desktop video formats.
   const isNativeVideo = native
     && (exportType === 'mp4' || exportType === 'webm' || exportType === 'prores');
+  const isBrowserVideo = !native && (exportType === 'mp4' || exportType === 'webm');
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -87,9 +86,15 @@ export default function ExportModal({ api }: { api: ExportApi }) {
                 </button>
               ))}
             </div>
-            {!native && (exportType === 'mp4' || exportType === 'webm') && !supportsWebCodecs() && (
-              <p className="text-[10px] text-amber-400/90 mt-1.5">
-                WebCodecs is unavailable in this browser — video will be recorded in real time as WebM.
+            {isBrowserVideo && browserVideoError && (
+              <p className="text-[10px] text-red-400 mt-1.5">{browserVideoError}</p>
+            )}
+            {isBrowserVideo && !browserVideoError && browserVideoPlan && (
+              <p className={cn(
+                'text-[10px] mt-1.5',
+                browserVideoPlan.degraded ? 'text-amber-400/90' : 'text-gray-500'
+              )}>
+                {browserVideoPlan.summary}
               </p>
             )}
           </div>
@@ -200,7 +205,7 @@ export default function ExportModal({ api }: { api: ExportApi }) {
           <p className="text-[10px] text-gray-500">
             {totalFrames.toLocaleString()} frames · {native
               ? 'desktop exports write incrementally without retaining the complete output in memory.'
-              : 'browser exports retain the existing short-form pipeline.'}
+              : 'browser exports are assembled entirely in memory and capped at 10 seconds, so a long or full-resolution job can exhaust the tab.'}
           </p>
 
           {native && (

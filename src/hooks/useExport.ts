@@ -8,12 +8,13 @@ import {
   renderExportFrame
 } from '../renderer/loop';
 import { suspendLivePreviewRendering } from '../renderer/livePreviewSuspension';
-import { exportVideo, supportsWebCodecs, VideoFormat } from '../lib/videoExport';
+import { exportVideo } from '../lib/videoExport';
+import { MediaRecorderVideoExportPlan, planVideoExport, VideoExportPlan } from '../lib/videoCapabilities';
 import { exportZipSequence } from '../lib/zipExport';
 import { exportGif } from '../lib/gifExport';
 import { exportNativeImageSequence } from '../lib/imageSequenceExport';
 import { ExportSpeed, exportNativeVideo } from '../lib/ffmpegExport';
-import { getExportErrorMessage } from '../lib/exportErrors';
+import { getExportFailureMessage } from '../lib/exportErrors';
 import { beginExportProfile } from '../lib/exportProfiler';
 import { isNative, pickDirectoryPath, pickSavePath, saveBlob } from '../lib/native';
 
@@ -25,6 +26,13 @@ export interface ExportJob {
   label: string;
   percent: number;
 }
+
+/** Output sizes, all portrait subdivisions of the 1080x1920 design space. */
+export const EXPORT_RESOLUTIONS: Record<ExportResolution, readonly [number, number]> = {
+  full: [1080, 1920],
+  hd: [720, 1280],
+  compact: [540, 960]
+};
 
 function getExportTimestamp(): string {
   const now = new Date();
@@ -57,6 +65,10 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
   const [exportJob, setExportJob] = useState<ExportJob | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  // Resolved ahead of the export so the modal can warn about a format or
+  // timing fallback before the user commits to it.
+  const [browserVideoPlan, setBrowserVideoPlan] = useState<VideoExportPlan | null>(null);
+  const [browserVideoError, setBrowserVideoError] = useState<string | null>(null);
 
   const isCancelExportRef = useRef(false);
   const liveOutputStreamingRef = useRef(liveOutputStreaming);
@@ -73,6 +85,32 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     resumePreviewRef.current?.();
     resumePreviewRef.current = null;
   }, []);
+
+  // Probe the browser video path whenever the request changes. Encoder support
+  // is resolution- and frame-rate-dependent, so this cannot be cached per
+  // format. Native video goes through ffmpeg and needs no probe.
+  useEffect(() => {
+    if (isNative() || (exportType !== 'mp4' && exportType !== 'webm')) {
+      setBrowserVideoPlan(null);
+      setBrowserVideoError(null);
+      return;
+    }
+    let stale = false;
+    const [width, height] = EXPORT_RESOLUTIONS[exportResolution];
+    planVideoExport({ format: exportType, width, height, fps: exportFps }).then(
+      (plan) => {
+        if (stale) return;
+        setBrowserVideoPlan(plan);
+        setBrowserVideoError(null);
+      },
+      (e) => {
+        if (stale) return;
+        setBrowserVideoPlan(null);
+        setBrowserVideoError(getExportFailureMessage(exportType, e));
+      }
+    );
+    return () => { stale = true; };
+  }, [exportType, exportResolution, exportFps]);
 
   const openExportModal = () => {
     setExportError(null);
@@ -106,6 +144,17 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     setShowExportModal(false);
   };
 
+  /**
+   * Hands a finished blob to the save path without awaiting it, so the export
+   * profiler's elapsed window still ends at the last encoded frame. Without
+   * the handler a failed save would only ever surface as an unhandled
+   * rejection.
+   */
+  const saveExportResult = (blob: Blob, filename: string) => {
+    void finishExport(blob, filename)
+      .catch((e) => setExportError(getExportFailureMessage(exportType, e)));
+  };
+
   const runWithPreviewPaused = async <T,>(work: () => Promise<T>): Promise<T> => {
     if (!isNative() || !pausePreviewDuringExport || liveOutputStreamingRef.current) return work();
 
@@ -119,53 +168,72 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     }
   };
 
-  // Real-time MediaRecorder capture, kept only for browsers without WebCodecs.
-  const recordVideoFallback = (doc: RenderState, resW: number, resH: number) =>
-    new Promise<void>((resolve) => {
+  /**
+   * Real-time canvas capture, used when no WebCodecs configuration matches the
+   * request. Output is always WebM, so the plan — not the requested format —
+   * decides the extension and mime type.
+   */
+  const recordVideoFallback = (
+    plan: MediaRecorderVideoExportPlan,
+    doc: RenderState,
+    resW: number,
+    resH: number,
+    ts: string
+  ) =>
+    new Promise<void>((resolve, reject) => {
       const offscreenCanvas = document.createElement('canvas');
       offscreenCanvas.width = resW;
       offscreenCanvas.height = resH;
 
-      const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-      let selectedMimeType = 'video/webm';
-      for (const type of mimeTypes) {
-        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
-          selectedMimeType = type;
-          break;
-        }
-      }
-
       const stream = offscreenCanvas.captureStream(exportFps);
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: plan.recorderMimeType });
+      let interval: ReturnType<typeof setInterval> | null = null;
+      // captureStream keeps a live track bound to the canvas; without an
+      // explicit stop it keeps sampling after the recorder is done.
+      const releaseCapture = () => {
+        if (interval !== null) clearInterval(interval);
+        interval = null;
+        stream.getTracks().forEach((track) => track.stop());
+      };
 
       const chunks: Blob[] = [];
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunks.push(e.data);
       };
 
+      mediaRecorder.onerror = (e) => {
+        releaseCapture();
+        reject((e as unknown as { error?: unknown }).error ?? new Error('Real-time recording failed'));
+      };
+
       mediaRecorder.onstop = () => {
-        if (!isCancelExportRef.current) {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          finishExport(blob, `slapchop-video-${getExportTimestamp()}-${exportDuration}s.webm`);
+        releaseCapture();
+        if (isCancelExportRef.current) {
+          chunks.length = 0;
+          resolve();
+          return;
         }
-        resolve();
+        const blob = new Blob(chunks, { type: plan.mimeType });
+        finishExport(blob, `slapchop-video-${ts}-${exportDuration}s.${plan.extension}`).then(resolve, reject);
       };
 
       mediaRecorder.start();
 
       const startTime = performance.now();
-      const interval = setInterval(() => {
+      interval = setInterval(() => {
         const elapsed = (performance.now() - startTime) / 1000;
         setExportJob({
-          label: `Recording in real time (WebCodecs unavailable)… ${elapsed.toFixed(1)}s / ${exportDuration}s`,
+          label: `Recording in real time as ${plan.extension.toUpperCase()}… ${elapsed.toFixed(1)}s / ${exportDuration}s`,
           percent: Math.min(100, (elapsed / exportDuration) * 100)
         });
 
         renderExportFrame(offscreenCanvas, elapsed, doc, resW, resH);
 
         if (elapsed >= exportDuration || isCancelExportRef.current) {
-          clearInterval(interval);
+          if (interval !== null) clearInterval(interval);
+          interval = null;
           if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+          else releaseCapture();
         }
       }, 1000 / exportFps);
     });
@@ -175,9 +243,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     setExportError(null);
     setExportNotice(null);
     const doc = snapshotRenderState();
-    const [resW, resH] = exportResolution === 'full' ? [1080, 1920]
-                       : exportResolution === 'hd' ? [720, 1280]
-                       : [540, 960];
+    const [resW, resH] = EXPORT_RESOLUTIONS[exportResolution];
     const ts = getExportTimestamp();
 
     const common = {
@@ -227,11 +293,11 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
           onProgress: frameProgress('Rendering'),
           onZipProgress: (percent) => setExportJob({ label: 'Compressing ZIP…', percent })
         });
-        if (blob) finishExport(blob, `slapchop-sequence-${ts}-${exportResolution}-${exportDuration}s.zip`);
+        if (blob) saveExportResult(blob, `slapchop-sequence-${ts}-${exportResolution}-${exportDuration}s.zip`);
       } else if (exportType === 'gif') {
         const blob = await runWithPreviewPaused(() =>
           exportGif({ ...common, onProgress: frameProgress('Encoding GIF') }));
-        if (blob) finishExport(blob, `slapchop-anim-${ts}-${exportDuration}s.gif`);
+        if (blob) saveExportResult(blob, `slapchop-anim-${ts}-${exportDuration}s.gif`);
       } else if (isNative() && (exportType === 'mp4' || exportType === 'webm' || exportType === 'prores')) {
         const extension = exportType === 'prores' ? 'mov' : exportType;
         const savePath = await pickSavePath(`slapchop-video-${ts}-${exportDuration}s.${extension}`);
@@ -256,18 +322,33 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
             frames.dispose();
           }
         }
-      } else if (supportsWebCodecs()) {
-        const blob = await exportVideo(exportType as VideoFormat, {
-          ...common,
-          onProgress: frameProgress('Encoding')
+      } else if (exportType === 'mp4' || exportType === 'webm') {
+        // Browser video. Re-plan at export time so the run uses the authoritative
+        // capability answer for the current request, not a stale probe.
+        const plan = await planVideoExport({
+          format: exportType, width: resW, height: resH, fps: exportFps
         });
-        if (blob) finishExport(blob, `slapchop-video-${ts}-${exportDuration}s.${exportType}`);
+        setBrowserVideoPlan(plan);
+        // The modal already shows a degraded plan inline; only escalate to the
+        // notice box if the export-time answer differs from what was displayed.
+        if (plan.degraded && plan.summary !== browserVideoPlan?.summary) setExportNotice(plan.summary);
+
+        if (plan.path === 'webcodecs') {
+          const blob = await exportVideo(plan.format, {
+            ...common,
+            encoderConfig: plan.encoderConfig,
+            onProgress: frameProgress('Encoding')
+          });
+          if (blob) saveExportResult(blob, `slapchop-video-${ts}-${exportDuration}s.${plan.extension}`);
+        } else {
+          await recordVideoFallback(plan, doc, resW, resH, ts);
+        }
       } else {
-        await recordVideoFallback(doc, resW, resH);
+        throw new Error(`${exportType} export is only available in the desktop app.`);
       }
     } catch (e) {
       console.error('Export failed:', e);
-      setExportError(getExportErrorMessage(e));
+      setExportError(getExportFailureMessage(exportType, e));
     } finally {
       finishProfile();
       setExportJob(null);
@@ -316,6 +397,8 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     exportJob,
     exportError,
     exportNotice,
+    browserVideoPlan,
+    browserVideoError,
     handleExportHighRes,
     startExport
   };

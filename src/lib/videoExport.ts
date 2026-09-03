@@ -1,8 +1,9 @@
 import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from 'mp4-muxer';
 import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from 'webm-muxer';
 import { getExportProfiler } from './exportProfiler';
+import type { VideoFormat } from './videoCapabilities';
 
-export type VideoFormat = 'mp4' | 'webm';
+export type { VideoFormat };
 
 export interface FrameExportOptions {
   width: number;
@@ -16,52 +17,19 @@ export interface FrameExportOptions {
   isCancelled?: () => boolean;
 }
 
-export function supportsWebCodecs(): boolean {
-  return typeof VideoEncoder !== 'undefined';
+export interface WebCodecsExportOptions extends FrameExportOptions {
+  /**
+   * A configuration that already passed `VideoEncoder.isConfigSupported`.
+   * Capability selection lives in `videoCapabilities.ts` so the UI can warn
+   * about a fallback before the export starts.
+   */
+  encoderConfig: VideoEncoderConfig;
 }
-
-// High → Main → Baseline profile, all at level 5.1 (covers 1080p60 with room to spare).
-const AVC_CODECS = ['avc1.640033', 'avc1.4d0033', 'avc1.420033'];
-// VP9 profile 0, 8-bit; level 4.1 covers 1080p60, 1.0 as a permissive fallback.
-const VP9_CODECS = ['vp09.00.41.08', 'vp09.00.10.08'];
 
 /** Frames the encoder may have queued before the loop stops feeding it. */
 const QUEUE_HIGH_WATER = 2;
 /** Frames between UI yields when the encoder is keeping up. */
 const UI_YIELD_INTERVAL = 8;
-
-/** ~0.15 bits per pixel per frame, clamped to a sane range. */
-export function pickBitrate(width: number, height: number, fps: number): number {
-  const raw = Math.round(width * height * fps * 0.15);
-  return Math.min(24_000_000, Math.max(2_000_000, raw));
-}
-
-async function pickEncoderConfig(
-  format: VideoFormat,
-  width: number,
-  height: number,
-  fps: number
-): Promise<VideoEncoderConfig | null> {
-  const candidates = format === 'mp4' ? AVC_CODECS : VP9_CODECS;
-  for (const codec of candidates) {
-    const config: VideoEncoderConfig = {
-      codec,
-      width,
-      height,
-      bitrate: pickBitrate(width, height, fps),
-      framerate: fps,
-      // 'avc' packaging gives the muxer the out-of-band decoder config it needs.
-      ...(format === 'mp4' ? { avc: { format: 'avc' as const } } : {})
-    };
-    try {
-      const { supported } = await VideoEncoder.isConfigSupported(config);
-      if (supported) return config;
-    } catch {
-      // malformed/unknown codec string on this browser — try the next one
-    }
-  }
-  return null;
-}
 
 /**
  * Frame-exact video export: renders exactly fps × duration frames at
@@ -70,15 +38,11 @@ async function pickEncoderConfig(
  */
 export async function exportVideo(
   format: VideoFormat,
-  opts: FrameExportOptions
+  opts: WebCodecsExportOptions
 ): Promise<Blob | null> {
   const { width, height, fps, duration, startTime = 0, renderFrame, onProgress, isCancelled } = opts;
   const totalFrames = Math.round(fps * duration);
-
-  const config = await pickEncoderConfig(format, width, height, fps);
-  if (!config) {
-    throw new Error(`No supported ${format.toUpperCase()} encoder configuration for ${width}x${height}@${fps}`);
-  }
+  const config = opts.encoderConfig;
 
   const target = format === 'mp4' ? new Mp4Target() : new WebmTarget();
   const muxer = format === 'mp4'

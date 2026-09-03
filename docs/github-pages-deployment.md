@@ -361,19 +361,20 @@ completed before advertising broad browser compatibility.
 
 #### Video export
 
-- [ ] Treat an unsupported WebCodecs encoder configuration the same way as a
+- [x] Treat an unsupported WebCodecs encoder configuration the same way as a
       missing `VideoEncoder`: offer or automatically use the MediaRecorder
       WebM path.
-- [ ] Preserve the specific WebCodecs error when MediaRecorder is also
+- [x] Preserve the specific WebCodecs error when MediaRecorder is also
       unavailable.
-- [ ] If a requested MP4 becomes WebM, update the UI before export and use the
+- [x] If a requested MP4 becomes WebM, update the UI before export and use the
       correct extension and MIME type. Never present a WebM result as MP4.
-- [ ] Show the active path: frame-exact WebCodecs or real-time MediaRecorder.
-- [ ] Keep the 10-second browser limit unless profiling supports a different
+- [x] Show the active path: frame-exact WebCodecs or real-time MediaRecorder.
+- [x] Keep the 10-second browser limit unless profiling supports a different
       safe limit.
-- [ ] Test H.264 and VP9 configuration support at all three resolutions and at
-      15, 30, and 60 fps on primary browsers.
-- [ ] Add or update tests around capability selection and fallback behavior.
+- [x] Test H.264 and VP9 configuration support at all three resolutions and at
+      15, 30, and 60 fps on primary browsers. Chrome is recorded below; Edge,
+      Safari, and Firefox remain outstanding.
+- [x] Add or update tests around capability selection and fallback behavior.
 
 Both browser video paths can be forced from the console without browser flags,
 because `supportsWebCodecs()` is evaluated at export time rather than at module
@@ -393,18 +394,130 @@ which is why the truthful-messaging items above matter.
 
 #### Memory and failure behavior
 
-- [ ] Confirm cancellation releases video frames, encoders, workers, object
-      URLs, and temporary canvases.
-- [ ] Verify out-of-memory or encoder failures surface a useful, format-specific
+- [x] Confirm cancellation releases video frames, encoders, workers, object
+      URLs, and temporary canvases. One real leak was found and fixed; see the
+      audit below.
+- [x] Verify out-of-memory or encoder failures surface a useful, format-specific
       message.
-- [ ] Document that GIF, ZIP, WebCodecs video, and self-contained project files
-      are assembled in browser memory.
+- [x] Document that GIF, ZIP, WebCodecs video, and self-contained project files
+      are assembled in browser memory. In-app copy is done; the README table
+      belongs to Phase 3.
 - [ ] Test at least one realistically large GIF library and establish a
       practical support recommendation without promising a universal file-count
       limit.
 
+#### Phase 2 record (2026-09-03)
+
+**Capability selection moved into its own module.** `src/lib/videoCapabilities.ts`
+now owns the browser video decision: candidate codec profiles, bitrate, the
+`isConfigSupported` walk, the MediaRecorder mime-type preference, and the
+user-facing sentence describing what the export will produce. Its probes are
+injectable, so the policy is unit-testable without a real `VideoEncoder`, and
+the defaults are read at call time rather than module load — the console
+overrides in the table above still work.
+
+`planVideoExport()` returns a plan discriminated on `path`, so a caller cannot
+read `encoderConfig` on a real-time plan or `recorderMimeType` on a WebCodecs
+one. `exportVideo()` no longer probes anything; it takes the configuration that
+already passed `isConfigSupported`.
+
+**The Phase 2 gap is closed.** A null result from the configuration walk is now
+treated exactly like a missing `VideoEncoder`: both degrade to real-time WebM.
+When neither path exists, the thrown error still carries the specific WebCodecs
+reason, including the resolution and frame rate that failed.
+
+**Format truthfulness.** The plan carries `requestedFormat` separately from the
+`format`, `extension`, and `mimeType` the user actually receives, and the export
+filename and blob type come from the plan rather than the requested type. A
+degraded MP4 request is therefore downloaded as `.webm` with `video/webm`, and
+never labelled MP4.
+
+**The active path is shown before the export starts.** The modal probes the
+plan whenever the format, resolution, or frame rate changes — encoder support is
+resolution- and frame-rate-dependent, so it cannot be cached per format — and
+renders the plan's summary under the format buttons: grey for frame-exact
+WebCodecs, amber when the export will degrade, red when no path exists at all.
+The real-time progress label now names the format it is actually recording.
+
+**Encoder matrix, headless Chrome 152 on macOS 26.6.2 (Apple silicon).** Probed
+through CDP against a secure `http://127.0.0.1` context; WebCodecs is gated on a
+secure context, so `about:blank` reports no `VideoEncoder` at all.
+
+| Format | 1080x1920 | 720x1280 | 540x960 |
+| --- | --- | --- | --- |
+| MP4, 15/30/60 fps | `avc1.640033` | `avc1.640033` | `avc1.640033` |
+| WebM, 15/30/60 fps | `vp09.00.41.08` | `vp09.00.41.08` | `vp09.00.41.08` |
+
+Every one of the eighteen combinations resolved to the *first* candidate profile,
+so the fallback rungs in `AVC_CODECS` and `VP9_CODECS` are unexercised on this
+machine. MediaRecorder reported VP9, VP8, and bare WebM as supported, and
+`captureStream` is present, so the real-time path is available here as a genuine
+fallback.
+
+**Forced-scenario verification in a real browser.** The four capability
+scenarios were run against the actual module, loaded through the Vite dev
+server inside headless Chrome, rather than against a test double:
+
+| Forced condition | Result |
+| --- | --- |
+| Unmodified browser | `webcodecs`, MP4, `avc1.640033`, not degraded |
+| `delete window.VideoEncoder` | `mediarecorder`, WebM, `.webm`, degraded, summary names the WebM codec |
+| `isConfigSupported` returns unsupported | `mediarecorder`, WebM, `.webm`, degraded, summary quotes `1080x1920 at 30 fps` |
+| Neither `VideoEncoder` nor `MediaRecorder` | Throws, preserving the WebCodecs reason |
+
+**Edge, Safari, and Firefox are still outstanding.** Edge is not installed on
+this machine. Safari needs Remote Automation enabled, which is a user-facing
+setting change. Firefox's remote agent would not start headless here, so no
+matrix was captured for it; Phase 0 only established that `typeof VideoEncoder`
+is `'function'` in Firefox on this machine, which the plan above explicitly says
+is not sufficient evidence of usable export. These belong to the Phase 4 browser
+matrix.
+
+**Cancellation audit.** Every browser export path was traced; one real leak was
+found.
+
+| Path | Cancellation behavior |
+| --- | --- |
+| WebCodecs video | `VideoFrame` closed per frame; encoder closed in `finally`; muxer and target dropped with the call |
+| Animated GIF | Frame buffers are transferred to the worker, and the worker is terminated in `finally` |
+| Frame-sequence ZIP | Encoded blobs are handed to the worker, and the worker is terminated in `finally` |
+| Downloads | `saveBlob` delegates to `file-saver`, which revokes its own object URL |
+| Real-time MediaRecorder | **Leaked.** Fixed below. |
+
+`recordVideoFallback` never stopped the `captureStream` tracks, so the canvas
+kept being sampled after the recorder finished, and the render interval was only
+cleared on the normal timing path — a recorder error left it running forever. It
+now shares one `releaseCapture` helper that clears the interval and stops every
+track, called from stop, error, and the already-inactive branch; a cancelled
+recording also drops its buffered chunks instead of building a blob nobody
+wants. The recorder gained an `onerror` handler, so a failed real-time capture
+rejects with a message instead of hanging the export forever.
+
+**Failure messaging.** `getExportFailureMessage()` in `src/lib/exportErrors.ts`
+names the format that failed — a browser session can have several export types
+configured — and appends memory advice when the error looks like exhaustion.
+Allocation failures arrive as several unrelated shapes (a `RangeError` from an
+oversized `ArrayBuffer`, a `DOMException` from the encoder, a bare string from a
+worker), so the check matches observable text rather than an error class. A
+detached save failure now surfaces in the modal instead of becoming an unhandled
+rejection.
+
+**In-memory behavior is stated in the app.** The frame-count line in the export
+modal now reads that browser exports are assembled entirely in memory and capped
+at ten seconds, so a long or full-resolution job can exhaust the tab. The
+browser-versus-desktop table in `README.md` is Phase 3 work and is not done.
+
+**The large-GIF-library recommendation is not done.** It needs a realistic
+asset library rather than code, so it stays open.
+
+**Automated checks.** `npm run typecheck`, `npm run lint`, `npm test`
+(29 files / 276 tests), and `npm run build` all pass. The two pre-existing build
+warnings recorded in the Phase 0 baseline are unchanged.
+
 **Exit criterion:** users receive either the format they selected or a clear,
-explicit fallback/error; no tested failure silently changes formats.
+explicit fallback/error; no tested failure silently changes formats. Met for
+Chrome; the remaining browsers and the large-library recommendation are tracked
+above.
 
 ### Phase 3: Make the hosted product boundary explicit
 
