@@ -134,6 +134,10 @@ serialization, rendering, export semantics, or mode independence.
 This creates a comparison set and reduces the chance of replacing meaningful
 status colors mechanically.
 
+Done: recorded in [`ui-color-baseline.md`](./ui-color-baseline.md), which also
+lists the states the browser capture could not reach and the findings that
+change how Phases 1-3 should be sequenced.
+
 ### Phase 1: Add tokens and migrate shared controls
 
 1. Define the semantic palette with Tailwind v4 `@theme` variables in
