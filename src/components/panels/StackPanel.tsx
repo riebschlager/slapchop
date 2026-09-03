@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle, Grid2X2, Mountain, Sun } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
@@ -112,25 +112,6 @@ export default function StackPanel() {
   const landscapeSkyFolderInputRef = useRef<HTMLInputElement>(null);
   const landscapeSkyReplaceIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    const input = flythroughFolderInputRef.current;
-    if (!input) return;
-    input.setAttribute('webkitdirectory', '');
-    input.setAttribute('directory', '');
-    const tunnelInput = tunnelFolderInputRef.current;
-    tunnelInput?.setAttribute('webkitdirectory', '');
-    tunnelInput?.setAttribute('directory', '');
-    const gifVoronoiInput = gifVoronoiFolderInputRef.current;
-    gifVoronoiInput?.setAttribute('webkitdirectory', '');
-    gifVoronoiInput?.setAttribute('directory', '');
-    const landscapeTerrainInput = landscapeTerrainFolderInputRef.current;
-    landscapeTerrainInput?.setAttribute('webkitdirectory', '');
-    landscapeTerrainInput?.setAttribute('directory', '');
-    const landscapeSkyInput = landscapeSkyFolderInputRef.current;
-    landscapeSkyInput?.setAttribute('webkitdirectory', '');
-    landscapeSkyInput?.setAttribute('directory', '');
-  }, []);
-
   const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -208,6 +189,21 @@ export default function StackPanel() {
     }
   };
 
+  // Every folder input lives inside a mode-gated block, and the whole panel
+  // unmounts while collapsed, so the directory attributes are applied at click
+  // time rather than on mount: a mount-time effect only ever sees the inputs
+  // for whichever mode was active when the panel first rendered. Browsers read
+  // the attributes when the chooser opens, so setting them immediately before
+  // click() is what makes this a folder picker instead of a multi-file picker.
+  const openFolderPicker = (input: HTMLInputElement | null) => {
+    if (!input) return;
+    // `webkitdirectory` is the attribute Chromium, Firefox, and Safari
+    // implement; `directory` is the unprefixed spec name.
+    input.setAttribute('webkitdirectory', '');
+    input.setAttribute('directory', '');
+    input.click();
+  };
+
   const handleFlythroughFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files: File[] = Array.from(e.target.files ?? []);
     e.target.value = '';
@@ -216,7 +212,7 @@ export default function StackPanel() {
 
   const handleChooseFlythroughFolder = async () => {
     if (!isNative()) {
-      flythroughFolderInputRef.current?.click();
+      openFolderPicker(flythroughFolderInputRef.current);
       return;
     }
     const files = await pickGifFolder();
@@ -237,7 +233,7 @@ export default function StackPanel() {
 
   const handleChooseTunnelFolder = async () => {
     if (!isNative()) {
-      tunnelFolderInputRef.current?.click();
+      openFolderPicker(tunnelFolderInputRef.current);
       return;
     }
     const files = await pickImageFolder();
@@ -267,7 +263,7 @@ export default function StackPanel() {
 
   const handleChooseGifVoronoiFolder = async () => {
     if (!isNative()) {
-      gifVoronoiFolderInputRef.current?.click();
+      openFolderPicker(gifVoronoiFolderInputRef.current);
       return;
     }
     const files = await pickGifFolder();
@@ -282,7 +278,7 @@ export default function StackPanel() {
 
   const handleChooseLandscapeTerrainFolder = async () => {
     if (!isNative()) {
-      landscapeTerrainFolderInputRef.current?.click();
+      openFolderPicker(landscapeTerrainFolderInputRef.current);
       return;
     }
     const files = await pickGifFolder();
@@ -302,7 +298,7 @@ export default function StackPanel() {
   const handleChooseLandscapeSkyFolder = async (replaceId: string | null = null) => {
     if (!isNative()) {
       landscapeSkyReplaceIdRef.current = replaceId;
-      landscapeSkyFolderInputRef.current?.click();
+      openFolderPicker(landscapeSkyFolderInputRef.current);
       return;
     }
     const files = await pickGifFolder();
