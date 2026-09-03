@@ -9,3 +9,31 @@
 :root {
   color-scheme: dark;
 }
+
+/* Semantic application palette (docs/architecture/ui-color-system.md). UI
+   components pick a colour by role — surface, boundary, text rank, primary
+   interaction, creative accent — rather than by Tailwind hue family, so the
+   studio chrome stays one system across all modes. Authored document colours,
+   renderer materials, and the amber/red status roles deliberately stay outside
+   this palette. */
+@theme {
+  --color-ui-canvas: #090a0a;
+  --color-ui-panel: #101112;
+  --color-ui-surface: #17191a;
+  --color-ui-surface-raised: #1f2223;
+  --color-ui-border: #2d3133;
+  --color-ui-border-strong: #42484b;
+  --color-ui-text: #f1f3f2;
+  --color-ui-text-muted: #b0b6b3;
+  /* Brightened from the #747b77 in the ADR table: that value measured 4.4:1 on
+     ui-panel and 4.1:1 on ui-surface, below the 4.5:1 the same document
+     requires for normal text. #848b87 clears 4.5:1 on all four surfaces. */
+  --color-ui-text-subtle: #848b87;
+  --color-ui-accent: #28c76f;
+  --color-ui-accent-hover: #3dda82;
+  --color-ui-accent-strong: #159a50;
+  --color-ui-accent-contrast: #06140c;
+  --color-ui-creative: #c23c92;
+  --color-ui-creative-hover: #d955aa;
+  --color-ui-creative-text: #ee75c5;
+}

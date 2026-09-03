@@ -43,8 +43,8 @@ export interface SliderProps {
 }
 
 const HEADER_CLASS = {
-  xs: 'flex justify-between text-[9px] text-gray-400 mb-1',
-  sm: 'flex justify-between text-[10px] text-gray-400 mb-1',
+  xs: 'flex justify-between text-[9px] text-ui-text-muted mb-1',
+  sm: 'flex justify-between text-[10px] text-ui-text-muted mb-1',
   md: 'flex items-center justify-between mb-1'
 } as const;
 
@@ -108,7 +108,7 @@ export default function Slider({
   return (
     <div className={className}>
       <div className={cn(HEADER_CLASS[size], headerClassName)}>
-        <label id={labelId} htmlFor={id} className={cn(base && 'text-[11px] text-gray-400', labelClassName)}>
+        <label id={labelId} htmlFor={id} className={cn(base && 'text-[11px] text-ui-text-muted', labelClassName)}>
           {label}
         </label>
         {editing ? (
@@ -125,7 +125,7 @@ export default function Slider({
               if (event.key === 'Escape') setEditing(false);
             }}
             className={cn(
-              'h-4 rounded-sm border border-indigo-500/70 bg-gray-950 px-1 text-right font-mono text-indigo-100 outline-none ring-1 ring-indigo-500/20',
+              'h-4 rounded-sm border border-ui-accent/70 bg-ui-canvas px-1 text-right font-mono text-ui-text outline-none ring-1 ring-ui-accent/30',
               EDITOR_CLASS[size],
               displayClassName
             )}
@@ -137,7 +137,7 @@ export default function Slider({
             title="Click to enter an exact value"
             onClick={() => setEditing(true)}
             className={cn(
-              'min-w-0 cursor-text rounded-sm px-1 -mr-1 text-right hover:bg-gray-800 hover:text-gray-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500',
+              'min-w-0 cursor-text rounded-sm px-1 -mr-1 text-right hover:bg-ui-surface-raised hover:text-ui-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent',
               base && 'text-[11px] font-mono',
               displayClassName
             )}
@@ -162,7 +162,7 @@ export default function Slider({
         aria-valuenow={value}
         aria-valuetext={ariaValueText}
         onChange={(e) => handleRangeChange(parseFloat(e.target.value))}
-        className={cn('w-full accent-indigo-500', trackClassName)}
+        className={cn('w-full accent-ui-accent', trackClassName)}
       />
     </div>
   );

@@ -7,9 +7,9 @@ export default function MotionControl({ label, config, onChange, maxAmplitude = 
   const typeId = useId();
   const isEnabled = config && config.type !== 'none';
   return (
-    <div className="mb-2 border border-gray-800 p-2 rounded bg-gray-800/30">
+    <div className="mb-2 border border-ui-border p-2 rounded bg-ui-surface/40">
       <div className="flex items-center justify-between">
-        <label htmlFor={typeId} className="text-[11px] font-semibold text-gray-300">{label}</label>
+        <label htmlFor={typeId} className="text-[11px] font-semibold text-ui-text">{label}</label>
         <select
           id={typeId}
           value={config?.type || 'none'}
@@ -21,7 +21,7 @@ export default function MotionControl({ label, config, onChange, maxAmplitude = 
                onChange({ type, speed: config?.speed ?? 1, amplitude: config?.amplitude || (maxAmplitude / 10), phase: config?.phase || 0 });
              }
           }}
-          className="bg-gray-900 text-[10px] text-gray-300 border border-gray-700 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="bg-ui-canvas text-[10px] text-ui-text-muted border border-ui-border-strong rounded px-1 py-0.5 outline-none focus:ring-2 focus:ring-ui-accent"
         >
           <option value="none">None</option>
           <option value="sine">Sine</option>
@@ -29,7 +29,7 @@ export default function MotionControl({ label, config, onChange, maxAmplitude = 
         </select>
       </div>
       {isEnabled && (
-        <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-800/50">
+        <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-ui-border/60">
            <Slider
              size="xs"
              label="Spd"

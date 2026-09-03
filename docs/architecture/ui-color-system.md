@@ -1,6 +1,6 @@
 # Unified UI color system
 
-- **Status:** Accepted; implementation pending
+- **Status:** Accepted; Phases 0-1 complete, Phases 2-5 pending
 - **Date:** 2026-09-03
 - **Scope:** Application chrome, shared controls, interaction states, panels,
   modals, and on-canvas editing affordances
@@ -56,7 +56,7 @@ The initial palette is:
 | `ui-border-strong` | `#42484B` | Emphasized and hovered boundaries |
 | `ui-text` | `#F1F3F2` | Primary text and important values |
 | `ui-text-muted` | `#B0B6B3` | Labels and secondary text |
-| `ui-text-subtle` | `#747B77` | Hints, metadata, and disabled-adjacent text |
+| `ui-text-subtle` | `#848B87` | Hints, metadata, and disabled-adjacent text |
 | `ui-accent` | `#28C76F` | Primary actions, selection, and checked state |
 | `ui-accent-hover` | `#3DDA82` | Hover and high-emphasis interactive state |
 | `ui-accent-strong` | `#159A50` | Pressed state and dark green boundaries |
@@ -67,6 +67,11 @@ The initial palette is:
 
 The precise values may be adjusted during contrast and visual QA, but their
 roles should remain stable.
+
+`ui-text-subtle` was raised from the originally specified `#747B77` during
+Phase 1 contrast QA: that value measured 4.36:1 on `ui-panel` and 4.07:1 on
+`ui-surface`, below the 4.5:1 this document requires for normal text. `#848B87`
+clears 4.5:1 on all four neutral surfaces. Every other value is as specified.
 
 ### Color responsibilities
 
@@ -159,6 +164,34 @@ change how Phases 1-3 should be sequenced.
 Completing the primitives first should update a large portion of every mode
 without duplicating decisions in individual inspectors.
 
+Done. `src/components/controls/` is now free of raw `indigo` and `gray`
+classes, including `SymmetryEditor.tsx`, which the list above missed but shares
+the directory. Four things came out of the implementation:
+
+- **Focus needed more than a colour swap.** A green ring is invisible on the
+  green selected fill, so `Segmented` now carries a per-variant
+  `focusOffset` that puts a 1px gap of the surrounding surface between fill and
+  ring. `ModePicker`'s arrow-key option list previously indicated focus with
+  only a background tint and now takes a green ring; `ResizeHandle`'s collapse
+  button had no focus indicator at all and now has one. `Select`,
+  `MotionControl`, and the `Slider` readout moved from a 1px to a 2px ring.
+- **Bright green fills take `ui-accent-contrast`, never white.** White on
+  `ui-accent` measures 2.21:1; `ui-accent-contrast` measures 8.52:1. The same
+  applies to `ui-accent-strong` (3.64:1 vs 5.18:1), which matters for the
+  pressed states in later phases.
+- **The border tokens do not meet 3:1 and are not meant to.** The
+  accessibility section was eased to exempt neutral boundaries, on the condition
+  that no control depends on its border to be identifiable. Inputs and selects
+  recess to `ui-canvas` to satisfy that.
+- **`ui-accent-strong` and the three magenta tokens are defined but unused.**
+  Tailwind v4 only emits a theme variable that some utility references, so they
+  will not appear in the built CSS until Phase 2 uses them. That is expected,
+  not a missing token.
+
+Verified with `npm run typecheck`, `npm run lint`, `npm test` (284 passing), and
+`npm run build`, then by re-running the Phase 0 capture harness for a
+side-by-side comparison and adding the control states it could never reach.
+
 ### Phase 2: Unify shell, rows, and shared panels
 
 1. Migrate [`StackPanel.tsx`](../../src/components/panels/StackPanel.tsx) and
@@ -231,8 +264,20 @@ or subject-header controls.
 ## Accessibility requirements
 
 - Normal text should meet WCAG AA contrast of at least 4.5:1.
-- Large text, focus indicators, and meaningful component boundaries should meet
-  at least 3:1 against adjacent colors.
+- Large text and focus indicators must meet at least 3:1 against adjacent
+  colors. This is firm: focus has no fallback signal, and `ui-accent` measures
+  7-9:1 on every neutral surface.
+- **Neutral surface boundaries are exempt from 3:1.** The graphite border ladder
+  is deliberately quiet — measured, `ui-border` is 1.44:1 and `ui-border-strong`
+  2.03:1 against `ui-panel`, and reaching 3:1 would need roughly `#5F6669`,
+  which would abandon the restrained look this palette exists for. The trade is
+  accepted on the condition below, which is what keeps it a considered choice
+  rather than a contrast failure.
+- Every control must stay identifiable without its border. In practice this
+  means a fill that differs from its container (inputs and selects recess to
+  `ui-canvas`), plus a persistent label, icon, or shape — never a bare outline
+  on a flat surface. A control that would be invisible with its border removed
+  needs a distinct fill, not a lighter border.
 - Keyboard focus must remain clearly visible on every interactive control.
 - Selected, connected, warning, error, and disabled states must not rely on hue
   alone; retain labels, icons, shape, borders, or motion where applicable.

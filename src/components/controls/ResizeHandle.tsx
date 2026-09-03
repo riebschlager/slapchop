@@ -28,11 +28,11 @@ export default function ResizeHandle({ side, panelLabel, onResizeStart, onCollap
         side === 'left' ? 'right-0 translate-x-1/2' : 'left-0 -translate-x-1/2'
       )}
     >
-      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover/handle:bg-indigo-500/60" />
+      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover/handle:bg-ui-accent/60" />
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={onCollapse}
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded border border-gray-700 bg-gray-800/90 p-1 text-gray-500 transition-colors hover:bg-gray-700 hover:text-white"
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded border border-ui-border-strong bg-ui-surface p-1 text-ui-text-subtle transition-colors hover:bg-ui-surface-raised hover:text-ui-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
         title={`Collapse ${panelLabel}`}
       >
         <CollapseIcon className="w-3 h-3" />

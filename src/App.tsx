@@ -29,7 +29,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex w-full h-screen font-sans bg-gray-950 overflow-hidden text-gray-100">
+    <div className="flex w-full h-screen font-sans bg-ui-canvas overflow-hidden text-ui-text">
       <AppShell />
     </div>
   );

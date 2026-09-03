@@ -137,7 +137,7 @@ export default function SymmetryEditor({
       )}
 
       {symmetry !== 'none' && symmetry !== 'voronoi' && (
-        <div className="pt-1 text-[10px] text-gray-500">
+        <div className="pt-1 text-[10px] text-ui-text-subtle">
           {originHint}
         </div>
       )}

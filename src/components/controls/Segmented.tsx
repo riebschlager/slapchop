@@ -21,18 +21,23 @@ export interface SegmentedProps<T extends string> {
   className?: string;
 }
 
+// `focusOffset` names the colour behind each variant's items: the green focus
+// ring would otherwise be invisible against the equally green selected fill, so
+// it needs a 1px gap in the surrounding surface to read against.
 const VARIANT = {
   mode: {
-    group: 'flex gap-1 p-1 bg-gray-950 rounded-lg border border-gray-800',
+    group: 'flex gap-1 p-1 bg-ui-canvas rounded-lg border border-ui-border',
     item: 'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-semibold transition-all',
-    on: 'bg-indigo-600 text-white shadow',
-    off: 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+    focusOffset: 'focus-visible:ring-offset-1 focus-visible:ring-offset-ui-canvas',
+    on: 'bg-ui-accent text-ui-accent-contrast shadow',
+    off: 'text-ui-text-muted hover:text-ui-text hover:bg-ui-surface'
   },
   tab: {
     group: 'flex items-center gap-1',
     item: 'flex-1 text-[11px] font-medium py-1 rounded transition-colors',
-    on: 'bg-indigo-600 text-white',
-    off: 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+    focusOffset: 'focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel',
+    on: 'bg-ui-accent text-ui-accent-contrast',
+    off: 'text-ui-text-muted hover:bg-ui-surface hover:text-ui-text'
   }
 } as const;
 
@@ -58,7 +63,8 @@ export default function Segmented<T extends string>({
             onClick={() => onChange(opt.value)}
             className={cn(
               style.item,
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent',
+              style.focusOffset,
               selected ? style.on : style.off
             )}
           >

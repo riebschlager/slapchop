@@ -109,30 +109,30 @@ export default function ModePicker<T extends string>({
         onClick={() => setOpen(current => !current)}
         className={cn(
           'group w-full flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors',
-          'bg-gray-950 border-gray-800 hover:border-gray-700 hover:bg-gray-800/70',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400'
+          'bg-ui-canvas border-ui-border hover:border-ui-border-strong hover:bg-ui-surface-raised',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent'
         )}
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-indigo-600 text-white shadow-sm shadow-indigo-950/50">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-ui-accent text-ui-accent-contrast shadow-sm shadow-black/40">
           <ActiveIcon className="size-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[9px] font-semibold uppercase tracking-[0.16em] text-gray-500">{label}</span>
-          <span className="block truncate text-xs font-semibold text-gray-100">{active.label}</span>
+          <span className="block text-[9px] font-semibold uppercase tracking-[0.16em] text-ui-text-subtle">{label}</span>
+          <span className="block truncate text-xs font-semibold text-ui-text">{active.label}</span>
         </span>
-        <ChevronDown className={cn('size-4 shrink-0 text-gray-500 transition-transform', open && 'rotate-180 text-gray-300')} />
+        <ChevronDown className={cn('size-4 shrink-0 text-ui-text-subtle transition-transform', open && 'rotate-180 text-ui-text-muted')} />
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-40 mt-1.5 overflow-hidden rounded-lg border border-gray-700 bg-gray-950 shadow-2xl shadow-black/60">
-          <div className="flex items-center justify-between border-b border-gray-800 px-3 py-2">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">Choose mode</span>
-            <span className="text-[10px] tabular-nums text-gray-600">{options.length}</span>
+        <div className="absolute left-0 right-0 top-full z-40 mt-1.5 overflow-hidden rounded-lg border border-ui-border-strong bg-ui-panel shadow-2xl shadow-black/60">
+          <div className="flex items-center justify-between border-b border-ui-border px-3 py-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ui-text-muted">Choose mode</span>
+            <span className="text-[10px] tabular-nums text-ui-text-subtle">{options.length}</span>
           </div>
 
           {searchable && (
-            <div className="relative border-b border-gray-800 p-2">
-              <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-gray-500" />
+            <div className="relative border-b border-ui-border p-2">
+              <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-ui-text-subtle" />
               <label htmlFor={searchId} className="sr-only">Search modes</label>
               <input
                 id={searchId}
@@ -140,7 +140,7 @@ export default function ModePicker<T extends string>({
                 value={query}
                 onChange={event => setQuery(event.target.value)}
                 placeholder="Search modes…"
-                className="w-full rounded-md border border-gray-800 bg-gray-900 py-1.5 pl-8 pr-2 text-xs text-gray-100 outline-none placeholder:text-gray-600 focus:border-indigo-500"
+                className="w-full rounded-md border border-ui-border-strong bg-ui-canvas py-1.5 pl-8 pr-2 text-xs text-ui-text outline-none placeholder:text-ui-text-subtle focus:border-ui-accent"
               />
             </div>
           )}
@@ -163,28 +163,28 @@ export default function ModePicker<T extends string>({
                   onKeyDown={event => handleOptionKeyDown(event, index)}
                   className={cn(
                     'group/option flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors',
-                    'focus:outline-none focus-visible:bg-gray-800',
-                    selected ? 'bg-indigo-500/15' : 'hover:bg-gray-800/80'
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent',
+                    selected ? 'bg-ui-accent/15' : 'hover:bg-ui-surface'
                   )}
                 >
                   <span className={cn(
                     'flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors',
                     selected
-                      ? 'border-indigo-500/50 bg-indigo-500/20 text-indigo-300'
-                      : 'border-gray-800 bg-gray-900 text-gray-500 group-hover/option:text-gray-300'
+                      ? 'border-ui-accent/50 bg-ui-accent/20 text-ui-accent-hover'
+                      : 'border-ui-border bg-ui-canvas text-ui-text-subtle group-hover/option:text-ui-text-muted'
                   )}>
                     <Icon className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className={cn('block text-xs font-semibold', selected ? 'text-white' : 'text-gray-200')}>{option.label}</span>
-                    <span className="block truncate text-[10px] leading-4 text-gray-500">{option.description}</span>
+                    <span className={cn('block text-xs font-semibold', selected ? 'text-ui-text' : 'text-ui-text-muted')}>{option.label}</span>
+                    <span className="block truncate text-[10px] leading-4 text-ui-text-subtle">{option.description}</span>
                   </span>
-                  {selected && <Check className="size-3.5 shrink-0 text-indigo-400" />}
+                  {selected && <Check className="size-3.5 shrink-0 text-ui-accent" />}
                 </button>
               );
             })}
             {filteredOptions.length === 0 && (
-              <div className="px-3 py-6 text-center text-xs text-gray-500">No matching modes</div>
+              <div className="px-3 py-6 text-center text-xs text-ui-text-subtle">No matching modes</div>
             )}
           </div>
         </div>

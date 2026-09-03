@@ -20,14 +20,14 @@ export default function Select<T extends string>({ label, value, options, onChan
   const id = useId();
   return (
     <div className={className}>
-      <label htmlFor={id} className="text-[11px] text-gray-400 mb-1 block">{label}</label>
+      <label htmlFor={id} className="text-[11px] text-ui-text-muted mb-1 block">{label}</label>
       <select
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
         className={cn(
-          'w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200',
-          'outline-none focus:ring-1 focus:ring-indigo-500'
+          'w-full bg-ui-canvas border border-ui-border-strong rounded px-2 py-1.5 text-xs text-ui-text',
+          'outline-none focus:ring-2 focus:ring-ui-accent'
         )}
       >
         {options.map((opt) => <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.label}</option>)}
