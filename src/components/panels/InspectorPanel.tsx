@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Video, Loader2, Radio, PanelRightOpen } from 'lucide-react';
+import { Download, Video, Loader2, Radio, PanelRightOpen, Github } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store';
 import Segmented, { SegmentedOption } from '../controls/Segmented';
@@ -156,6 +156,15 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
           <Video className="w-3.5 h-3.5" />
           Export Animation
         </button>
+        <a
+          href="https://github.com/riebschlager/slapchop"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-ui-text-subtle hover:text-ui-text border border-ui-border rounded-lg text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel"
+        >
+          <Github className="w-3.5 h-3.5" />
+          View Source
+        </a>
       </div>
 
       {showLiveOutputModal && <LiveOutputModal api={liveOutputApi} />}
