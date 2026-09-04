@@ -1,4 +1,8 @@
-@import "tailwindcss";
+/* Scope class detection to src/. Tailwind v4 otherwise scans the whole project,
+   and the ADR and baseline notes in docs/architecture/ quote the pre-migration
+   indigo/emerald/lime class names as prose — which was enough to emit those
+   utilities into the production bundle for classes no component uses. */
+@import "tailwindcss" source("./");
 
 /* The app UI is a fixed dark desktop-tool aesthetic (see CLAUDE.md), independent
    of the OS light/dark setting. Declaring color-scheme keeps OS-drawn chrome
@@ -33,7 +37,11 @@
   --color-ui-accent-hover: #3dda82;
   --color-ui-accent-strong: #159a50;
   --color-ui-accent-contrast: #06140c;
+  /* Magenta is a border-and-text role, not a fill: ui-text on a #c23c92 fill
+     measures 4.3:1 and the green focus ring only 2.2:1 against it, so a
+     focusable magenta chip could not indicate focus. The #d955aa hover token
+     the ADR originally listed was the hover state of that unaffordable fill and
+     is retired; ui-creative-text carries magenta on dark surfaces instead. */
   --color-ui-creative: #c23c92;
-  --color-ui-creative-hover: #d955aa;
   --color-ui-creative-text: #ee75c5;
 }

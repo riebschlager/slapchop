@@ -1,6 +1,6 @@
 # Unified UI color system
 
-- **Status:** Accepted; Phases 0-4 complete, Phase 5 pending
+- **Status:** Accepted and implemented; Phases 0-5 complete
 - **Date:** 2026-09-03
 - **Scope:** Application chrome, shared controls, interaction states, panels,
   modals, and on-canvas editing affordances
@@ -61,17 +61,25 @@ The initial palette is:
 | `ui-accent-hover` | `#3DDA82` | Hover and high-emphasis interactive state |
 | `ui-accent-strong` | `#159A50` | Pressed state and dark green boundaries |
 | `ui-accent-contrast` | `#06140C` | Text and icons on bright green fills |
-| `ui-creative` | `#C23C92` | Secondary creative/effect emphasis |
-| `ui-creative-hover` | `#D955AA` | Hovered creative emphasis |
+| `ui-creative` | `#C23C92` | Creative/effect boundary emphasis |
 | `ui-creative-text` | `#EE75C5` | Magenta text or icon on dark surfaces |
 
 The precise values may be adjusted during contrast and visual QA, but their
 roles should remain stable.
 
-`ui-text-subtle` was raised from the originally specified `#747B77` during
-Phase 1 contrast QA: that value measured 4.36:1 on `ui-panel` and 4.07:1 on
-`ui-surface`, below the 4.5:1 this document requires for normal text. `#848B87`
-clears 4.5:1 on all four neutral surfaces. Every other value is as specified.
+Two adjustments were made during implementation; every other value is as
+originally specified.
+
+`ui-text-subtle` was raised from `#747B77` during Phase 1 contrast QA: that
+value measured 4.36:1 on `ui-panel` and 4.07:1 on `ui-surface`, below the 4.5:1
+this document requires for normal text. `#848B87` clears 4.5:1 on all four
+neutral surfaces.
+
+`ui-creative-hover` (`#D955AA`) was **retired in Phase 5**. Phase 2 established
+that magenta cannot be a fill at these values and is a border and text role
+instead; a hover state for a fill the palette does not use had no possible
+consumer, and it was the one token that never entered the built CSS. `ui-creative`
+is a border, `ui-creative-text` is text, and the table above now says so.
 
 ### Color responsibilities
 
@@ -440,6 +448,74 @@ desktop.
 5. Update this document's status and record any palette adjustments made during
    visual QA.
 
+Done. The search returns **48 hue-class matches in `src/`, and all 48 are amber
+or red in their documented status roles** — every `indigo`, `cyan`, `teal`,
+`lime`, `orange`, `sky`, `blue`, `violet`, `purple`, `emerald`, `pink`, and
+`fuchsia` class is gone from the application, as is every `gray`, `slate`,
+`zinc`, `neutral`, and `stone` class. Four things came out of the pass:
+
+- **Classified, nothing is left to migrate.** The 48 status matches break down
+  as amber for the browser-session warning, the drawing instruction bar, the
+  symmetry/polygon origin handles and their pinned variants, the hidden-layer
+  `EyeOff` in four rows, the `Geometry3dTab`/`Symmetry3dTab`/`LayerSymmetryTab`
+  caution notes, the degraded encode plan, and the connected-but-not-streaming
+  dot; and red for export and live-output errors, the Stop button, and the
+  destructive hovers on delete, remove, and Clear. Outside Tailwind classes, the
+  surviving literals are **authored or preset content** (the `#6366f1` polygon
+  and mesh fallback fill, the ten palette presets in `TunnelInspector` and
+  `GifVoronoiInspector`, the `#ffffff` add-swatch default, the `#c9ff5d`
+  wireframe default), **coordinate encoding** (the `#f87171`/`#4ade80`/`#60a5fa`
+  X/Y/Z gizmo), and the three `OVERLAY_*` constants in `CanvasWorkspace.tsx`
+  that mirror the palette by hand because SVG strokes cannot take Tailwind
+  classes. The **defect** category is empty.
+- **The one real defect was in the build, not the components.** Tailwind v4
+  scans the whole project by default, and this document and
+  [`ui-color-baseline.md`](./ui-color-baseline.md) quote the pre-migration class
+  names as prose — enough to emit `.bg-indigo-600`, `.accent-indigo-500`,
+  `.focus:ring-indigo-500`, `.ring-indigo-500/50`,
+  `.group-hover/handle:bg-indigo-500/60`, `.text-indigo-600`, `.bg-emerald-500`,
+  `.text-emerald-400`, and `.accent-lime-400` into the production bundle for
+  classes no component uses. The ADR was shipping the palette it had removed.
+  `src/index.css` now scopes detection with `@import "tailwindcss" source("./")`.
+  Measured after the change, the built CSS declares **only `amber` and `red`
+  alongside the `ui-*` tokens**, and the live app paints **zero** elements in any
+  legacy hue.
+- **`ui-creative-hover` is retired rather than restated**, closing the question
+  Phase 2 left open. It was the hover state of a magenta fill this palette
+  cannot afford, and it was the only token that never reached the built CSS.
+  With it gone, **all 15 remaining tokens are emitted and resolve in the running
+  app** — the palette has no dead entries. `ui-creative` is used once, as the
+  preset chips' hover border; `ui-creative-text` three times, on the `Wand2`
+  icon, the "Aesthetic Presets" label, and those chips' hover text. Magenta is
+  deliberately the smallest presence in the system, which is what "visibly
+  present but subordinate" asked for.
+- **No new abstraction was introduced, and one was specifically declined.** The
+  `focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent` recipe
+  appears 78 times, with a `ring-offset` variant on 20 of them. It is the most
+  repeated string in the migration and the obvious candidate for extraction, but
+  it lands on buttons, inputs, labels, spans, and `role="button"` elements that
+  share no behavior beyond being focusable, and the offset variants differ by
+  the surrounding surface rather than by any prop a shared component could
+  infer. Extracting it would trade a duplicated string for an abstraction that
+  has to be configured at every call site anyway. `StackPanel`'s six
+  `SOURCE_CARD_*` constants stay named class strings for the same reason.
+
+`README.md` gained a short "Interface theme" section stating the color language,
+what falls outside it, and where this document lives.
+
+Verified with `npm run typecheck`, `npm run lint`, `npm test` (284 passing), and
+`npm run build`, then by driving the running app over CDP: all 15 tokens resolve
+to their specified values, `ui-creative-hover` is absent, the app root paints
+`ui-canvas`, and no element in the mounted tree computes to a legacy indigo,
+cyan, teal, lime, or orange. The dev server and the production bundle emit an
+identical hue census, so the `source("./")` scoping behaves the same in both.
+
+The desktop-only states the Phase 0 record listed as unreachable in a browser —
+Live Output's connected and streaming chrome, ProRes and Frames (Folder), the
+resume checkbox, the encoder-speed cards, and the `ws://`-on-HTTPS notice — were
+migrated in Phases 2 and 4 and reviewed in source, but **still have not been
+seen rendered**. They remain the one open manual pass, listed under Validation.
+
 ## Accessibility requirements
 
 - Normal text should meet WCAG AA contrast of at least 4.5:1.
@@ -504,6 +580,13 @@ Then manually verify:
    axis gizmo;
 7. the browser build and, when practical, `npm run tauri dev`.
 
+**Outstanding.** Item 5's desktop-only states — Live Output connected and
+streaming, ProRes, Frames (Folder), the resume checkbox, the encoder-speed
+cards, and the `ws://`-on-HTTPS notice — are the only part of this list never
+observed rendered. They were migrated in Phases 2 and 4 and reviewed in source,
+and they need one pass through `npm run tauri dev` with a real receiver to
+close. Everything else in the list has been verified.
+
 Because this work changes application chrome rather than rendered scene
 semantics, PixiJS/Canvas 2D output comparison is not required unless an edit
 crosses into renderer-owned drawing.
@@ -515,3 +598,15 @@ class is appropriate only when the color represents authored content, a
 documented status, or an established editing convention. New creative modes
 may have independent concepts and layouts, but should inherit this shared
 studio color language.
+
+Two mechanical guardrails hold the result in place:
+
+- `grep -rE '\b(indigo|cyan|teal|lime|orange|blue|sky|violet|purple|emerald)-[0-9]{2,3}\b' src/`
+  should stay empty, and a hue search over `src/` should return only amber and
+  red. The built CSS is the stronger check: `--color-*` in `dist/assets/*.css`
+  should list nothing but `amber`, `red`, and the `ui-*` tokens.
+- Tailwind class detection is scoped to `src/` by `source("./")` in
+  `src/index.css`. Keep it that way. Without it, prose that quotes class
+  names — this document included — is scanned as source and ships utilities for
+  classes nothing uses. Markup added outside `src/` needs an explicit `@source`
+  rather than a widened base path.

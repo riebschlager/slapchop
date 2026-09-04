@@ -127,6 +127,22 @@ for the product decision and incremental architecture direction.
   Sine and noise modulators animate terrain relief, flight velocity, camera,
   sun placement, ring width, and each sky folder's texture mapping.
 
+## Interface theme
+
+The interface is one dark graphite studio across every mode, driven by semantic
+color tokens defined in `src/index.css` rather than by Tailwind hue families.
+Neutral graphite carries structure and typographic hierarchy, green means
+interaction — selection, checked state, sliders, progress, focus, and live or
+successful status — and magenta is a small secondary accent reserved for Master
+FX. Amber marks warnings and the drawing/origin handles; red marks errors and
+destructive actions. Modes are distinguished by their names, icons, controls,
+and output, not by their own interface colors.
+
+The theme covers application chrome only. Colors saved in `.slapchop` projects,
+creative palette presets, renderer materials, and exported pixels are outside
+it, as is the red/green/blue X/Y/Z axis convention in the 3D gizmo. See
+`docs/architecture/ui-color-system.md` for the palette and its rules.
+
 ## Inspector controls
 
 Slider readouts can be clicked to enter an exact numeric value. Rate controls
