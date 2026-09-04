@@ -4,6 +4,7 @@ import InspectorPanel from './panels/InspectorPanel';
 import CanvasWorkspace from './CanvasWorkspace';
 import { useExport } from '../hooks/useExport';
 import { useLiveOutput } from '../hooks/useLiveOutput';
+import WelcomeModal from './modals/WelcomeModal';
 
 // Three columns: Stack (list) | Stage (canvas) | Inspector (selection detail
 // + docked Output). The canvas element is created here, not inside
@@ -20,6 +21,7 @@ export default function AppShell() {
       <StackPanel />
       <CanvasWorkspace canvasRef={canvasRef} />
       <InspectorPanel exportApi={exportApi} liveOutputApi={liveOutputApi} />
+      <WelcomeModal />
     </>
   );
 }
