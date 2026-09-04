@@ -1,6 +1,6 @@
 # Unified UI color system
 
-- **Status:** Accepted; Phases 0-1 and 3-4 complete, Phases 2 and 5 pending
+- **Status:** Accepted; Phases 0-4 complete, Phase 5 pending
 - **Date:** 2026-09-03
 - **Scope:** Application chrome, shared controls, interaction states, panels,
   modals, and on-canvas editing affordances
@@ -208,6 +208,66 @@ side-by-side comparison and adding the control states it could never reach.
    keyboard focus behavior green.
 4. Keep output actions and the active Scene control aligned with the primary
    green interaction system.
+
+Done. `src/components/panels/` is now free of every hue class except the amber
+and red status roles, which closes the seam Phases 3 and 4 both recorded. Six
+things came out of the implementation:
+
+- **Magenta cannot be a fill at these values, so it is a text, icon, and border
+  role.** `ui-text` on `ui-creative` measures 4.33:1 and on `ui-creative-hover`
+  3.23:1 — both under the 4.5:1 this document requires — and the green focus
+  ring measures only 2.18:1 against a `ui-creative` fill, so a focusable magenta
+  chip could not indicate focus. `ui-creative-text` instead measures 6.1-7.5:1
+  across all four neutral surfaces. Master FX therefore takes magenta on the
+  `Wand2` icon when enabled, on the "Aesthetic Presets" label, and on the preset
+  chips' hover border and text; every control in the panel — the master toggle,
+  the six module checkboxes, every focus ring — stays green. The consequence is
+  that **`ui-creative-hover` now has no home and is still absent from the built
+  CSS**: it is the hover state of a fill this palette cannot afford. Phase 5
+  should either retire it or restate it as a lighter magenta text token.
+- **The five source-picker cards collapse into one recipe**, the same decision
+  Phase 3 made for the four inspector headers. The radial-gradient washes and
+  the cyan/teal/lime/orange/amber borders are gone; identity is the icon, the
+  card's own copy, and the section vocabulary. They are named class-string
+  constants at the top of `StackPanel.tsx`, not a new component — Phase 5 asks
+  that repeated class strings not become an abstraction on their own.
+- **On a selected row the border carries the state, not the fill.** `accent/10`
+  over `ui-panel` measures just 1.15:1 against the panel, while `ui-accent`
+  against that fill measures 7.4:1. This is the same `bg-ui-accent/10
+  border-ui-accent` pair the export modal's resolution cards already use, so
+  selected rows and selected cards now read alike.
+- **Delete and remove actions gained a keyboard route.** `LayerRow`,
+  `PolygonRow`, and `Mesh3dRow` revealed their delete button on hover alone, so
+  a keyboard user focused an invisible control; they now take
+  `focus-visible:opacity-100`, which the two asset rows already had. This is the
+  "hover must not be the only way to expose a required action" requirement, not
+  a colour change.
+- **Measured, 66 of the 69 focusable controls reachable from the Scene tab
+  paint the `#28c76f` ring.** The three exceptions are `input[type="color"]`
+  swatches keeping Chrome's native focus ring, which is what the "native form
+  controls should remain coherent with the declared `color-scheme`" requirement
+  asks for and matches what Phase 3 shipped in `SceneTab`.
+- **The Output dock now matches the modals it opens.** Export Animation uses the
+  export modal's own primary recipe, and Live Output's streaming state is green
+  while connected-but-not-streaming stays the amber transitional state the modal
+  already used for that condition. Both moved off `transition-all` for the
+  reason Phase 4 recorded — it animates the focus ring in.
+
+Amber and red survive only in their documented roles: the browser-session
+warning, the active "Click Canvas to Draw Points" drawing state, the hidden-layer
+`EyeOff`, and the destructive hovers on delete, remove, and Clear. The polygon
+`#6366f1` fallback fill, the wireframe colour, and every `<input type="color">`
+value are untouched authored content.
+
+Verified with `npm run typecheck`, `npm run lint`, `npm test` (284 passing), and
+`npm run build`, then by driving headless Chrome over CDP against the dev
+server: all seven modes in their empty state, polygon and mesh rows selected and
+hidden, an uploaded symmetry layer row, tunnel and Voronoi asset rows from real
+GIF uploads, and Master FX enabled with a module open. The only console errors
+were WebGL-context failures from the headless GPU being disabled, which are
+environmental. Live Output's connected and streaming chrome is still only
+reachable with a real receiver and still needs the manual desktop pass Phase 4
+listed.
 
 ### Phase 3: Remove mode-specific chrome palettes
 

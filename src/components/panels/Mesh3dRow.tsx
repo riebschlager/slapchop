@@ -48,13 +48,13 @@ export default function Mesh3dRow({ mesh, selectedMesh3dId, onSelectMesh3d, onUp
       className={cn(
         "flex items-center gap-2 p-1.5 rounded cursor-pointer group transition-colors",
         mesh.hidden ? "opacity-50 grayscale" : "",
-        selectedMesh3dId === mesh.id ? "bg-indigo-900/40 border border-indigo-500/50" : "hover:bg-gray-800 border border-transparent"
+        selectedMesh3dId === mesh.id ? "bg-ui-accent/10 border border-ui-accent" : "hover:bg-ui-surface border border-transparent"
       )}
     >
-       <div {...attributes} {...listeners} className="p-0.5 cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-300">
+       <div {...attributes} {...listeners} className="p-0.5 cursor-grab active:cursor-grabbing text-ui-text-subtle hover:text-ui-text">
          <GripVertical className="w-3.5 h-3.5" />
        </div>
-       <div className="w-8 h-8 rounded-sm overflow-hidden bg-black/50 shrink-0 border border-gray-700 flex items-center justify-center text-base">
+       <div className="w-8 h-8 rounded-sm overflow-hidden bg-black/50 shrink-0 border border-ui-border flex items-center justify-center text-base">
          {mesh.src ? (
            <img src={mesh.src} className="w-full h-full object-cover" />
          ) : (
@@ -62,8 +62,8 @@ export default function Mesh3dRow({ mesh, selectedMesh3dId, onSelectMesh3d, onUp
          )}
        </div>
        <div className="flex-1 min-w-0 pl-1">
-         <div className="text-[13px] font-medium text-gray-200 truncate">{mesh.name}</div>
-         <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-gray-800 border border-gray-700 text-gray-400">
+         <div className="text-[13px] font-medium text-ui-text truncate">{mesh.name}</div>
+         <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-ui-surface border border-ui-border text-ui-text-muted">
            {mesh.primitive}
          </span>
        </div>
@@ -76,7 +76,7 @@ export default function Mesh3dRow({ mesh, selectedMesh3dId, onSelectMesh3d, onUp
            <>
              <button
                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-               className="p-1 hover:text-white text-gray-400"
+               className="p-1 rounded text-ui-text-muted hover:text-ui-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                title="Upload Texture / GIF"
              >
                <ImageIcon className="w-3.5 h-3.5" />
@@ -87,7 +87,7 @@ export default function Mesh3dRow({ mesh, selectedMesh3dId, onSelectMesh3d, onUp
          {onUpdateMesh3d && (
            <button
              onClick={(e) => { e.stopPropagation(); onUpdateMesh3d(mesh.id, { hidden: !mesh.hidden }); }}
-             className="p-1 hover:text-white text-gray-400"
+             className="p-1 rounded text-ui-text-muted hover:text-ui-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
              title={mesh.hidden ? "Show Mesh" : "Hide Mesh"}
            >
              {mesh.hidden ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
@@ -96,7 +96,7 @@ export default function Mesh3dRow({ mesh, selectedMesh3dId, onSelectMesh3d, onUp
          {onDuplicateMesh3d && (
            <button
              onClick={(e) => { e.stopPropagation(); onDuplicateMesh3d(mesh.id); }}
-             className="p-1 hover:text-white text-gray-400"
+             className="p-1 rounded text-ui-text-muted hover:text-ui-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
              title="Duplicate Mesh"
            >
              <Copy className="w-3.5 h-3.5" />
@@ -104,7 +104,7 @@ export default function Mesh3dRow({ mesh, selectedMesh3dId, onSelectMesh3d, onUp
          )}
          <button
            onClick={(e) => { e.stopPropagation(); onDeleteMesh3d(mesh.id); }}
-           className="p-1 hover:text-red-400 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
+           className="p-1 rounded text-ui-text-muted hover:text-red-400 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
            title="Delete Mesh"
          >
            <Trash2 className="w-3.5 h-3.5" />

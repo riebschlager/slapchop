@@ -22,15 +22,15 @@ export default function MasterFxPanel() {
   };
 
   return (
-    <div className="border-b border-gray-800 bg-gray-950/40">
+    <div className="border-b border-ui-border bg-ui-canvas/40">
       {/* Header Bar */}
       <div 
         onClick={() => setIsExpanded(!isExpanded)}
-        className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-800/40 transition-colors select-none"
+        className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-ui-surface transition-colors select-none"
       >
         <div className="flex items-center gap-2">
-          <Wand2 className={cn("w-4 h-4 transition-colors", masterFx.enabled ? "text-indigo-400" : "text-gray-500")} />
-          <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Master FX & Shaders</span>
+          <Wand2 className={cn("w-4 h-4 transition-colors", masterFx.enabled ? "text-ui-creative-text" : "text-ui-text-subtle")} />
+          <span className="text-xs font-semibold text-ui-text uppercase tracking-wider">Master FX &amp; Shaders</span>
         </div>
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {/* Master Enable/Disable Toggle Switch */}
@@ -41,7 +41,7 @@ export default function MasterFxPanel() {
           />
           <button 
             onClick={() => setIsExpanded(!isExpanded)}
-            className="text-gray-400 hover:text-gray-200 p-0.5"
+            className="text-ui-text-muted hover:text-ui-text p-0.5 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
           >
             {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
@@ -54,10 +54,10 @@ export default function MasterFxPanel() {
           {/* Presets */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Aesthetic Presets</label>
+              <label className="text-[10px] font-bold text-ui-creative-text uppercase tracking-wider">Aesthetic Presets</label>
               <button
                 onClick={() => onResetFx()}
-                className="text-[10px] text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors"
+                className="text-[10px] text-ui-text-subtle hover:text-ui-text flex items-center gap-1 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                 title="Reset all FX to default"
               >
                 <RotateCcw className="w-2.5 h-2.5" />
@@ -69,7 +69,7 @@ export default function MasterFxPanel() {
                 <button
                   key={preset.id}
                   onClick={() => onApplyPreset(preset.config)}
-                  className="text-[10px] px-2 py-1 bg-gray-800/80 hover:bg-indigo-600/80 hover:text-white text-gray-300 rounded border border-gray-700/60 transition-colors font-medium"
+                  className="text-[10px] px-2 py-1 bg-ui-surface hover:bg-ui-surface-raised hover:border-ui-creative hover:text-ui-creative-text text-ui-text-muted rounded border border-ui-border transition-colors font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                   title={preset.description}
                 >
                   {preset.name}
@@ -79,25 +79,25 @@ export default function MasterFxPanel() {
           </div>
 
           {/* Module 1: Color Grading */}
-          <div className="border border-gray-800 rounded-md overflow-hidden bg-gray-900/60">
+          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
             <div 
               onClick={() => toggleSection('color')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-800/40 select-none"
+              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
             >
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={masterFx.colorAdjustEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ colorAdjustEnabled: e.target.checked }); }}
-                  className="rounded border-gray-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 bg-gray-800 w-3.5 h-3.5 cursor-pointer"
+                  className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                 />
-                <span className="text-xs font-medium text-gray-200">Color Grading</span>
+                <span className="text-xs font-medium text-ui-text">Color Grading</span>
               </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-gray-400 transition-transform", openSection === 'color' && "rotate-180")} />
+              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'color' && "rotate-180")} />
             </div>
 
             {openSection === 'color' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-gray-800/60 bg-gray-950/30">
+              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
                 <Slider
                   size="sm"
                   label="Contrast"
@@ -146,25 +146,25 @@ export default function MasterFxPanel() {
           </div>
 
           {/* Module 2: Chromatic Aberration / RGB Split */}
-          <div className="border border-gray-800 rounded-md overflow-hidden bg-gray-900/60">
+          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
             <div 
               onClick={() => toggleSection('rgb')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-800/40 select-none"
+              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
             >
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={masterFx.rgbSplitEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ rgbSplitEnabled: e.target.checked }); }}
-                  className="rounded border-gray-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 bg-gray-800 w-3.5 h-3.5 cursor-pointer"
+                  className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                 />
-                <span className="text-xs font-medium text-gray-200">Chromatic Aberration (RGB Split)</span>
+                <span className="text-xs font-medium text-ui-text">Chromatic Aberration (RGB Split)</span>
               </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-gray-400 transition-transform", openSection === 'rgb' && "rotate-180")} />
+              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'rgb' && "rotate-180")} />
             </div>
 
             {openSection === 'rgb' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-gray-800/60 bg-gray-950/30">
+              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
                 <Slider
                   size="sm"
                   label="Shift Distance"
@@ -195,48 +195,48 @@ export default function MasterFxPanel() {
           </div>
 
           {/* Module 3: Duotone / Gradient Map */}
-          <div className="border border-gray-800 rounded-md overflow-hidden bg-gray-900/60">
+          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
             <div 
               onClick={() => toggleSection('duotone')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-800/40 select-none"
+              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
             >
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={masterFx.duotoneEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ duotoneEnabled: e.target.checked }); }}
-                  className="rounded border-gray-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 bg-gray-800 w-3.5 h-3.5 cursor-pointer"
+                  className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                 />
-                <span className="text-xs font-medium text-gray-200">Duotone / Gradient Map</span>
+                <span className="text-xs font-medium text-ui-text">Duotone / Gradient Map</span>
               </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-gray-400 transition-transform", openSection === 'duotone' && "rotate-180")} />
+              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'duotone' && "rotate-180")} />
             </div>
 
             {openSection === 'duotone' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-gray-800/60 bg-gray-950/30">
+              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] text-gray-400 block mb-1">Shadow Color</label>
-                    <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded p-1">
+                    <label className="text-[10px] text-ui-text-muted block mb-1">Shadow Color</label>
+                    <div className="flex items-center gap-1.5 bg-ui-canvas border border-ui-border rounded p-1">
                       <input
                         type="color"
                         value={masterFx.duotoneShadowColor}
                         onChange={(e) => onUpdateFx({ duotoneShadowColor: e.target.value })}
                         className="w-6 h-5 rounded cursor-pointer border-0 bg-transparent p-0"
                       />
-                      <span className="text-[10px] font-mono text-gray-300">{masterFx.duotoneShadowColor}</span>
+                      <span className="text-[10px] font-mono text-ui-text">{masterFx.duotoneShadowColor}</span>
                     </div>
                   </div>
                   <div>
-                    <label className="text-[10px] text-gray-400 block mb-1">Highlight Color</label>
-                    <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded p-1">
+                    <label className="text-[10px] text-ui-text-muted block mb-1">Highlight Color</label>
+                    <div className="flex items-center gap-1.5 bg-ui-canvas border border-ui-border rounded p-1">
                       <input
                         type="color"
                         value={masterFx.duotoneHighlightColor}
                         onChange={(e) => onUpdateFx({ duotoneHighlightColor: e.target.value })}
                         className="w-6 h-5 rounded cursor-pointer border-0 bg-transparent p-0"
                       />
-                      <span className="text-[10px] font-mono text-gray-300">{masterFx.duotoneHighlightColor}</span>
+                      <span className="text-[10px] font-mono text-ui-text">{masterFx.duotoneHighlightColor}</span>
                     </div>
                   </div>
                 </div>
@@ -254,25 +254,25 @@ export default function MasterFxPanel() {
           </div>
 
           {/* Module 4: CRT Scanlines */}
-          <div className="border border-gray-800 rounded-md overflow-hidden bg-gray-900/60">
+          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
             <div 
               onClick={() => toggleSection('scanlines')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-800/40 select-none"
+              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
             >
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={masterFx.scanlinesEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ scanlinesEnabled: e.target.checked }); }}
-                  className="rounded border-gray-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 bg-gray-800 w-3.5 h-3.5 cursor-pointer"
+                  className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                 />
-                <span className="text-xs font-medium text-gray-200">CRT Scanlines</span>
+                <span className="text-xs font-medium text-ui-text">CRT Scanlines</span>
               </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-gray-400 transition-transform", openSection === 'scanlines' && "rotate-180")} />
+              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'scanlines' && "rotate-180")} />
             </div>
 
             {openSection === 'scanlines' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-gray-800/60 bg-gray-950/30">
+              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
                 <Slider
                   size="sm"
                   label="Line Count"
@@ -304,25 +304,25 @@ export default function MasterFxPanel() {
           </div>
 
           {/* Module 5: Film Grain & Noise */}
-          <div className="border border-gray-800 rounded-md overflow-hidden bg-gray-900/60">
+          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
             <div 
               onClick={() => toggleSection('noise')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-800/40 select-none"
+              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
             >
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={masterFx.noiseEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ noiseEnabled: e.target.checked }); }}
-                  className="rounded border-gray-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 bg-gray-800 w-3.5 h-3.5 cursor-pointer"
+                  className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                 />
-                <span className="text-xs font-medium text-gray-200">Film Grain & Noise</span>
+                <span className="text-xs font-medium text-ui-text">Film Grain & Noise</span>
               </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-gray-400 transition-transform", openSection === 'noise' && "rotate-180")} />
+              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'noise' && "rotate-180")} />
             </div>
 
             {openSection === 'noise' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-gray-800/60 bg-gray-950/30">
+              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
                 <Slider
                   size="sm"
                   label="Noise Intensity"
@@ -346,25 +346,25 @@ export default function MasterFxPanel() {
           </div>
 
           {/* Module 6: Bloom & Soft Glow */}
-          <div className="border border-gray-800 rounded-md overflow-hidden bg-gray-900/60">
+          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
             <div 
               onClick={() => toggleSection('bloom')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-gray-800/40 select-none"
+              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
             >
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={masterFx.bloomEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ bloomEnabled: e.target.checked }); }}
-                  className="rounded border-gray-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 bg-gray-800 w-3.5 h-3.5 cursor-pointer"
+                  className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                 />
-                <span className="text-xs font-medium text-gray-200">Bloom & Soft Glow</span>
+                <span className="text-xs font-medium text-ui-text">Bloom & Soft Glow</span>
               </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-gray-400 transition-transform", openSection === 'bloom' && "rotate-180")} />
+              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'bloom' && "rotate-180")} />
             </div>
 
             {openSection === 'bloom' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-gray-800/60 bg-gray-950/30">
+              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
                 <Slider
                   size="sm"
                   label="Glow Radius"

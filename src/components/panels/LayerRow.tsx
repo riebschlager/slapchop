@@ -34,18 +34,18 @@ export default function LayerRow({ layer, selectedLayerId, onSelectLayer, onUpda
       className={cn(
         "flex items-center gap-2 p-1.5 rounded cursor-pointer group transition-colors",
         layer.hidden ? "opacity-50 grayscale" : "",
-        selectedLayerId === layer.id ? "bg-indigo-900/40 border border-indigo-500/50" : "hover:bg-gray-800 border border-transparent"
+        selectedLayerId === layer.id ? "bg-ui-accent/10 border border-ui-accent" : "hover:bg-ui-surface border border-transparent"
       )}
     >
-       <div {...attributes} {...listeners} className="p-0.5 cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-300">
+       <div {...attributes} {...listeners} className="p-0.5 cursor-grab active:cursor-grabbing text-ui-text-subtle hover:text-ui-text">
          <GripVertical className="w-3.5 h-3.5" />
        </div>
-       <div className="w-8 h-8 rounded-sm overflow-hidden bg-black/50 shrink-0 border border-gray-700">
+       <div className="w-8 h-8 rounded-sm overflow-hidden bg-black/50 shrink-0 border border-ui-border">
          <img src={layer.src} className="w-full h-full object-contain" />
        </div>
        <div className="flex-1 min-w-0 pl-1">
-         <div className="text-[13px] font-medium text-gray-200 truncate">{layer.name}</div>
-         <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-gray-800 border border-gray-700 text-gray-400">
+         <div className="text-[13px] font-medium text-ui-text truncate">{layer.name}</div>
+         <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-ui-surface border border-ui-border text-ui-text-muted">
            {symmetryBadgeLabel(layer.symmetry)}
          </span>
        </div>
@@ -57,7 +57,7 @@ export default function LayerRow({ layer, selectedLayerId, onSelectLayer, onUpda
          {onUpdateLayer && (
            <button
              onClick={(e) => { e.stopPropagation(); onUpdateLayer(layer.id, { hidden: !layer.hidden }); }}
-             className="p-1 hover:text-white text-gray-400"
+             className="p-1 rounded text-ui-text-muted hover:text-ui-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
              title={layer.hidden ? "Show Layer" : "Hide Layer"}
            >
              {layer.hidden ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5" />}
@@ -66,7 +66,7 @@ export default function LayerRow({ layer, selectedLayerId, onSelectLayer, onUpda
          {onDuplicateLayer && (
            <button
              onClick={(e) => { e.stopPropagation(); onDuplicateLayer(layer.id); }}
-             className="p-1 hover:text-white text-gray-400"
+             className="p-1 rounded text-ui-text-muted hover:text-ui-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
              title="Duplicate Layer"
            >
              <Copy className="w-3.5 h-3.5" />
@@ -74,7 +74,7 @@ export default function LayerRow({ layer, selectedLayerId, onSelectLayer, onUpda
          )}
          <button
            onClick={(e) => { e.stopPropagation(); onDeleteLayer(layer.id); }}
-           className="p-1 hover:text-red-400 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
+           className="p-1 rounded text-ui-text-muted hover:text-red-400 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
            title="Delete Layer"
          >
            <Trash2 className="w-3.5 h-3.5" />

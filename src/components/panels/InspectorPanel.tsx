@@ -58,10 +58,10 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
 
   if (collapsed) {
     return (
-      <div className="w-11 bg-gray-900 border-l border-gray-800 flex flex-col items-center h-screen shrink-0 pt-4">
+      <div className="w-11 bg-ui-panel border-l border-ui-border flex flex-col items-center h-screen shrink-0 pt-4">
         <button
           onClick={toggleCollapsed}
-          className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+          className="p-1.5 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
           title="Expand Inspector panel"
         >
           <PanelRightOpen className="w-4 h-4" />
@@ -71,7 +71,7 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
   }
 
   return (
-    <div className="relative bg-gray-900 border-l border-gray-800 flex flex-col h-screen text-gray-200 shrink-0" style={{ width }}>
+    <div className="relative bg-ui-panel border-l border-ui-border flex flex-col h-screen text-ui-text shrink-0" style={{ width }}>
       <ResizeHandle side="right" panelLabel="Inspector panel" onResizeStart={startResize} onCollapse={toggleCollapsed} />
       <div className="flex-1 overflow-y-auto min-h-0">
         {appMode === 'symmetry' ? (
@@ -102,7 +102,7 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
 
               <Segmented
                 label="Mesh properties"
-                className="mb-3 border-b border-gray-800 pb-2"
+                className="mb-3 border-b border-ui-border pb-2"
                 value={mesh3dTab}
                 onChange={setMesh3dTab}
                 options={mesh3dTabOptions}
@@ -123,17 +123,18 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
       </div>
 
       {/* Output dock: export and live-output triggers, always reachable regardless of selection. */}
-      <div className="p-3 border-t border-gray-800 space-y-2 shrink-0">
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Output</label>
+      <div className="p-3 border-t border-ui-border space-y-2 shrink-0">
+        <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block mb-1">Output</label>
         <button
           onClick={() => setShowLiveOutputModal(true)}
           className={cn(
             "w-full flex items-center justify-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel",
             liveOutputStreaming
-              ? "bg-emerald-950/90 hover:bg-emerald-900 text-emerald-200 border-emerald-600/80"
+              ? "bg-ui-accent/15 hover:bg-ui-accent/25 text-ui-accent border-ui-accent"
               : liveOutputConnected
                 ? "bg-amber-950/90 hover:bg-amber-900 text-amber-200 border-amber-700/80"
-                : "bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700"
+                : "bg-ui-surface hover:bg-ui-surface-raised text-ui-text border-ui-border"
           )}
         >
           {liveOutputBusy
@@ -143,14 +144,14 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
         </button>
         <button
           onClick={exportApi.handleExportHighRes}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded-lg text-xs font-medium transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-ui-surface hover:bg-ui-surface-raised text-ui-text border border-ui-border rounded-lg text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel"
         >
           <Download className="w-3.5 h-3.5" />
           Export Image
         </button>
         <button
           onClick={exportApi.openExportModal}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all"
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-ui-accent hover:bg-ui-accent-hover text-ui-accent-contrast rounded-lg text-xs font-semibold shadow-lg shadow-ui-accent/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ui-panel"
         >
           <Video className="w-3.5 h-3.5" />
           Export Animation

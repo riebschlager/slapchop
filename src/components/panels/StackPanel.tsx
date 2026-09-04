@@ -44,6 +44,18 @@ const MESH3D_PRESETS: [Mesh3dPrimitive, string][] = [
   ['extruded-polygon', 'Extruded']
 ];
 
+// The five source-picker cards below share one recipe, matching the single
+// inspector-header treatment Phase 3 settled on: mode identity comes from the
+// icon, the card's own copy, and its section vocabulary — not a per-mode hue.
+// The rail greens on hover because the card is an action; at rest it is
+// neutral structure.
+const SOURCE_CARD = 'group relative w-full overflow-hidden rounded-lg border border-ui-border bg-ui-surface px-3 py-3 text-left transition-colors hover:border-ui-border-strong hover:bg-ui-surface-raised focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel';
+const SOURCE_CARD_RAIL = 'absolute inset-y-0 left-0 w-0.5 bg-ui-border-strong transition-colors group-hover:bg-ui-accent';
+const SOURCE_CARD_ICON = 'rounded bg-ui-surface-raised p-1.5 text-ui-text-muted transition-colors group-hover:text-ui-accent';
+const SOURCE_CARD_TITLE = 'text-xs font-bold text-ui-text';
+const SOURCE_CARD_HINT = 'mt-0.5 text-[10px] text-ui-text-subtle';
+const SOURCE_CARD_ALT = 'mt-2 w-full rounded py-1 text-[10px] text-ui-text-subtle transition-colors hover:text-ui-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent';
+
 export default function StackPanel() {
   const appMode = useStore(s => s.appMode);
   const onModeChange = useStore(s => s.setAppMode);
@@ -326,10 +338,10 @@ export default function StackPanel() {
 
   if (collapsed) {
     return (
-      <div className="w-11 bg-gray-900 border-r border-gray-800 flex flex-col items-center h-screen shrink-0 pt-4">
+      <div className="w-11 bg-ui-panel border-r border-ui-border flex flex-col items-center h-screen shrink-0 pt-4">
         <button
           onClick={toggleCollapsed}
-          className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors"
+          className="p-1.5 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
           title="Expand Stack panel"
         >
           <PanelLeftOpen className="w-4 h-4" />
@@ -339,25 +351,25 @@ export default function StackPanel() {
   }
 
   return (
-    <div className="relative bg-gray-900 border-r border-gray-800 flex flex-col h-screen text-gray-200 shrink-0" style={{ width }}>
+    <div className="relative bg-ui-panel border-r border-ui-border flex flex-col h-screen text-ui-text shrink-0" style={{ width }}>
       {/* Header & Mode Switcher */}
-      <div className="p-4 border-b border-gray-800 shrink-0">
+      <div className="p-4 border-b border-ui-border shrink-0">
          <div className="flex items-start justify-between">
            <div>
-             <h1 className="text-xl font-bold text-white tracking-tight">slapchop</h1>
-             <p className="text-xs text-gray-400 mt-0.5">Generative Motion Studio</p>
+             <h1 className="text-xl font-bold text-ui-text tracking-tight">slapchop</h1>
+             <p className="text-xs text-ui-text-muted mt-0.5">Generative Motion Studio</p>
            </div>
            <div className="flex items-center gap-0.5">
-             <button onClick={() => undo()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Undo (⌘Z)">
+             <button onClick={() => undo()} className="p-1.5 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent" title="Undo (⌘Z)">
                <Undo2 className="w-4 h-4" />
              </button>
-             <button onClick={() => redo()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Redo (⇧⌘Z)">
+             <button onClick={() => redo()} className="p-1.5 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent" title="Redo (⇧⌘Z)">
                <Redo2 className="w-4 h-4" />
              </button>
-             <button onClick={() => saveProject()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Save Project (⌘S)">
+             <button onClick={() => saveProject()} className="p-1.5 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent" title="Save Project (⌘S)">
                <Save className="w-4 h-4" />
              </button>
-             <button onClick={() => isNative() ? openProjectViaDialog() : projectFileInputRef.current?.click()} className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Open Project (⌘O)">
+             <button onClick={() => isNative() ? openProjectViaDialog() : projectFileInputRef.current?.click()} className="p-1.5 hover:bg-ui-surface rounded text-ui-text-muted hover:text-ui-text transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent" title="Open Project (⌘O)">
                <FolderOpen className="w-4 h-4" />
              </button>
              <input
@@ -391,17 +403,17 @@ export default function StackPanel() {
       {/* MODE 1: SYMMETRY LAYERS */}
       {appMode === 'symmetry' && (
         <>
-          <div className="p-4 border-b border-gray-800 shrink-0">
-            <label className="flex items-center justify-center gap-2 w-full py-2 bg-gray-800 hover:bg-gray-700 rounded-md cursor-pointer transition-colors text-xs font-medium border border-gray-700">
-              <ImageIcon className="w-4 h-4 text-indigo-400" />
+          <div className="p-4 border-b border-ui-border shrink-0">
+            <label className="flex items-center justify-center gap-2 w-full py-2 bg-ui-surface hover:bg-ui-surface-raised rounded-md cursor-pointer transition-colors text-xs font-medium border border-ui-border focus-within:outline-none focus-within:ring-2 focus-within:ring-ui-accent">
+              <ImageIcon className="w-4 h-4 text-ui-text-muted" />
               Upload Media / GIF
               <input type="file" multiple accept="image/*" className="hidden" onChange={handleSymmetryFileChange} />
             </label>
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 relative">
-            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-4 py-2 border-b border-gray-800 z-10 flex items-center justify-between">
-               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Layers ({layers.length})</label>
+            <div className="sticky top-0 bg-ui-panel/95 backdrop-blur-sm px-4 py-2 border-b border-ui-border z-10 flex items-center justify-between">
+               <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider">Layers ({layers.length})</label>
             </div>
 
             <div className="p-2 space-y-1">
@@ -425,7 +437,7 @@ export default function StackPanel() {
                 </SortableContext>
               </DndContext>
               {layers.length === 0 && (
-                 <div className="p-4 text-center text-xs text-gray-500">No layers added yet. Upload an image or GIF to start.</div>
+                 <div className="p-4 text-center text-xs text-ui-text-subtle">No layers added yet. Upload an image or GIF to start.</div>
               )}
             </div>
           </div>
@@ -436,15 +448,16 @@ export default function StackPanel() {
       {appMode === 'polygon' && (
         <>
           {/* Polygon Creation Controls */}
-          <div className="p-3 border-b border-gray-800 space-y-3 shrink-0">
+          <div className="p-3 border-b border-ui-border space-y-3 shrink-0">
             <div>
               <button
                 onClick={onToggleDrawPolygon}
                 className={cn(
-                  "w-full flex items-center justify-center gap-2 py-2 rounded-md font-semibold text-xs transition-all border",
+                  "w-full flex items-center justify-center gap-2 py-2 rounded-md font-semibold text-xs transition-colors border",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel",
                   isDrawingPolygon
                     ? "bg-amber-600 text-white border-amber-500 animate-pulse"
-                    : "bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500"
+                    : "bg-ui-accent hover:bg-ui-accent-hover text-ui-accent-contrast border-ui-accent-strong"
                 )}
               >
                 <PenTool className="w-4 h-4" />
@@ -453,11 +466,11 @@ export default function StackPanel() {
             </div>
 
             <div>
-              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Add Shape Presets</label>
+              <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block mb-1.5">Add Shape Presets</label>
               <div className="grid grid-cols-4 gap-1">
                 <button
                   onClick={() => onAddPresetPolygon('triangle')}
-                  className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                  className="py-1.5 px-1 bg-ui-surface hover:bg-ui-surface-raised text-ui-text rounded text-[11px] border border-ui-border flex flex-col items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                   title="Triangle"
                 >
                   <span className="text-xs">🔺</span>
@@ -465,7 +478,7 @@ export default function StackPanel() {
                 </button>
                 <button
                   onClick={() => onAddPresetPolygon('rectangle')}
-                  className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                  className="py-1.5 px-1 bg-ui-surface hover:bg-ui-surface-raised text-ui-text rounded text-[11px] border border-ui-border flex flex-col items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                   title="Rectangle"
                 >
                   <span className="text-xs">🟩</span>
@@ -473,7 +486,7 @@ export default function StackPanel() {
                 </button>
                 <button
                   onClick={() => onAddPresetPolygon('hexagon')}
-                  className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                  className="py-1.5 px-1 bg-ui-surface hover:bg-ui-surface-raised text-ui-text rounded text-[11px] border border-ui-border flex flex-col items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                   title="Hexagon"
                 >
                   <span className="text-xs">🔷</span>
@@ -481,7 +494,7 @@ export default function StackPanel() {
                 </button>
                 <button
                   onClick={() => onAddPresetPolygon('star')}
-                  className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                  className="py-1.5 px-1 bg-ui-surface hover:bg-ui-surface-raised text-ui-text rounded text-[11px] border border-ui-border flex flex-col items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                   title="Star"
                 >
                   <span className="text-xs">⭐</span>
@@ -491,8 +504,8 @@ export default function StackPanel() {
             </div>
 
             <div>
-              <label className="flex items-center justify-center gap-2 w-full py-1.5 bg-gray-800/80 hover:bg-gray-700 rounded-md cursor-pointer transition-colors text-xs text-gray-300 border border-gray-700">
-                <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
+              <label className="flex items-center justify-center gap-2 w-full py-1.5 bg-ui-surface hover:bg-ui-surface-raised rounded-md cursor-pointer transition-colors text-xs text-ui-text border border-ui-border focus-within:outline-none focus-within:ring-2 focus-within:ring-ui-accent">
+                <ImageIcon className="w-3.5 h-3.5 text-ui-text-muted" />
                 {selectedPolygon ? "Upload Texture for Selected Shape" : "Upload GIF / Texture"}
                 <input type="file" accept="image/*" className="hidden" onChange={handlePolygonTextureFileChange} />
               </label>
@@ -501,8 +514,8 @@ export default function StackPanel() {
 
           {/* Polygon Layers List */}
           <div className="flex-1 overflow-y-auto min-h-0 relative">
-            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-4 py-2 border-b border-gray-800 z-10 flex items-center justify-between">
-              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Polygons ({polygonLayers.length})</label>
+            <div className="sticky top-0 bg-ui-panel/95 backdrop-blur-sm px-4 py-2 border-b border-ui-border z-10 flex items-center justify-between">
+              <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider">Polygons ({polygonLayers.length})</label>
             </div>
 
             <div className="p-2 space-y-1">
@@ -526,7 +539,7 @@ export default function StackPanel() {
                 </SortableContext>
               </DndContext>
               {polygonLayers.length === 0 && (
-                <div className="p-4 text-center text-xs text-gray-500">
+                <div className="p-4 text-center text-xs text-ui-text-subtle">
                   No polygons created. Click "Draw Custom Polygon" or pick a shape preset above!
                 </div>
               )}
@@ -538,15 +551,15 @@ export default function StackPanel() {
       {/* MODE 3: 3D MESH SPACE */}
       {appMode === '3d' && (
         <>
-          <div className="p-3 border-b border-gray-800 space-y-3 shrink-0">
+          <div className="p-3 border-b border-ui-border space-y-3 shrink-0">
             <div>
-              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Add Mesh</label>
+              <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block mb-1.5">Add Mesh</label>
               <div className="grid grid-cols-4 gap-1">
                 {MESH3D_PRESETS.map(([primitive, label]) => (
                   <button
                     key={primitive}
                     onClick={() => onAddMesh3dPreset(primitive)}
-                    className="py-1.5 px-1 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded text-[11px] border border-gray-700 flex flex-col items-center gap-1"
+                    className="py-1.5 px-1 bg-ui-surface hover:bg-ui-surface-raised text-ui-text rounded text-[11px] border border-ui-border flex flex-col items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
                     title={label}
                   >
                     <span className="text-xs">{MESH3D_PRIMITIVE_EMOJI[primitive]}</span>
@@ -558,8 +571,8 @@ export default function StackPanel() {
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 relative">
-            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-4 py-2 border-b border-gray-800 z-10 flex items-center justify-between">
-              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Meshes ({mesh3dLayers.length})</label>
+            <div className="sticky top-0 bg-ui-panel/95 backdrop-blur-sm px-4 py-2 border-b border-ui-border z-10 flex items-center justify-between">
+              <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider">Meshes ({mesh3dLayers.length})</label>
             </div>
 
             <div className="p-2 space-y-1">
@@ -584,7 +597,7 @@ export default function StackPanel() {
                 </SortableContext>
               </DndContext>
               {mesh3dLayers.length === 0 && (
-                <div className="p-4 text-center text-xs text-gray-500">No meshes yet. Add a primitive above to start.</div>
+                <div className="p-4 text-center text-xs text-ui-text-subtle">No meshes yet. Add a primitive above to start.</div>
               )}
             </div>
           </div>
@@ -594,20 +607,20 @@ export default function StackPanel() {
       {/* MODE 4: GIF FLYTHROUGH */}
       {appMode === 'flythrough' && (
         <>
-          <div className="p-3 border-b border-cyan-950/80 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.1),transparent_62%)] shrink-0">
+          <div className="p-3 border-b border-ui-border shrink-0">
             <button
               type="button"
               onClick={() => void handleChooseFlythroughFolder()}
-              className="group relative w-full overflow-hidden rounded-lg border border-cyan-800/70 bg-cyan-950/35 px-3 py-3 text-left hover:bg-cyan-950/55 hover:border-cyan-600/80 transition-all"
+              className={SOURCE_CARD}
             >
-              <div className="absolute inset-y-0 left-0 w-0.5 bg-cyan-400" />
+              <div className={SOURCE_CARD_RAIL} />
               <div className="flex items-center gap-2.5">
-                <div className="p-1.5 rounded bg-cyan-400/10 text-cyan-300 group-hover:text-cyan-200">
+                <div className={SOURCE_CARD_ICON}>
                   <FolderInput className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-cyan-100">Choose GIF folder</div>
-                  <div className="text-[10px] text-cyan-700 mt-0.5">Replaces the current flight library</div>
+                  <div className={SOURCE_CARD_TITLE}>Choose GIF folder</div>
+                  <div className={SOURCE_CARD_HINT}>Replaces the current flight library</div>
                 </div>
               </div>
             </button>
@@ -615,7 +628,7 @@ export default function StackPanel() {
             <button
               type="button"
               onClick={() => flythroughFilesInputRef.current?.click()}
-              className="w-full mt-2 py-1 text-[10px] text-gray-500 hover:text-cyan-300 transition-colors"
+              className={SOURCE_CARD_ALT}
             >
               Or choose individual GIF files
             </button>
@@ -623,34 +636,34 @@ export default function StackPanel() {
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 relative">
-            <div className="sticky top-0 bg-gray-900/95 backdrop-blur-sm px-4 py-2 border-b border-gray-800 z-10 flex items-center justify-between">
-              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Flight Library ({flythroughAssets.length})</label>
+            <div className="sticky top-0 bg-ui-panel/95 backdrop-blur-sm px-4 py-2 border-b border-ui-border z-10 flex items-center justify-between">
+              <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider">Flight Library ({flythroughAssets.length})</label>
               {flythroughAssets.length > 0 && (
-                <button type="button" onClick={onClearFlythroughAssets} className="text-[10px] text-gray-500 hover:text-red-300 transition-colors">Clear</button>
+                <button type="button" onClick={onClearFlythroughAssets} className="text-[10px] rounded text-ui-text-subtle transition-colors hover:text-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent">Clear</button>
               )}
             </div>
             <div className="p-2 space-y-1">
               {flythroughAssets.map((asset, index) => (
-                <div key={asset.id} className="group flex items-center gap-2 p-1.5 rounded border border-transparent hover:border-gray-700 hover:bg-gray-800/60">
-                  <div className="relative w-10 h-10 rounded bg-black overflow-hidden border border-gray-800 shrink-0">
+                <div key={asset.id} className="group flex items-center gap-2 p-1.5 rounded border border-transparent hover:border-ui-border hover:bg-ui-surface">
+                  <div className="relative w-10 h-10 rounded bg-black overflow-hidden border border-ui-border shrink-0">
                     <img src={asset.src} alt="" className="w-full h-full object-contain" />
-                    <span className="absolute bottom-0 right-0 px-1 bg-black/80 text-[8px] font-mono text-cyan-300">{String(index + 1).padStart(2, '0')}</span>
+                    <span className="absolute bottom-0 right-0 px-1 bg-black/80 text-[8px] font-mono text-ui-text">{String(index + 1).padStart(2, '0')}</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[11px] text-gray-200 truncate" title={asset.name}>{asset.name}</div>
-                    <div className="text-[9px] font-mono text-gray-600">
+                    <div className="text-[11px] text-ui-text truncate" title={asset.name}>{asset.name}</div>
+                    <div className="text-[9px] font-mono text-ui-text-subtle">
                       {asset.width ?? asset.gifData?.width ?? '?'}×{asset.height ?? asset.gifData?.height ?? '?'}
                     </div>
                   </div>
-                  <button type="button" onClick={() => onRemoveFlythroughAsset(asset.id)} className="p-1 text-gray-600 hover:text-red-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all" title={`Remove ${asset.name}`}>
+                  <button type="button" onClick={() => onRemoveFlythroughAsset(asset.id)} className="p-1 rounded text-ui-text-subtle transition-colors hover:text-red-400 opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent" title={`Remove ${asset.name}`}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ))}
               {flythroughAssets.length === 0 && (
                 <div className="px-4 py-8 text-center">
-                  <Rocket className="w-6 h-6 mx-auto text-cyan-900 mb-2" />
-                  <p className="text-xs text-gray-500">Point Slapchop at a folder of GIFs to launch the field.</p>
+                  <Rocket className="w-6 h-6 mx-auto text-ui-border-strong mb-2" />
+                  <p className="text-xs text-ui-text-subtle">Point Slapchop at a folder of GIFs to launch the field.</p>
                 </div>
               )}
             </div>
@@ -661,34 +674,34 @@ export default function StackPanel() {
       {/* MODE 5: GIF TUNNEL */}
       {appMode === 'tunnel' && (
         <>
-          <div className="shrink-0 border-b border-teal-950/80 bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_62%)] p-3">
+          <div className="shrink-0 border-b border-ui-border p-3">
             <button
               type="button"
               onClick={() => void handleChooseTunnelFolder()}
-              className="group relative w-full overflow-hidden rounded-lg border border-teal-800/70 bg-teal-950/35 px-3 py-3 text-left transition-all hover:border-teal-600/80 hover:bg-teal-950/55"
+              className={SOURCE_CARD}
             >
-              <div className="absolute inset-y-0 left-0 w-0.5 bg-teal-400" />
+              <div className={SOURCE_CARD_RAIL} />
               <div className="flex items-center gap-2.5">
-                <div className="rounded bg-teal-400/10 p-1.5 text-teal-300 group-hover:text-teal-200">
+                <div className={SOURCE_CARD_ICON}>
                   <FolderInput className="size-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-teal-100">Choose wallpaper folder</div>
-                  <div className="mt-0.5 text-[10px] text-teal-700">GIF, PNG, JPEG, or WebP · replaces library</div>
+                  <div className={SOURCE_CARD_TITLE}>Choose wallpaper folder</div>
+                  <div className={SOURCE_CARD_HINT}>GIF, PNG, JPEG, or WebP · replaces library</div>
                 </div>
               </div>
             </button>
             <input ref={tunnelFolderInputRef} type="file" multiple accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp" className="hidden" onChange={handleTunnelFolderChange} />
-            <button type="button" onClick={() => tunnelFilesInputRef.current?.click()} className="mt-2 w-full py-1 text-[10px] text-gray-500 transition-colors hover:text-teal-300">
+            <button type="button" onClick={() => tunnelFilesInputRef.current?.click()} className={SOURCE_CARD_ALT}>
               Add individual images
             </button>
             <input ref={tunnelFilesInputRef} type="file" multiple accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp" className="hidden" onChange={handleTunnelFilesChange} />
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-800 bg-gray-900/95 px-4 py-2 backdrop-blur-sm">
-              <label className="text-xs font-semibold uppercase tracking-wider text-gray-400">Ring Sequence ({tunnelAssets.length})</label>
-              {tunnelAssets.length > 0 && <button type="button" onClick={onClearTunnelAssets} className="text-[10px] text-gray-500 transition-colors hover:text-red-300">Clear</button>}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-ui-border bg-ui-panel/95 px-4 py-2 backdrop-blur-sm">
+              <label className="text-xs font-semibold uppercase tracking-wider text-ui-text-muted">Ring Sequence ({tunnelAssets.length})</label>
+              {tunnelAssets.length > 0 && <button type="button" onClick={onClearTunnelAssets} className="text-[10px] rounded text-ui-text-subtle transition-colors hover:text-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent">Clear</button>}
             </div>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndTunnel}>
               <SortableContext items={tunnelAssets.map(asset => asset.id)} strategy={verticalListSortingStrategy}>
@@ -698,8 +711,8 @@ export default function StackPanel() {
                   ))}
                   {tunnelAssets.length === 0 && (
                     <div className="px-4 py-8 text-center">
-                      <Circle className="mx-auto mb-2 size-7 text-teal-950" />
-                      <p className="text-xs text-gray-500">The palette is live. Add images to wallpaper selected panes.</p>
+                      <Circle className="mx-auto mb-2 size-7 text-ui-border-strong" />
+                      <p className="text-xs text-ui-text-subtle">The palette is live. Add images to wallpaper selected panes.</p>
                     </div>
                   )}
                 </div>
@@ -712,34 +725,34 @@ export default function StackPanel() {
       {/* MODE 6: GIF VORONOI */}
       {appMode === 'gif-voronoi' && (
         <>
-          <div className="shrink-0 border-b border-emerald-950/80 bg-[radial-gradient(circle_at_top_left,rgba(132,204,22,0.13),transparent_62%)] p-3">
+          <div className="shrink-0 border-b border-ui-border p-3">
             <button
               type="button"
               onClick={() => void handleChooseGifVoronoiFolder()}
-              className="group relative w-full overflow-hidden rounded-lg border border-emerald-800/70 bg-emerald-950/30 px-3 py-3 text-left transition-all hover:border-lime-600/70 hover:bg-emerald-950/50"
+              className={SOURCE_CARD}
             >
-              <div className="absolute inset-y-0 left-0 w-0.5 bg-lime-400" />
+              <div className={SOURCE_CARD_RAIL} />
               <div className="flex items-center gap-2.5">
-                <div className="rounded bg-lime-400/10 p-1.5 text-lime-300 group-hover:text-lime-200">
+                <div className={SOURCE_CARD_ICON}>
                   <FolderInput className="size-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-emerald-100">Choose GIF folder</div>
-                  <div className="mt-0.5 text-[10px] text-emerald-700">Build a new deterministic cell library</div>
+                  <div className={SOURCE_CARD_TITLE}>Choose GIF folder</div>
+                  <div className={SOURCE_CARD_HINT}>Build a new deterministic cell library</div>
                 </div>
               </div>
             </button>
             <input ref={gifVoronoiFolderInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleGifVoronoiFolderChange} />
-            <button type="button" onClick={() => void handleChooseGifVoronoiFiles()} className="mt-2 w-full py-1 text-[10px] text-gray-500 transition-colors hover:text-lime-300">
+            <button type="button" onClick={() => void handleChooseGifVoronoiFiles()} className={SOURCE_CARD_ALT}>
               Add individual GIFs
             </button>
             <input ref={gifVoronoiFilesInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleGifVoronoiFilesChange} />
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-800 bg-gray-900/95 px-4 py-2 backdrop-blur-sm">
-              <label className="text-xs font-semibold uppercase tracking-wider text-gray-400">Cell Sources ({gifVoronoiAssets.length})</label>
-              {gifVoronoiAssets.length > 0 && <button type="button" onClick={onClearGifVoronoiAssets} className="text-[10px] text-gray-500 transition-colors hover:text-red-300">Clear</button>}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-ui-border bg-ui-panel/95 px-4 py-2 backdrop-blur-sm">
+              <label className="text-xs font-semibold uppercase tracking-wider text-ui-text-muted">Cell Sources ({gifVoronoiAssets.length})</label>
+              {gifVoronoiAssets.length > 0 && <button type="button" onClick={onClearGifVoronoiAssets} className="text-[10px] rounded text-ui-text-subtle transition-colors hover:text-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent">Clear</button>}
             </div>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndGifVoronoi}>
               <SortableContext items={gifVoronoiAssets.map(asset => asset.id)} strategy={verticalListSortingStrategy}>
@@ -749,8 +762,8 @@ export default function StackPanel() {
                   ))}
                   {gifVoronoiAssets.length === 0 && (
                     <div className="px-4 py-8 text-center">
-                      <Grid2X2 className="mx-auto mb-2 size-7 text-emerald-950" />
-                      <p className="text-xs text-gray-500">The mesh is ready. Add GIFs to populate its cells.</p>
+                      <Grid2X2 className="mx-auto mb-2 size-7 text-ui-border-strong" />
+                      <p className="text-xs text-ui-text-subtle">The mesh is ready. Add GIFs to populate its cells.</p>
                     </div>
                   )}
                 </div>
@@ -763,25 +776,25 @@ export default function StackPanel() {
       {/* MODE 7: GIF LANDSCAPE */}
       {appMode === 'landscape' && (
         <>
-          <div className="shrink-0 space-y-2 border-b border-orange-950/80 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.15),transparent_64%)] p-3">
-            <button type="button" onClick={() => void handleChooseLandscapeTerrainFolder()} className="group relative w-full overflow-hidden rounded-lg border border-orange-800/70 bg-orange-950/30 px-3 py-3 text-left transition-all hover:border-orange-600/80 hover:bg-orange-950/50">
-              <div className="absolute inset-y-0 left-0 w-0.5 bg-orange-400" />
+          <div className="shrink-0 space-y-2 border-b border-ui-border p-3">
+            <button type="button" onClick={() => void handleChooseLandscapeTerrainFolder()} className={SOURCE_CARD}>
+              <div className={SOURCE_CARD_RAIL} />
               <div className="flex items-center gap-2.5">
-                <div className="rounded bg-orange-400/10 p-1.5 text-orange-300"><Mountain className="size-4" /></div>
+                <div className={SOURCE_CARD_ICON}><Mountain className="size-4" /></div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-orange-100">Choose terrain GIF folder</div>
-                  <div className="mt-0.5 text-[10px] text-orange-800">{landscapeTerrainAssets.length > 0 ? `${landscapeTerrainAssets.length} sources loaded · replace atlas` : 'Tile the displaced ground mesh'}</div>
+                  <div className={SOURCE_CARD_TITLE}>Choose terrain GIF folder</div>
+                  <div className={SOURCE_CARD_HINT}>{landscapeTerrainAssets.length > 0 ? `${landscapeTerrainAssets.length} sources loaded · replace atlas` : 'Tile the displaced ground mesh'}</div>
                 </div>
               </div>
             </button>
             <input ref={landscapeTerrainFolderInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleLandscapeTerrainFolderChange} />
-            <button type="button" onClick={() => void handleChooseLandscapeSkyFolder()} className="group relative w-full overflow-hidden rounded-lg border border-amber-700/60 bg-amber-950/25 px-3 py-2.5 text-left transition-all hover:border-amber-500/70 hover:bg-amber-950/45">
-              <div className="absolute inset-y-0 left-0 w-0.5 bg-amber-300" />
+            <button type="button" onClick={() => void handleChooseLandscapeSkyFolder()} className={cn(SOURCE_CARD, "py-2.5")}>
+              <div className={SOURCE_CARD_RAIL} />
               <div className="flex items-center gap-2.5">
-                <div className="rounded bg-amber-300/10 p-1.5 text-amber-300"><Sun className="size-4" /></div>
+                <div className={SOURCE_CARD_ICON}><Sun className="size-4" /></div>
                 <div>
-                  <div className="text-xs font-bold text-amber-100">Add sky GIF folder</div>
-                  <div className="mt-0.5 text-[10px] text-amber-800">One GIF per ring, tiled to fill</div>
+                  <div className={SOURCE_CARD_TITLE}>Add sky GIF folder</div>
+                  <div className={SOURCE_CARD_HINT}>One GIF per ring, tiled to fill</div>
                 </div>
               </div>
             </button>
@@ -789,9 +802,9 @@ export default function StackPanel() {
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-800 bg-gray-900/95 px-4 py-2 backdrop-blur-sm">
-              <label className="text-xs font-semibold uppercase tracking-wider text-gray-400">Sky Ring Folders ({landscapeSkySources.length})</label>
-              {landscapeTerrainAssets.length > 0 && <button type="button" onClick={onClearLandscapeTerrainAssets} className="text-[10px] text-gray-500 transition-colors hover:text-red-300">Clear terrain</button>}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-ui-border bg-ui-panel/95 px-4 py-2 backdrop-blur-sm">
+              <label className="text-xs font-semibold uppercase tracking-wider text-ui-text-muted">Sky Ring Folders ({landscapeSkySources.length})</label>
+              {landscapeTerrainAssets.length > 0 && <button type="button" onClick={onClearLandscapeTerrainAssets} className="text-[10px] rounded text-ui-text-subtle transition-colors hover:text-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent">Clear terrain</button>}
             </div>
             <div className="space-y-1 p-2">
               {landscapeSkySources.map((source, index) => (
@@ -801,24 +814,25 @@ export default function StackPanel() {
                   onClick={() => onSelectLandscapeSkySource(source.id)}
                   className={cn(
                     'group flex w-full items-center gap-2 rounded border p-2 text-left transition-colors',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel',
                     selectedLandscapeSkySourceId === source.id
-                      ? 'border-orange-700/70 bg-orange-950/30'
-                      : 'border-transparent hover:border-gray-700 hover:bg-gray-800/60'
+                      ? 'border-ui-accent bg-ui-accent/10'
+                      : 'border-transparent hover:border-ui-border hover:bg-ui-surface'
                   )}
                 >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-amber-800/50 bg-amber-950/40 font-mono text-[10px] text-amber-300">{String(index + 1).padStart(2, '0')}</div>
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-ui-border bg-ui-surface-raised font-mono text-[10px] text-ui-text-muted">{String(index + 1).padStart(2, '0')}</div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[11px] font-semibold text-gray-200">{source.name}</div>
-                    <div className="text-[9px] uppercase tracking-wider text-gray-600">{source.assets.length} GIFs · one per assigned ring</div>
+                    <div className="truncate text-[11px] font-semibold text-ui-text">{source.name}</div>
+                    <div className="text-[9px] uppercase tracking-wider text-ui-text-subtle">{source.assets.length} GIFs · one per assigned ring</div>
                   </div>
-                  <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); void handleChooseLandscapeSkyFolder(source.id); }} onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); void handleChooseLandscapeSkyFolder(source.id); } }} className="rounded px-1 py-0.5 text-[9px] text-gray-600 opacity-0 transition-all hover:text-amber-300 group-hover:opacity-100 focus:opacity-100">Replace</span>
-                  <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); onRemoveLandscapeSkySource(source.id); }} onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); onRemoveLandscapeSkySource(source.id); } }} className="p-1 text-gray-700 opacity-0 transition-all hover:text-red-300 group-hover:opacity-100 focus:opacity-100" aria-label={`Remove ${source.name}`}><Trash2 className="size-3.5" /></span>
+                  <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); void handleChooseLandscapeSkyFolder(source.id); }} onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); void handleChooseLandscapeSkyFolder(source.id); } }} className="rounded px-1 py-0.5 text-[9px] text-ui-text-subtle opacity-0 transition-colors hover:text-ui-text group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent">Replace</span>
+                  <span role="button" tabIndex={0} onClick={event => { event.stopPropagation(); onRemoveLandscapeSkySource(source.id); }} onKeyDown={event => { if (event.key === 'Enter') { event.stopPropagation(); onRemoveLandscapeSkySource(source.id); } }} className="p-1 rounded text-ui-text-subtle opacity-0 transition-colors hover:text-red-400 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent" aria-label={`Remove ${source.name}`}><Trash2 className="size-3.5" /></span>
                 </button>
               ))}
               {landscapeSkySources.length === 0 && (
                 <div className="px-4 py-8 text-center">
-                  <Sun className="mx-auto mb-2 size-8 text-orange-950" />
-                  <p className="text-xs text-gray-500">Add a folder for each sky family. Every ring picks one GIF and tiles it across its surface.</p>
+                  <Sun className="mx-auto mb-2 size-8 text-ui-border-strong" />
+                  <p className="text-xs text-ui-text-subtle">Add a folder for each sky family. Every ring picks one GIF and tiles it across its surface.</p>
                 </div>
               )}
             </div>
@@ -831,12 +845,13 @@ export default function StackPanel() {
           its Scene tab, which now holds the document-wide controls
           (background, Master FX) this row used to render inline above the
           list, permanently shrinking it. */}
-      <div className="shrink-0 border-t border-gray-800">
+      <div className="shrink-0 border-t border-ui-border">
         <button
           onClick={selectScene}
           className={cn(
             "w-full flex items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors",
-            isSceneActive ? "text-indigo-300 bg-indigo-900/20" : "text-gray-400 hover:bg-gray-800/60"
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-inset",
+            isSceneActive ? "text-ui-accent bg-ui-accent/10" : "text-ui-text-muted hover:bg-ui-surface hover:text-ui-text"
           )}
         >
           <Layers className="w-3.5 h-3.5" />
