@@ -272,35 +272,363 @@ a project reconstructs assets from its embedded payload with no API calls,
 credentials, machine paths, or network fallback. Validate provenance URLs as
 untrusted input; metadata must never trigger automatic network requests.
 
-## Delivery sequence
+## Phased workplan
 
-1. **Feasibility and request spike:** resolve the provider questions above;
-   verify key setup, search, preview, and selected-rendition fetching on all three
-   origins with a user-configured key. Record approved attribution/export behavior,
-   any analytics obligation, and platform/section key mapping. Omit optional
-   analytics for the personal MVP unless the agreement requires them.
-2. **Asset foundation:** add bounded preparation, repository adapters, metadata,
-   resource ownership, and save/open round-trip tests using local fixtures. Add
-   credential storage; justify and lock any required native dependency.
-3. **Single-texture vertical slice:** build settings and picker, integrate Polygon
-   texture import, and verify persistence, undo, offline reload, and export. Then
-   wire both 3D texture surfaces and Symmetry's multi-layer action.
-4. **Library composition:** add selection tray and mode-owned append mutations;
-   wire Flythrough, Tunnel, GIF Voronoi, terrain, and sky create/append/replace.
-   Test query A plus query B in one tray and repeated imports after commit.
-5. **Retention and release verification:** complete Recent Imports, storage
-   management, restart recovery of assets, accessibility, resource cleanup,
-   error cases, native packaging checks, and README updates.
+Each phase below is a self-contained handoff: one agent, one branch, one review.
+Phases run in order unless marked parallel-safe. A phase is finished only when
+its **Done when** list is satisfied and `npm run typecheck`, `npm run lint`,
+`npm test`, and `npm run build` pass; Rust-touching phases add `cargo fmt
+--manifest-path src-tauri/Cargo.toml --check` and `cargo check --manifest-path
+src-tauri/Cargo.toml`.
 
-Likely new modules: `src/lib/giphy.ts`, `giphySettings.ts`, `assetImport.ts`,
-`assetRepository.ts`, platform storage adapters, and picker/settings/recent-import
-components under `src/components/modals/`. Add focused colocated tests. Modify
-`src/types.ts`, `src/store.ts`, `src/lib/gifUtils.ts`, `src/lib/project.ts`, the
-existing import components listed above, and `AppShell.tsx` for shared modal
-composition. Native credential/storage work may touch `src-tauri/src/`,
-`Cargo.toml`, its lockfile, and capabilities. Keep filesystem/credential commands
-narrow; do not expand the existing broad filesystem scope or add shell download
-commands. Avoid unrelated renderer or mode-architecture refactors.
+The ordering deliberately defers durable storage (Phase 6) until after the
+picker and all destinations work. Storage is the part most exposed to the
+Milestone 0 retention answer; if retention is refused or narrowed, only Phase 6
+is invalidated, and Phases 1-5 still ship a working session-scoped importer whose
+output is preserved by ordinary project save. Do not reorder storage earlier for
+convenience.
+
+### Grounding notes from the current code
+
+Verified against the tree on 2026-09-05. Agents should re-confirm before editing;
+these facts shape several tasks below.
+
+- **Every mode import action already takes browser `File` input** — one `File`
+  for single-texture destinations (`addLayerFromFile(file, x, y)`,
+  `uploadPolygonTexture(file)`, `uploadMesh3dTexture(file)`) and `File[]` for
+  libraries (`replaceFlythroughAssets`, `addTunnelAssets`,
+  `addGifVoronoiAssets`, `replaceLandscapeTerrainAssets`,
+  `addLandscapeSkySource`, `replaceLandscapeSkySource(id, files)`). The
+  acquisition layer should therefore terminate in validated `File` objects, so
+  remote and local imports converge on the same mutations rather than growing a
+  parallel remote-only path.
+- **Three append mutations are genuinely missing:** Flythrough has only
+  `replaceFlythroughAssets`, Landscape terrain has only
+  `replaceLandscapeTerrainAssets`, and existing sky sources have only
+  `replaceLandscapeSkySource`. Tunnel and GIF Voronoi already have `add*`.
+- **Symmetry is per-file.** `addLayerFromFile` calls `set` once per file and also
+  moves `selectedLayerId`. N GIFs from one tray would produce N store writes
+  against the 350 ms coalescer — an unpredictable number of undo steps. A batch
+  action is required, not optional.
+- **A selection-retargeting race already exists.** `uploadPolygonTexture` and
+  `uploadMesh3dTexture` both `await parseGifFile(file)` and only then read
+  `get().selectedPolygonId` / the selected mesh. Network latency widens that
+  window from milliseconds to seconds. The captured-destination-token design is
+  fixing a live bug, not just a hypothetical one.
+- **`parseGifFile` returns `null` for static GIFs, non-GIFs, and decode
+  failures alike** (`src/lib/gifUtils.ts:5`); `parseWithOmggif` returns null when
+  `numFrames <= 1` before the gifuct fallback runs. Remote import must
+  distinguish these three cases.
+- **There is no Settings surface anywhere in the app.** Modals are mounted
+  ad hoc: `WelcomeModal` in `AppShell.tsx`, `ExportModal` and `LiveOutputModal`
+  in `InspectorPanel.tsx`. Settings is new UI, and its shell should be built once
+  in Phase 4 rather than assumed to exist.
+- **Non-secret preference precedent is `src/lib/welcomePref.ts`** — a tiny
+  localStorage module with a colocated test. Mirror that shape for GIPHY
+  preferences; keep credentials out of it.
+- **`src-tauri/tauri.conf.json` sets `security.csp` to `null`,** so no policy
+  blocks `api.giphy.com` today. The packaged origin is still a custom scheme, so
+  CORS must be verified from the real WKWebView, not inferred from dev. If a CSP
+  is ever introduced, GIPHY hosts must be added deliberately.
+- **No HTTP or credential plugin is in `package.json`.** Desktop currently ships
+  `@tauri-apps/plugin-{dialog,fs,shell,window-state}` only, and
+  `src-tauri/capabilities/default.json` already grants `fs:scope` `**`. Any
+  Keychain access is a new dependency plus a new capability; a native HTTP
+  fallback is a separate decision (see Technical design).
+- **Project format:** `src/lib/project.ts` writes V6 with
+  `ProjectAsset { name, type, dataUrl }`, deduplicating by runtime `src` string
+  inside `assetIdFor`. Reads accept V1-V6. History is `partialize` + a 350 ms
+  `handleSet` coalescer + `limit: 100`.
+
+### Phase 0 - Feasibility and request spike (blocking, human-led)
+
+**Goal:** convert the open provider questions into a recorded decision, and prove
+the three-origin request path before any product code is written.
+
+Not an agent task. An agent may prepare the spike harness and the write-up
+skeleton, but must not contact GIPHY, register a key, or accept terms on the
+user's behalf.
+
+- Resolve the Provider feasibility questions above: retention of local copies,
+  permanence of project embedding, offline export, Recent Imports versus the
+  database/directory restriction, required attribution in-app and in exported
+  media, and platform/section key mapping for a shared cross-mode picker.
+- With a user-configured key, verify search, preview rendition load, and
+  `images.original.url` fetch from: `localhost:3000`, the hosted browser origin,
+  and a packaged `npm run tauri build` app. Record CORS response headers per
+  origin, observed rate-limit headers, and whether `Retry-After` is sent.
+- Record the answer, conditions, and date in the Provider feasibility section of
+  this document. If retention is refused, stop and revisit the requirement with
+  the user before starting Phase 6 — Phases 1-5 remain valid.
+
+**Done when:** the feasibility section states an explicit decision with
+conditions, and a spike note records per-origin request results. No product code.
+
+### Phase 1 - Store seams and batch mutations (parallel-safe with Phase 3)
+
+**Goal:** make every destination commit as one synchronous, undoable batch from
+already-decoded input. No network, no UI, no new dependencies.
+
+Files: `src/store.ts`, `src/types.ts`, new `src/store.test.ts` (or extend an
+existing store test if one is added first).
+
+1. Split decode from mutation. Extract the existing `*AssetsFromFiles` helpers so
+   each mode has a pure `prepare` step returning fully-formed asset records, and
+   a synchronous `commit` mutation that only calls `set`. Existing async actions
+   stay as thin wrappers over the pair so local-file behavior is unchanged.
+2. Add the missing append mutations:
+   - `addFlythroughAssets(files: File[]): Promise<void>` - append, preserving order.
+   - `addLandscapeTerrainAssets(files: File[]): Promise<void>` - append valid
+     animated GIFs.
+   - `addLandscapeSkySourceAssets(id: string, files: File[]): Promise<void>` -
+     append into an existing source, retaining source ID, name, and all mapping
+     settings (`textureScale`, `textureOffset*`, `textureRotation`, `gifSpeed`).
+3. Add `addLayersFromFiles(files: File[], x?, y?): Promise<void>` for Symmetry:
+   one `set`, one history entry, layers appended in the given order, selection
+   moved to the last added layer.
+4. Fix the retargeting race: `uploadPolygonTexture` and `uploadMesh3dTexture`
+   must capture the target ID before awaiting the decode, and no-op with a
+   surfaced reason if that target is gone on commit. Add an explicit
+   `applyPolygonTexture(targetId, prepared)` / `applyMesh3dTexture(targetId,
+   prepared)` seam the import layer can call directly.
+5. Verify undo granularity against the real coalescer: two batch commits fired
+   under 350 ms apart must still produce two undo steps, and a batch commit must
+   not merge with a neighboring slider gesture. If `handleSet` collapses them,
+   fix it here (an explicit "discrete transaction" bypass is acceptable; global
+   `pauseHistory` during async work is not).
+
+**Done when:** store tests cover, for each destination, add-versus-replace,
+stable ordering, target captured before await, deleted-target no-op, and exactly
+one undo/redo step per batch. Local-file import behavior is byte-identical to
+today in all seven modes.
+
+### Phase 2 - Acquisition, validation, and asset metadata (no network)
+
+**Goal:** the bounded prepare-then-commit pipeline, exercised entirely with
+owned local GIF fixtures. A `fetchBytes` function is injected, so this phase
+needs no key and no provider.
+
+Files: new `src/lib/assetImport.ts` + test, `src/lib/gifUtils.ts`,
+`src/lib/project.ts` + test, `src/types.ts`.
+
+1. Define the destination token and result types in `src/types.ts`:
+   `ImportDestination { kind, targetId, operation: 'add' | 'replace', docGeneration }`,
+   `ImportCandidate`, `PreparedAsset`, and a discriminated `ImportItemError`.
+2. Implement `importAssets(candidates, destination, deps)` following the six
+   steps in Acquisition and validation: freeze selection, bounded fetch (2
+   concurrent downloads, 1 decode), validate, preflight memory, decode once,
+   commit. All-or-nothing document commit by default.
+3. Named, exported limit constants so they are tunable and testable in one place:
+   `MAX_BYTES_PER_FILE` (20 MiB), `MAX_PIXELS_PER_SIDE` (2048),
+   `MAX_FRAMES_PER_FILE` (500), `MAX_DECODED_BYTES_PER_FILE` (256 MiB),
+   `MAX_STAGED_DECODED_BYTES` (512 MiB). Include already-active assets in the
+   staged budget.
+4. Disambiguate decode outcomes. Give `gifUtils` a result that separates
+   "static GIF", "not a GIF", and "decode failed" without changing
+   `parseGifFile`'s current signature or behavior for existing callers. Static
+   GIFs stay supported where the destination supports them; GIF Voronoi and
+   Landscape report them as skipped rather than dropping them silently.
+5. Cancellation and rollback: an aborted or failed batch releases staged object
+   URLs and decoded frames immediately and leaves the document untouched.
+6. Runtime source-metadata registry + project format. Add optional
+   `provenance` and `contentHash` to `ProjectAsset` in V6 with validation and
+   absence defaults. Keep the registry keyed independently of the local
+   repository so save/open never depends on it. Treat any persisted provenance
+   URL as untrusted on load; it must never trigger a request.
+
+**Done when:** tests cover each limit boundary, ordered multi-item preparation,
+partial failure leaving no document mutation, cancellation releasing resources,
+V1-V6 read compatibility, provenance round-trip, and a V6 file with provenance
+still opening in a reader that ignores the field. Still no network code.
+
+### Phase 3 - GIPHY client and credential boundary (parallel-safe with Phase 1)
+
+**Goal:** a typed, cancellable, key-safe provider adapter and the credential
+storage it needs. Tested against recorded/synthetic responses, not the live API.
+
+Files: new `src/lib/giphy.ts` + test, new `src/lib/giphySettings.ts` + test,
+possibly `src-tauri/src/`, `src-tauri/Cargo.toml`, `src-tauri/capabilities/default.json`.
+
+1. `searchGifs({ query, limit, offset, rating, lang }, { signal, apiKey })`
+   against `https://api.giphy.com/v1/gifs/search`, using `fetch` +
+   `AbortController` and no SDK. Validate the response shape and return a
+   minimal DTO; never spread raw provider JSON into React.
+2. Distinct, typed error variants for auth failure, 429, 5xx, offline/network,
+   malformed response, and abort. Honor `Retry-After` when present; otherwise
+   offer manual retry without inventing a reset time. Never include the key in a
+   thrown message, a log line, or a breadcrumb — add a test that asserts the key
+   never appears in any error surface.
+3. Request generations so a stale response, including one issued under a
+   replaced key, is discarded rather than rendered.
+4. Rendition selection: prefer `images.original.url`, validate it is an actual
+   GIF, and never substitute an MP4, a preview still, or a lower-quality
+   rendition without saying so. Over-limit items offer an explicitly identified
+   smaller GIF rendition or deselection.
+5. Credentials. Session-only by default. `giphySettings.ts` owns the boundary:
+   in-memory by default, opt-in remembering behind a platform adapter — browser
+   localStorage with honest copy about same-origin script access, desktop macOS
+   Keychain. Keep non-secret preferences (rating, page size, language) in a
+   separate module modeled on `src/lib/welcomePref.ts`, outside undo. Forgetting
+   a key clears memory and remembered storage and touches no imported media.
+6. If Keychain requires a new crate or plugin, justify it in the PR, add the
+   narrowest possible command surface, and do not widen the existing capability
+   set beyond one credential permission. Do not add a shell download command. Do
+   not add a backend proxy.
+
+**Done when:** unit tests cover query encoding and the 50-character limit,
+malformed responses, each error variant, stale-generation discard, abort, and
+rendition validation; the key-leak test passes; credential storage round-trips
+and clears on both platforms.
+
+### Phase 4 - Settings surface, picker, and single-texture slice
+
+**Goal:** first user-visible feature. Search, select one GIF, import it into a
+polygon texture, and have it survive save/open and export.
+
+Files: new `src/components/modals/GiphyPickerModal.tsx`,
+`SettingsModal.tsx`, new `src/hooks/useGiphyPicker.ts`,
+`src/components/AppShell.tsx`, `src/components/panels/StackPanel.tsx`,
+`src/components/panels/Mesh3dRow.tsx`,
+`src/components/panels/inspector/Texture3dTab.tsx`.
+
+1. Build the Settings modal shell (Integrations → GIPHY: masked field, show/hide,
+   save/use, replace, forget, dashboard link) and mount it plus the picker in
+   `AppShell.tsx` beside `WelcomeModal`, since both are app-global rather than
+   inspector-scoped. Reach Settings from the unconfigured picker too.
+2. Build the picker per the Shared picker section: destination label, search
+   field, rating control, result grid in provider order, selection tray, count,
+   import action, Powered By GIPHY attribution, per-result title and available
+   creator/source. Explicit Load More, empty initial state, focus trap, focus
+   restored to the invoking control, Escape closes and aborts in flight requests.
+3. Previews are lightweight animated renditions — `<img>` or video renditions —
+   paused offscreen and respecting `prefers-reduced-motion`. Never route a
+   preview through `parseGifFile`.
+4. Use the existing control primitives from `src/components/controls/` and
+   `cn()`; match `ExportModal`'s shell classes and semantic `ui-*` tokens.
+   Keyboard operation must be complete without a pointer.
+5. Wire the single-texture destinations: polygon texture, `Mesh3dRow` texture
+   button, and the 3D inspector texture tab. Each opens the picker with a
+   captured `ImportDestination`; commit goes through the Phase 1 apply seams.
+   Single import closes the picker on success.
+6. Add Symmetry's multi-layer action on top of `addLayersFromFiles`.
+7. Local drop and file inputs are untouched. The search action sits beside the
+   visible import affordance and the empty state, never inside an OS dialog.
+
+**Done when:** with a user-supplied key, a GIF searched in the browser and in
+`tauri dev` imports to a polygon, renders identically on the Pixi path and
+`?renderer=2d`, produces one undo step, saves and reopens offline with no key,
+and exports at short duration. Missing key, revoked key, and network loss each
+produce a clear in-picker message.
+
+### Phase 5 - Library destinations and multi-query composition
+
+**Goal:** the ordered tray across queries, and every remaining destination.
+
+Files: picker components, `src/components/panels/StackPanel.tsx`,
+`GifVoronoiAssetRow.tsx`, `TunnelAssetRow.tsx`, landscape panel sections.
+
+1. Ordered selection tray keyed by GIPHY ID: survives query change and Load More,
+   never duplicates an ID, ordered by selection intent rather than search rank,
+   removable individually and clearable.
+2. Multi-import keeps the picker open, clears committed selections, and allows
+   another search into the same destination.
+3. Wire Flythrough, Tunnel, GIF Voronoi, and Landscape terrain to the append
+   mutations, and sky sources to create-from-tray, add-to-source, and an explicit
+   Replace source contents. Labels must read Add and Replace unambiguously; a
+   second search must never silently replace a library.
+4. Already-present IDs are marked Already added and skipped by default;
+   re-importing the same texture is a no-op. Duplication stays available through
+   existing document controls.
+5. Serialize per destination, disable duplicate submission while a batch runs,
+   and invalidate a pending commit with a visible explanation when the project is
+   replaced or the target is deleted mid-flight.
+6. Partial failure keeps the tray, lists failed items, and offers Retry failed or
+   Remove failed and import remaining.
+
+**Done when:** query A plus query B commit as one ordered batch into one library;
+a second import appends without disturbing existing entries or local images;
+project open during an in-flight import cancels it visibly; each destination has
+a store test for add, replace, ordering, and single-undo-step behavior.
+
+### Phase 6 - Durable storage and Recent Imports
+
+**Gated on the Phase 0 retention decision.** Do not start until the feasibility
+section records an approval and its conditions.
+
+Files: new `src/lib/assetRepository.ts` + platform adapters + tests, new
+`src/components/modals/RecentImportsModal.tsx` (or a Settings section),
+possibly `src-tauri/src/` and capabilities.
+
+1. Repository interface: `put`, `get`, `list`, `remove`, plus used-bytes
+   reporting. Content-hash keys deduplicate raw bytes; mode entries keep their
+   own IDs and ordering.
+2. Desktop adapter: app-owned application-data directory, hash-based filenames, a
+   versioned manifest, temp-file-plus-atomic-rename writes, recovery of
+   interrupted writes, and cleanup of crash leftovers on next open. No remote
+   name ever becomes a path component.
+3. Browser adapter: IndexedDB Blobs plus metadata committed transactionally,
+   `navigator.storage.persist()` requested when the user enables retention, and
+   quota or write failure surfaced before the import is reported complete.
+4. Metadata: filename, MIME type, byte count, dimensions, import time, optional
+   GIPHY provenance. Never persist keys, search history, expiring media URLs, or
+   decoded frames.
+5. Recent Imports shows only user-imported assets, offers re-add to the active
+   destination, and exposes storage use and removal. Deletion is blocked while
+   the document, undo history, an export, or an in-flight operation references
+   the bytes. Removing a scene entry never deletes the import. No silent eviction.
+6. Reference tracking for object URLs and decoded frames must count duplicates,
+   inactive modes, history snapshots, and export snapshots; revoke and close only
+   after the last reference drops. Raw bytes surviving in the repository must not
+   pin decoded frames in memory.
+
+**Done when:** restart recovery works on both platforms; quota denial and disk
+full are reported, not swallowed; an interrupted write recovers; delete/undo,
+duplicate, clear-history, and export sequences all still resolve to valid assets;
+saved projects remain fully independent of the repository.
+
+### Phase 7 - Release verification and documentation
+
+**Goal:** run the whole matrix in Verification and acceptance and close the docs.
+
+1. Full smoke matrix: desktop and browser search/import; multi-query composition;
+   replacing one texture while other properties survive; keyboard-only picker;
+   missing, invalid, and revoked keys; network loss mid-batch; transparent,
+   variable-delay, and large GIFs.
+2. Renderer parity for every affected mode: usual GPU path versus `?renderer=2d`,
+   fixed-time frame comparison, and a short export compared against the same
+   source imported as a local file.
+3. Offline portability: save, quit, restart with no key, no network, and no
+   repository, then open and export the project.
+4. README updates: privacy and network language (it currently claims only
+   application-code requests occur), optional API-key setup, the new import
+   behavior, and the browser/desktop persistence table. State plainly that
+   queries and preview/download requests reach GIPHY while compositions are never
+   uploaded, and keep retained assets distinct from unsaved composition recovery.
+5. Update this document's Status line, and record any limit constants retuned
+   from measurement in Phase 2's list.
+6. `npm run tauri build` if capabilities, packaging, or the credential command
+   surface changed and the toolchain is available.
+
+**Done when:** the matrix passes, README is accurate, and the handoff reports
+actual results including anything skipped and why.
+
+### Likely new and modified modules
+
+New: `src/lib/giphy.ts`, `src/lib/giphySettings.ts`, `src/lib/assetImport.ts`,
+`src/lib/assetRepository.ts` plus platform adapters, `src/hooks/useGiphyPicker.ts`,
+and `GiphyPickerModal.tsx`, `SettingsModal.tsx`, `RecentImportsModal.tsx` under
+`src/components/modals/`, each with colocated tests.
+
+Modified: `src/types.ts`, `src/store.ts`, `src/lib/gifUtils.ts`,
+`src/lib/project.ts`, `src/components/AppShell.tsx`,
+`src/components/panels/StackPanel.tsx`, `Mesh3dRow.tsx`,
+`inspector/Texture3dTab.tsx`, and the asset row components. Native credential or
+storage work may touch `src-tauri/src/`, `Cargo.toml`, its lockfile, and
+`src-tauri/capabilities/default.json`.
+
+Keep filesystem and credential commands narrow, do not widen the existing
+`fs:scope` grant, add no shell download command, and avoid unrelated renderer or
+mode-architecture refactors.
 
 ## Verification and acceptance
 
