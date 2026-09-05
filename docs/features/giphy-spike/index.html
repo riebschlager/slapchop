@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>GIPHY Phase 0 request spike</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #030712;
+        color: #e5e7eb;
+        font: 13px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      }
+      main { max-width: 900px; margin: 0 auto; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #9ca3af; margin: 28px 0 10px; }
+      p { margin: 0 0 12px; color: #9ca3af; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #d1d5db; }
+      .env { display: inline-block; padding: 3px 8px; border-radius: 4px; background: #1f2937; color: #d1d5db; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+      .warn { border-left: 2px solid #f59e0b; padding: 8px 12px; background: #1c1917; color: #fbbf24; margin: 0 0 16px; }
+      form { display: grid; gap: 10px; grid-template-columns: repeat(4, 1fr); align-items: end; }
+      label { display: grid; gap: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; }
+      label.wide { grid-column: 1 / -1; }
+      input, select {
+        background: #111827; border: 1px solid #374151; color: #e5e7eb;
+        border-radius: 4px; padding: 7px 9px; font: inherit; width: 100%;
+      }
+      input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
+      button {
+        background: #4f46e5; border: 1px solid #4f46e5; color: #fff;
+        border-radius: 4px; padding: 8px 14px; font: inherit; cursor: pointer;
+      }
+      button.secondary { background: transparent; border-color: #374151; color: #d1d5db; }
+      button[disabled] { opacity: 0.5; cursor: default; }
+      .actions { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+      #status { color: #9ca3af; }
+      textarea {
+        width: 100%; min-height: 320px; background: #0b1120; color: #d1d5db;
+        border: 1px solid #374151; border-radius: 4px; padding: 12px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5;
+      }
+      details { margin-top: 12px; }
+      summary { cursor: pointer; color: #9ca3af; }
+      ul { margin: 0 0 12px; padding-left: 18px; color: #9ca3af; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>GIPHY Phase 0 request spike</h1>
+      <p>
+        Verifies search, preview rendition load, and <code>images.original.url</code> fetch from
+        this origin: <span class="env" id="origin">…</span>
+      </p>
+
+      <div class="warn">
+        Your key is used for this run only. It is never stored, never written into the report, and
+        is redacted from every URL shown here. Each run spends <strong>one</strong> API call, plus
+        one per burst attempt. Beta keys are documented at 100 calls/hour.
+      </div>
+
+      <form id="form">
+        <label class="wide">
+          API key
+          <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your GIPHY API key" required />
+        </label>
+        <label>
+          Query
+          <input id="query" type="text" value="loop" required />
+        </label>
+        <label>
+          Limit
+          <input id="limit" type="number" value="5" min="1" max="50" />
+        </label>
+        <label>
+          Rating
+          <select id="rating">
+            <option value="g">g</option>
+            <option value="pg">pg</option>
+            <option value="pg-13" selected>pg-13</option>
+            <option value="r">r</option>
+          </select>
+        </label>
+        <label>
+          Burst (extra calls)
+          <input id="burst" type="number" value="0" min="0" max="120" />
+        </label>
+        <div class="actions">
+          <button id="run" type="submit">Run spike</button>
+          <button id="copy" type="button" class="secondary" disabled>Copy markdown</button>
+          <span id="status"></span>
+        </div>
+      </form>
+
+      <h2>Report</h2>
+      <p>Paste this into <code>docs/features/giphy-spike-note.md</code> under the matching origin.</p>
+      <textarea id="output" readonly placeholder="Run the spike to produce a report."></textarea>
+
+      <details>
+        <summary>Raw JSON</summary>
+        <textarea id="raw" readonly></textarea>
+      </details>
+
+      <h2>What this can and cannot tell you</h2>
+      <ul>
+        <li>
+          <code>fetch()</code> only exposes CORS-safelisted headers plus those the server names in
+          <code>Access-Control-Expose-Headers</code>. Record full headers from the curl commands in
+          the report, or the devtools Network tab — not from this page alone.
+        </li>
+        <li>
+          A failed <code>fetch</code> surfaces an opaque <code>TypeError</code>. A CORS rejection, a
+          DNS failure, and an offline network are indistinguishable from script. Confirm in devtools
+          before recording a verdict.
+        </li>
+        <li>
+          A plain <code>&lt;img&gt;</code> needs no CORS grant. Previews loading proves nothing about
+          whether the importer's <code>fetch</code> of the original rendition will work.
+        </li>
+        <li>
+          <code>Retry-After</code> can only be observed on an actual 429. Leave burst at 0 unless you
+          are deliberately spending quota to observe rate limiting.
+        </li>
+      </ul>
+    </main>
+
+    <script src="./spike.js"></script>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      $('origin').textContent = location.origin + (window.__TAURI_INTERNALS__ ? '  (tauri webview)' : '');
+
+      let lastMarkdown = '';
+
+      $('form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const key = $('key').value.trim();
+        if (!key) return;
+        const burst = Number($('burst').value) || 0;
+        if (burst > 0 && !confirm(`This will spend ${burst + 1} API calls to try to provoke a 429. Continue?`)) return;
+
+        $('run').disabled = true;
+        $('copy').disabled = true;
+        $('status').textContent = 'Running…';
+        try {
+          const report = await window.__giphySpike(key, {
+            query: $('query').value,
+            limit: Number($('limit').value) || 5,
+            rating: $('rating').value,
+            burst,
+          });
+          lastMarkdown = window.__giphySpikeMarkdown(report);
+          $('output').value = lastMarkdown;
+          // Belt and braces: the report never contains the key, but redact the
+          // serialized form too so a stray provider echo cannot leak it.
+          $('raw').value = window.__giphySpikeRedact(JSON.stringify(report, null, 2), key);
+          $('copy').disabled = false;
+          $('status').textContent = 'Done.';
+        } catch (error) {
+          $('output').value = window.__giphySpikeRedact(String(error && error.stack ? error.stack : error), key);
+          $('status').textContent = 'Failed.';
+        } finally {
+          $('run').disabled = false;
+        }
+      });
+
+      $('copy').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(lastMarkdown);
+          $('status').textContent = 'Copied.';
+        } catch {
+          // Clipboard access is not guaranteed in a packaged webview.
+          $('output').select();
+          $('status').textContent = 'Clipboard unavailable — text selected, copy manually.';
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 # GIPHY integration development plan
 
-- Status: Proposed; implementation has not started.
+- Status: Phase 0 in progress; no product code written.
+- Working record: [Phase 0 spike note](./giphy-spike-note.md).
 - Date: 2026-09-05.
 - Target: Personal-use, bring-your-own-key integration in browser and desktop.
 - Provider: GIPHY (the service referred to as “gify” in the feature request).
@@ -58,6 +59,28 @@ has the same limits or pricing as personal beta use.
 All asset-retention and offline acceptance criteria below are conditional on that
 feasibility decision; they describe the requested product, not a claim that the
 standard API agreement already permits it.
+
+### Milestone 0 decision record
+
+**Decision: Pending.** No provider answer has been recorded, and the three-origin
+request spike has not been run. Phase 6 is blocked; Phases 1-5 are blocked only
+until the spike passes.
+
+| Question | Decision | Conditions | Source and date |
+| --- | --- | --- | --- |
+| Retention of local copies | Open | | |
+| Permanent project embedding | Open | | |
+| Offline export | Open | | |
+| Recent Imports vs. database/directory restriction | Open | | |
+| Required attribution (in-app and in exported media) | Open | | |
+| Platform/section key mapping for one shared picker | Open | | |
+| Rate limit and production classification | Open | | |
+
+Working answers, sources, and per-origin request results are collected in the
+[Phase 0 spike note](./giphy-spike-note.md). Transcribe the outcome into the
+table above when the decision is made, and update the Status line at the top of
+this document. Until then, treat every retention and offline statement below as
+a requested product behavior, not an approved one.
 
 ## Existing architecture
 
@@ -360,6 +383,25 @@ user's behalf.
 - Record the answer, conditions, and date in the Provider feasibility section of
   this document. If retention is refused, stop and revisit the requirement with
   the user before starting Phase 6 — Phases 1-5 remain valid.
+
+The harness and the write-up skeleton are already in the tree:
+
+- `docs/features/giphy-spike/` - a standalone page plus `spike.js`, which runs
+  search, preview rendition load, and `images.original.url` fetch, and emits a
+  markdown block for the note. The key is held only for the run, is never
+  stored, and is redacted from every surface. One run spends one API call.
+- `scripts/giphy-spike.sh stage|unstage|status` - copies the harness into
+  `public/__giphy-spike/` so the same file is reachable from the dev server and
+  from inside a packaged build, then removes it. The staged path is gitignored,
+  so it cannot be committed or deployed; still run `unstage` before any real
+  build. Run the script with no argument for the per-origin procedure.
+- `docs/features/giphy-spike-note.md` - the questions, the pass criteria, the
+  per-origin result slots, and the decision block.
+
+The hosted origin needs no deploy: open the deployed app and paste `spike.js`
+into its devtools console. The origin is what is under test, not the page. A
+packaged release build has no devtools, which is why the harness page has to be
+staged into that build to cover the third origin honestly.
 
 **Done when:** the feasibility section states an explicit decision with
 conditions, and a spike note records per-origin request results. No product code.
