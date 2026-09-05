@@ -1,3 +1,5 @@
+import { drawImageTriangle } from './texture2d';
+import { textureMirrorAxes, rotateTextureUv } from '../lib/textureMapping';
 import { getGifFrameAtTime } from '../lib/gifUtils';
 import {
   landscapeSkyAssetIndex,
@@ -107,7 +109,14 @@ export function renderLandscapeSky(
         for (let tileX = minX; tileX <= maxX; tileX++) {
           const x = centerX + offsetX + tileX * tileWidth;
           const y = centerY + offsetY + tileY * tileHeight;
-          ctx.drawImage(gifFrame, x, y, tileWidth, tileHeight);
+          const [mx, my] = textureMirrorAxes(source.textureTiling);
+          const flipX = mx && Math.abs(tileX % 2) === 1;
+          const flipY = my && Math.abs(tileY % 2) === 1;
+          ctx.save();
+          ctx.translate(x + (flipX ? tileWidth : 0), y + (flipY ? tileHeight : 0));
+          ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+          ctx.drawImage(gifFrame, 0, 0, tileWidth, tileHeight);
+          ctx.restore();
         }
       }
     }
@@ -143,20 +152,18 @@ export function renderLandscapeScene2d(
       ctx.clip();
       const gifFrame = getGifFrameAtTime(asset.gifData, t, resolved.terrainGifSpeed);
       if (gifFrame) {
-        const xs = quad.map(point => point.x);
-        const ys = quad.map(point => point.y);
-        const minX = Math.min(...xs);
-        const minY = Math.min(...ys);
-        const drawWidth = Math.max(1, Math.max(...xs) - minX);
-        const drawHeight = Math.max(1, Math.max(...ys) - minY);
-        const zoom = Math.max(0.25, resolved.terrainTextureScale);
-        ctx.drawImage(
-          gifFrame,
-          minX + resolved.terrainTextureOffsetX * drawWidth - drawWidth * (zoom - 1) / 2,
-          minY + resolved.terrainTextureOffsetY * drawHeight - drawHeight * (zoom - 1) / 2,
-          drawWidth * zoom,
-          drawHeight * zoom
-        );
+        const repeat = 1 / Math.max(0.25, resolved.terrainTextureScale);
+        const uv = (u: number, v: number): [number, number] => {
+          const rotated = rotateTextureUv(u, v, resolved.terrainTextureRotation);
+          return [
+            ((rotated[0] - 0.5) * repeat + 0.5 + resolved.terrainTextureOffsetX) * asset.width,
+            ((rotated[1] - 0.5) * repeat + 0.5 - resolved.terrainTextureOffsetY) * asset.height
+          ];
+        };
+        const dst = quad.map(point => [point.x, point.y] as [number, number]);
+        const tiling = resolved.terrainTextureTiling ?? 'clamp';
+        drawImageTriangle(ctx, gifFrame, [uv(0, 0), uv(1, 0), uv(1, 1)], [dst[0], dst[1], dst[2]], tiling);
+        drawImageTriangle(ctx, gifFrame, [uv(0, 0), uv(1, 1), uv(0, 1)], [dst[0], dst[2], dst[3]], tiling);
       }
     } else {
       const averageHeight = cell.corners.reduce((sum, point) => sum + point.y, 0) / 4;

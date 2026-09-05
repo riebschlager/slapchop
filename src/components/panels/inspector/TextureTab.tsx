@@ -1,3 +1,4 @@
+import TextureTilingControl from '../../controls/TextureTilingControl';
 import { cn } from '../../../lib/utils';
 import { formatRate } from '../../../lib/sliderScale';
 import Slider from '../../controls/Slider';
@@ -12,6 +13,7 @@ const GIF_SPEED_PRESETS = [0.25, 0.5, 1.0, 2.0, 3.0];
 export default function TextureTab({ polygon, onChange }: { polygon: PolygonLayer; onChange: (updates: Partial<PolygonLayer>) => void }) {
   return (
     <div className="space-y-3">
+      <TextureTilingControl value={polygon.textureTiling} onChange={textureTiling => onChange({ textureTiling })} />
       <div>
         <Slider
           label="Texture Scale"

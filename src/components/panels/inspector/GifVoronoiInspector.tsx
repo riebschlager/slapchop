@@ -1,3 +1,4 @@
+import TextureTilingControl from '../../controls/TextureTilingControl';
 import { Dices, Grid2X2, Image as ImageIcon, Palette, Play, Plus, Waves, X } from 'lucide-react';
 import { formatRate } from '../../../lib/sliderScale';
 import { useStore } from '../../../store';
@@ -147,7 +148,9 @@ export default function GifVoronoiInspector() {
         {config.phaseMode !== 'sync' && (
           <Slider label="Phase Spread" display={`${Math.round(config.phaseSpread * 100)}%`} value={config.phaseSpread} min={0} max={1} step={0.01} onChange={phaseSpread => update({ phaseSpread })} />
         )}
-        <Slider label="Cover Zoom" display={`${config.coverZoom.toFixed(2)}×`} value={config.coverZoom} min={1} max={3} step={0.01} onChange={coverZoom => update({ coverZoom })} />
+        <TextureTilingControl value={config.textureTiling} onChange={textureTiling => update({ textureTiling })} />
+        <Slider label="Texture Rotation" display={`${Math.round(config.textureRotation ?? 0)}°`} value={config.textureRotation ?? 0} min={-180} max={180} step={1} onChange={textureRotation => update({ textureRotation })} />
+        <Slider label="Cover Zoom" display={`${config.coverZoom.toFixed(2)}×`} value={config.coverZoom} min={0.25} max={3} step={0.01} onChange={coverZoom => update({ coverZoom })} />
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Crop X" display={`${Math.round(config.coverOffsetX * 100)}%`} value={config.coverOffsetX} min={-1} max={1} step={0.01} onChange={coverOffsetX => update({ coverOffsetX })} />
           <Slider size="sm" label="Crop Y" display={`${Math.round(config.coverOffsetY * 100)}%`} value={config.coverOffsetY} min={-1} max={1} step={0.01} onChange={coverOffsetY => update({ coverOffsetY })} />

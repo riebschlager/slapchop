@@ -1,3 +1,5 @@
+import { rotateTextureUv } from '../lib/textureMapping';
+import { textureMirrorAxes } from '../lib/textureMapping';
 import * as THREE from 'three';
 import { TunnelAsset, TunnelConfig, GifData } from '../types';
 import { resolveTunnelScene, ResolvedTunnelPane } from '../lib/tunnel';
@@ -115,16 +117,27 @@ export class TunnelRenderer {
     pane.corners.forEach((corner, index) => position.setXYZ(index, corner[0], corner[1], corner[2]));
     position.needsUpdate = true;
     const uv = mesh.geometry.getAttribute('uv') as THREE.BufferAttribute;
-    uv.setXY(0, pane.uv.u0, pane.uv.v0);
-    uv.setXY(1, pane.uv.u1, pane.uv.v0);
-    uv.setXY(2, pane.uv.u1, pane.uv.v1);
-    uv.setXY(3, pane.uv.u0, pane.uv.v1);
+    [[pane.uv.u0, pane.uv.v0], [pane.uv.u1, pane.uv.v0], [pane.uv.u1, pane.uv.v1], [pane.uv.u0, pane.uv.v1]].forEach(([u, v], index) => {
+      const rotated = rotateTextureUv(u, v, pane.textureRotation);
+      uv.setXY(index, rotated[0], rotated[1]);
+    });
     uv.needsUpdate = true;
 
     if (pane.asset) {
       const texture = this.resolveTexture(pane.asset, pane.sourceTime);
       mesh.visible = Boolean(texture);
-      if (texture) mesh.material = this.resolveAssetMaterial(pane.asset, texture);
+      if (texture) {
+        const mode = pane.textureTiling;
+        const [mx, my] = textureMirrorAxes(mode);
+        const wrapS = mode === 'clamp' ? THREE.ClampToEdgeWrapping : mx ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+        const wrapT = mode === 'clamp' ? THREE.ClampToEdgeWrapping : my ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+        if (texture.wrapS !== wrapS || texture.wrapT !== wrapT) {
+          texture.wrapS = wrapS;
+          texture.wrapT = wrapT;
+          texture.needsUpdate = true;
+        }
+        mesh.material = this.resolveAssetMaterial(pane.asset, texture);
+      }
     } else if (pane.color) {
       mesh.visible = true;
       mesh.material = this.resolveColorMaterial(pane.color);

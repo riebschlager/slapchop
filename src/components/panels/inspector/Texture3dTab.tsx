@@ -1,3 +1,4 @@
+import TextureTilingControl from '../../controls/TextureTilingControl';
 import { cn } from '../../../lib/utils';
 import { formatRate } from '../../../lib/sliderScale';
 import { BLEND_MODES } from '../../../lib/blendModes';
@@ -87,10 +88,7 @@ export default function Texture3dTab({ mesh, onChange, onUploadTexture }: {
         <Slider size="sm" label="UV Offset X" display={mesh.uvOffsetX.toFixed(2)} value={mesh.uvOffsetX} min={-2} max={2} step={0.05} onChange={(uvOffsetX) => onChange({ uvOffsetX })} />
         <Slider size="sm" label="UV Offset Y" display={mesh.uvOffsetY.toFixed(2)} value={mesh.uvOffsetY} min={-2} max={2} step={0.05} onChange={(uvOffsetY) => onChange({ uvOffsetY })} />
       </div>
-      <div className="flex items-center justify-between">
-        <label className="text-[11px] text-ui-text-muted">Repeat UV (tile)</label>
-        <Toggle checked={mesh.uvRepeat} onChange={(uvRepeat) => onChange({ uvRepeat })} title="Repeat UV" />
-      </div>
+      <TextureTilingControl allowClamp value={mesh.uvTiling ?? (mesh.uvRepeat ? 'repeat' : 'clamp')} onChange={uvTiling => onChange({ uvTiling, uvRepeat: uvTiling !== 'clamp' })} />
 
       <Select
         label="Blend Mode"

@@ -1,3 +1,4 @@
+import TextureTilingControl from '../../controls/TextureTilingControl';
 import { Camera, Circle, CloudFog, Dices, Image as ImageIcon, Palette, Plus, Route, Shuffle, X } from 'lucide-react';
 import { useStore } from '../../../store';
 import { TunnelPaneFill } from '../../../types';
@@ -115,7 +116,9 @@ export default function TunnelInspector() {
           <Slider size="sm" label="Ring Offset" display={Math.round(config.ringPatternOffset)} value={config.ringPatternOffset} min={0} max={Math.max(0, config.sides - 1)} step={1} onChange={ringPatternOffset => update({ ringPatternOffset })} />
         </div>
         <Slider label="Ring Phase" display={`${Math.round(config.ringPhase * 100)}%`} value={config.ringPhase} min={0} max={1} step={0.01} onChange={ringPhase => update({ ringPhase })} />
-        <Slider label="UV Scale" display={`${config.textureScale.toFixed(2)}×`} value={config.textureScale} min={1} max={4} step={0.05} onChange={textureScale => update({ textureScale })} />
+        <TextureTilingControl allowClamp value={config.textureTiling ?? 'clamp'} onChange={textureTiling => update({ textureTiling })} />
+        <Slider label="Texture Rotation" display={`${Math.round(config.textureRotation ?? 0)}°`} value={config.textureRotation ?? 0} min={-180} max={180} step={1} onChange={textureRotation => update({ textureRotation })} />
+        <Slider label="UV Scale" display={`${config.textureScale.toFixed(2)}×`} value={config.textureScale} min={0.25} max={4} step={0.05} onChange={textureScale => update({ textureScale })} />
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="UV Offset X" display={config.textureOffsetX.toFixed(2)} value={config.textureOffsetX} min={-0.5} max={0.5} step={0.01} onChange={textureOffsetX => update({ textureOffsetX })} />
           <Slider size="sm" label="UV Offset Y" display={config.textureOffsetY.toFixed(2)} value={config.textureOffsetY} min={-0.5} max={0.5} step={0.01} onChange={textureOffsetY => update({ textureOffsetY })} />

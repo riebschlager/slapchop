@@ -1,4 +1,4 @@
-import { TunnelAsset, TunnelConfig } from '../types';
+import { TunnelAsset, TunnelConfig, TextureTiling } from '../types';
 import { applyMotion } from './motion';
 
 export type TunnelVec3 = [number, number, number];
@@ -18,6 +18,8 @@ export interface ResolvedTunnelPane {
   color: string | null;
   sourceTime: number;
   uv: TunnelUvRect;
+  textureRotation: number;
+  textureTiling: TextureTiling;
   distance: number;
 }
 
@@ -156,7 +158,8 @@ export function tunnelUvRect(
   paneAspect: number,
   scale: number,
   offsetX: number,
-  offsetY: number
+  offsetY: number,
+  tiling: TextureTiling = 'clamp'
 ): TunnelUvRect {
   const safeSourceAspect = Math.max(0.001, sourceAspect);
   const safePaneAspect = Math.max(0.001, paneAspect);
@@ -164,11 +167,11 @@ export function tunnelUvRect(
   let height = 1;
   if (safeSourceAspect > safePaneAspect) width = safePaneAspect / safeSourceAspect;
   else height = safeSourceAspect / safePaneAspect;
-  const zoom = Math.max(1, scale);
+  const zoom = Math.max(0.05, scale);
   width /= zoom;
   height /= zoom;
-  const centerX = Math.max(width / 2, Math.min(1 - width / 2, 0.5 + offsetX));
-  const centerY = Math.max(height / 2, Math.min(1 - height / 2, 0.5 + offsetY));
+  const centerX = tiling === 'clamp' && scale >= 1 ? Math.max(width / 2, Math.min(1 - width / 2, 0.5 + offsetX)) : 0.5 + offsetX;
+  const centerY = tiling === 'clamp' && scale >= 1 ? Math.max(height / 2, Math.min(1 - height / 2, 0.5 + offsetY)) : 0.5 + offsetY;
   return {
     u0: centerX - width / 2,
     v0: centerY - height / 2,
@@ -251,12 +254,15 @@ export function resolveTunnelScene(
         asset,
         color,
         sourceTime: t + positiveModulo(ringIndex * config.ringPhase, 1) * durationSeconds,
+        textureRotation: config.textureRotation ?? 0,
+        textureTiling: config.textureTiling ?? 'clamp',
         uv: tunnelUvRect(
           sourceWidth / Math.max(1, sourceHeight),
           paneWidth / Math.max(1, paneHeight),
           config.textureScale,
           config.textureOffsetX,
-          config.textureOffsetY
+          config.textureOffsetY,
+          config.textureTiling
         ),
         distance: length(subtract(mix(corners[0], corners[2], 0.5), cameraPosition))
       });

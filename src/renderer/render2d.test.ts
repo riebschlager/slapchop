@@ -161,7 +161,7 @@ describe('renderFrame mode boundary', () => {
     };
     const first = renderTrace(gifVoronoiState, 0.5);
     expect(first).toEqual(renderTrace(gifVoronoiState, 0.5));
-    expect(first.filter(entry => entry.startsWith('drawImage:'))).toHaveLength(6);
+    expect(first.filter(entry => entry.startsWith('createPattern:'))).toHaveLength(6);
   });
 
   it('morphs GIF Voronoi geometry over time when point drift is enabled', () => {

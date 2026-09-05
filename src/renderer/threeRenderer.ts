@@ -1,3 +1,4 @@
+import { textureMirrorAxes } from '../lib/textureMapping';
 import * as THREE from 'three';
 import { BlendMode, Camera3dConfig, GifData, Mesh3dLayer } from '../types';
 import { generateMesh3dGeometry, Mesh3dGeometry, reverseTriangleWinding } from '../lib/geometry3d';
@@ -116,6 +117,7 @@ export class ThreeSceneRenderer {
   private nodeOrder = '';
 
   private gifTextures = new Map<GifData, THREE.Texture[]>();
+  private layerTextures = new Map<string, Map<THREE.Texture, THREE.Texture>>();
   private staticTextures = new Map<string, THREE.Texture>();
 
   private width = 0;
@@ -152,6 +154,8 @@ export class ThreeSceneRenderer {
   }
 
   destroy() {
+    for (const textures of this.layerTextures.values()) for (const texture of textures.values()) texture.dispose();
+    this.layerTextures.clear();
     for (const node of this.nodes.values()) this.disposeNode(node);
     this.nodes.clear();
     for (const arr of this.gifTextures.values()) arr.forEach((tex) => tex.dispose());
@@ -346,12 +350,28 @@ export class ThreeSceneRenderer {
       }
     }
     if (!texture && layer.src) texture = this.getStaticTexture(layer.src);
-    if (texture) this.applyUv(texture, layer);
+    if (texture) {
+      let textures = this.layerTextures.get(layer.id);
+      if (!textures) {
+        textures = new Map();
+        this.layerTextures.set(layer.id, textures);
+      }
+      let mapped = textures.get(texture);
+      if (!mapped) {
+        mapped = texture.clone();
+        textures.set(texture, mapped);
+      }
+      texture = mapped;
+      this.applyUv(texture, layer);
+    }
     return texture;
   }
 
   private applyUv(texture: THREE.Texture, layer: Mesh3dLayer) {
-    texture.wrapS = texture.wrapT = layer.uvRepeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    const mode = layer.uvTiling ?? (layer.uvRepeat ? 'repeat' : 'clamp');
+    const [mx, my] = textureMirrorAxes(mode);
+    texture.wrapS = mode === 'clamp' ? THREE.ClampToEdgeWrapping : mx ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+    texture.wrapT = mode === 'clamp' ? THREE.ClampToEdgeWrapping : my ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
     texture.repeat.set(layer.uvScale, layer.uvScale);
     texture.rotation = (layer.uvRotation * Math.PI) / 180;
     texture.offset.set(layer.uvOffsetX, layer.uvOffsetY);
@@ -403,6 +423,19 @@ export class ThreeSceneRenderer {
         tex.dispose();
         this.staticTextures.delete(src);
       }
+    }
+    for (const [id, textures] of this.layerTextures) {
+      const layer = layers.find(candidate => candidate.id === id);
+      const active = new Set<THREE.Texture>(layer?.gifData ? this.gifTextures.get(layer.gifData) : []);
+      const staticTexture = layer?.src ? this.staticTextures.get(layer.src) : undefined;
+      if (staticTexture) active.add(staticTexture);
+      for (const [source, texture] of textures) {
+        if (!active.has(source)) {
+          texture.dispose();
+          textures.delete(source);
+        }
+      }
+      if (!textures.size) this.layerTextures.delete(id);
     }
   }
 }

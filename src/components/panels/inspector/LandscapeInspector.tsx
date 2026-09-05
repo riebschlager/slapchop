@@ -1,3 +1,4 @@
+import TextureTilingControl from '../../controls/TextureTilingControl';
 import { Camera, Dices, Grid3X3, Image as ImageIcon, Mountain, Play, Sun, Waves } from 'lucide-react';
 import { formatRate } from '../../../lib/sliderScale';
 import { useStore } from '../../../store';
@@ -72,6 +73,8 @@ export default function LandscapeInspector() {
 
       <section className="space-y-3 border-b border-ui-border p-3">
         <SectionTitle icon={ImageIcon}>Terrain Mapping</SectionTitle>
+        <TextureTilingControl allowClamp value={config.terrainTextureTiling ?? 'clamp'} onChange={terrainTextureTiling => update({ terrainTextureTiling })} />
+        <Slider label="Texture Rotation" display={`${Math.round(config.terrainTextureRotation ?? 0)}°`} value={config.terrainTextureRotation ?? 0} min={-180} max={180} step={1} onChange={terrainTextureRotation => update({ terrainTextureRotation })} />
         <Slider label="Tile Crop" display={`${config.terrainTextureScale.toFixed(2)}×`} value={config.terrainTextureScale} min={0.5} max={3} step={0.01} onChange={terrainTextureScale => update({ terrainTextureScale })} />
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Offset X" display={config.terrainTextureOffsetX.toFixed(2)} value={config.terrainTextureOffsetX} min={-1} max={1} step={0.01} onChange={terrainTextureOffsetX => update({ terrainTextureOffsetX })} />
@@ -128,6 +131,7 @@ export default function LandscapeInspector() {
           <SectionTitle icon={Waves}>Selected Sky Folder</SectionTitle>
           <div className="text-[11px] font-semibold text-ui-text">{selectedSkySource.name}</div>
           <div className="text-[9px] uppercase tracking-wider text-ui-text-subtle">{selectedSkySource.assets.length} GIFs · one tiled GIF per assigned ring</div>
+          <TextureTilingControl value={selectedSkySource.textureTiling} onChange={textureTiling => updateSkySource(selectedSkySource.id, { textureTiling })} />
           <Slider label="Tile Size" display={`${selectedSkySource.textureScale.toFixed(2)}×`} value={selectedSkySource.textureScale} min={0.35} max={3} step={0.01} onChange={textureScale => updateSkySource(selectedSkySource.id, { textureScale })} />
           <div className="grid grid-cols-2 gap-3">
             <Slider size="sm" label="Offset X" display={selectedSkySource.textureOffsetX.toFixed(2)} value={selectedSkySource.textureOffsetX} min={-2} max={2} step={0.01} onChange={textureOffsetX => updateSkySource(selectedSkySource.id, { textureOffsetX })} />

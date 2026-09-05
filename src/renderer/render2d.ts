@@ -1,3 +1,5 @@
+import { mirroredTextureSource, rotateTextureUv } from '../lib/textureMapping';
+import { drawImageTriangle } from './texture2d';
 import {
   AppMode,
   Camera3dConfig,
@@ -184,7 +186,7 @@ function renderVoronoiPolygon(
 
     if (frameSource) {
       try {
-        const pattern = getPattern(ctx, `${polygon.id}-voronoi`, frameSource);
+        const pattern = getPattern(ctx, `${polygon.id}-voronoi`, mirroredTextureSource(frameSource, polygon.textureTiling));
         if (pattern) {
           const spread = 400 * params.voronoiPhaseVariation;
           const phaseX = (cell.phase - 0.5) * spread;
@@ -273,7 +275,7 @@ function renderPolygon(
 
     if (frameSource) {
       try {
-        const pattern = getPattern(ctx, polygon.id, frameSource);
+        const pattern = getPattern(ctx, polygon.id, mirroredTextureSource(frameSource, polygon.textureTiling));
         if (pattern) {
           const matrix = new DOMMatrix();
           // Design-space pattern transform, mapped to output pixels so the
@@ -503,13 +505,17 @@ function renderGifVoronoiScene(
           config.coverOffsetY
         );
         try {
-          ctx.drawImage(
-            frame,
-            width / 2 + rect.x * scaleX,
-            height / 2 + rect.y * scaleY,
-            rect.width * scaleX,
-            rect.height * scaleY
-          );
+          const pattern = ctx.createPattern(mirroredTextureSource(frame, config.textureTiling), 'repeat');
+          if (pattern) {
+            const matrix = new DOMMatrix()
+              .translate(width / 2 + (rect.x + rect.width / 2) * scaleX, height / 2 + (rect.y + rect.height / 2) * scaleY)
+              .rotate(config.textureRotation ?? 0)
+              .scale(rect.width * scaleX / cell.asset.width, rect.height * scaleY / cell.asset.height)
+              .translate(-cell.asset.width / 2, -cell.asset.height / 2);
+            pattern.setTransform(matrix);
+            ctx.fillStyle = pattern;
+            ctx.fillRect(0, 0, width, height);
+          }
         } catch (err) {
           console.warn('GIF Voronoi frame draw failed:', err);
         }
@@ -616,17 +622,21 @@ function renderTunnelScene(
           ?? pane.asset.height
           ?? (source instanceof HTMLImageElement ? source.naturalHeight : 1);
         const { u0, v0, u1, v1 } = pane.uv;
+        const uv = (u: number, v: number): [number, number] => {
+          const rotated = rotateTextureUv(u, v, config.textureRotation);
+          return [rotated[0] * sourceWidth, rotated[1] * sourceHeight];
+        };
         drawImageTriangle(
           ctx,
           source,
-          [[u0 * sourceWidth, v0 * sourceHeight], [u1 * sourceWidth, v0 * sourceHeight], [u1 * sourceWidth, v1 * sourceHeight]],
-          [projected[0]!, projected[1]!, projected[2]!]
+          [uv(u0, v0), uv(u1, v0), uv(u1, v1)],
+          [projected[0]!, projected[1]!, projected[2]!], config.textureTiling ?? 'clamp'
         );
         drawImageTriangle(
           ctx,
           source,
-          [[u0 * sourceWidth, v0 * sourceHeight], [u1 * sourceWidth, v1 * sourceHeight], [u0 * sourceWidth, v1 * sourceHeight]],
-          [projected[0]!, projected[2]!, projected[3]!]
+          [uv(u0, v0), uv(u1, v1), uv(u0, v1)],
+          [projected[0]!, projected[2]!, projected[3]!], config.textureTiling ?? 'clamp'
         );
       }
     } else if (pane.color) {
@@ -712,34 +722,6 @@ function renderFlythroughScene(
   }
 }
 
-function drawImageTriangle(
-  ctx: CanvasRenderingContext2D,
-  source: CanvasImageSource,
-  src: [[number, number], [number, number], [number, number]],
-  dst: [[number, number], [number, number], [number, number]]
-) {
-  const [s0, s1, s2] = src;
-  const [d0, d1, d2] = dst;
-  const denominator = s0[0] * (s1[1] - s2[1]) + s1[0] * (s2[1] - s0[1]) + s2[0] * (s0[1] - s1[1]);
-  if (Math.abs(denominator) < 1e-8) return;
-  const a = (d0[0] * (s1[1] - s2[1]) + d1[0] * (s2[1] - s0[1]) + d2[0] * (s0[1] - s1[1])) / denominator;
-  const c = (d0[0] * (s2[0] - s1[0]) + d1[0] * (s0[0] - s2[0]) + d2[0] * (s1[0] - s0[0])) / denominator;
-  const e = (d0[0] * (s1[0] * s2[1] - s2[0] * s1[1]) + d1[0] * (s2[0] * s0[1] - s0[0] * s2[1]) + d2[0] * (s0[0] * s1[1] - s1[0] * s0[1])) / denominator;
-  const b = (d0[1] * (s1[1] - s2[1]) + d1[1] * (s2[1] - s0[1]) + d2[1] * (s0[1] - s1[1])) / denominator;
-  const d = (d0[1] * (s2[0] - s1[0]) + d1[1] * (s0[0] - s2[0]) + d2[1] * (s1[0] - s0[0])) / denominator;
-  const f = (d0[1] * (s1[0] * s2[1] - s2[0] * s1[1]) + d1[1] * (s2[0] * s0[1] - s0[0] * s2[1]) + d2[1] * (s0[0] * s1[1] - s1[0] * s0[1])) / denominator;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(d0[0], d0[1]);
-  ctx.lineTo(d1[0], d1[1]);
-  ctx.lineTo(d2[0], d2[1]);
-  ctx.closePath();
-  ctx.clip();
-  ctx.transform(a, b, c, d, e, f);
-  ctx.drawImage(source, 0, 0);
-  ctx.restore();
-}
 
 interface ProjectedTri3d {
   points: [[number, number], [number, number], [number, number]];

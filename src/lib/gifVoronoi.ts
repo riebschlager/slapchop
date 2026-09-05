@@ -275,11 +275,11 @@ export function gifVoronoiCoverRect(
   const targetHeight = Math.max(0.001, bounds.maxY - bounds.minY);
   const safeWidth = Math.max(1, sourceWidth);
   const safeHeight = Math.max(1, sourceHeight);
-  const scale = Math.max(targetWidth / safeWidth, targetHeight / safeHeight) * clamp(zoom, 1, 4);
+  const scale = Math.max(targetWidth / safeWidth, targetHeight / safeHeight) * clamp(zoom, 0.25, 4);
   const width = safeWidth * scale;
   const height = safeHeight * scale;
-  const availableX = Math.max(0, width - targetWidth) / 2;
-  const availableY = Math.max(0, height - targetHeight) / 2;
+  const availableX = Math.abs(width - targetWidth) / 2;
+  const availableY = Math.abs(height - targetHeight) / 2;
   const centerX = (bounds.minX + bounds.maxX) / 2 + clamp(offsetX, -1, 1) * availableX;
   const centerY = (bounds.minY + bounds.maxY) / 2 + clamp(offsetY, -1, 1) * availableY;
   return { x: centerX - width / 2, y: centerY - height / 2, width, height };

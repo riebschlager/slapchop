@@ -1,3 +1,4 @@
+import { textureMirrorAxes } from '../lib/textureMapping';
 import * as THREE from 'three';
 import { getGifFrameIndexAtTime } from '../lib/gifUtils';
 import { resolveLandscapeCells, resolveLandscapeFrame } from '../lib/landscape';
@@ -173,10 +174,16 @@ export class LandscapeRenderer {
       }
       if (texture) {
         const repeat = 1 / Math.max(0.25, config.terrainTextureScale);
+        const mode = config.terrainTextureTiling ?? 'clamp';
+        const [mx, my] = textureMirrorAxes(mode);
+        texture.wrapS = mode === 'clamp' ? THREE.ClampToEdgeWrapping : mx ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+        texture.wrapT = mode === 'clamp' ? THREE.ClampToEdgeWrapping : my ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+        texture.center.set(0.5, 0.5);
+        texture.rotation = -(config.terrainTextureRotation ?? 0) * Math.PI / 180;
         texture.repeat.set(repeat, -repeat);
         texture.offset.set(
-          (1 - repeat) / 2 + config.terrainTextureOffsetX,
-          1 - (1 - repeat) / 2 + config.terrainTextureOffsetY
+          config.terrainTextureOffsetX,
+          config.terrainTextureOffsetY
         );
         texture.needsUpdate = true;
       }

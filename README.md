@@ -150,6 +150,14 @@ such as motion, GIF playback, deformation, and animated effects use a
 slow-focused logarithmic track with a distinct zero stop and values down to
 `0.001`, while retaining their full upper range.
 
+Texture mapping editors include rotation and Repeat, Mirror, Mirror X, and
+Mirror Y tiling. These controls are available for polygon fills, 3D mesh UVs,
+tunnel panes, GIF Voronoi cells, landscape terrain, and each landscape sky
+folder. Meshes, tunnel panes, and terrain also offer Clamp to Edge. Tunnel UV
+Scale and Voronoi Cover Zoom can go below 1 to reveal multiple tiles.
+Texture settings are saved in `.slapchop` projects; older projects keep their
+existing mapping defaults.
+
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,
 CRT scanlines, film grain, bloom/glow, and color grading with motion modulation

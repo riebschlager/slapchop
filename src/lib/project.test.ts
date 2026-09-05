@@ -227,3 +227,27 @@ describe('restoreProjectDocument', () => {
     expect(document.landscape.motionCameraX).toEqual({ type: 'sine', speed: 0.25, amplitude: 500, phase: 0 });
   });
 });
+
+it('round-trips additive texture fields across every texture editor', async () => {
+  const { createNewPolygonLayer } = await import('./polygonUtils');
+  const { createMesh3dLayer } = await import('./mesh3dUtils');
+  const payload = {
+    app: 'slapchop' as const, version: 6 as const, savedAt: '', canvasBg: '#000000',
+    layers: [],
+    polygonLayers: [createNewPolygonLayer('fill', [], { textureTiling: 'mirror-x', textureRotation: 37 })],
+    mesh3dLayers: [createMesh3dLayer('mesh', 'plane', { uvTiling: 'mirror-y', uvRotation: 72 })],
+    flythroughAssets: [], tunnelAssets: [], gifVoronoiAssets: [], landscapeTerrainAssets: [],
+    tunnel: { ...DEFAULT_TUNNEL, textureRotation: 23, textureTiling: 'mirror' as const },
+    gifVoronoi: { ...DEFAULT_GIF_VORONOI, textureRotation: 51, textureTiling: 'mirror-x' as const, coverZoom: 0.5 },
+    landscape: { ...DEFAULT_LANDSCAPE, terrainTextureRotation: 18, terrainTextureTiling: 'repeat' as const },
+    landscapeSkySources: [{ id: 'sky', name: 'Sky', assets: [], textureScale: 1, textureOffsetX: 0, textureOffsetY: 0, textureRotation: 39, textureTiling: 'mirror-y' as const, gifSpeed: 1 }],
+    assets: {}
+  };
+  const restored = restoreProjectDocument(JSON.parse(JSON.stringify(payload)));
+  expect(restored.polygonLayers[0]).toMatchObject({ textureTiling: 'mirror-x', textureRotation: 37 });
+  expect(restored.mesh3dLayers[0]).toMatchObject({ uvTiling: 'mirror-y', uvRotation: 72 });
+  expect(restored.tunnel).toMatchObject({ textureRotation: 23, textureTiling: 'mirror' });
+  expect(restored.gifVoronoi).toMatchObject({ textureRotation: 51, textureTiling: 'mirror-x', coverZoom: 0.5 });
+  expect(restored.landscape).toMatchObject({ terrainTextureRotation: 18, terrainTextureTiling: 'repeat' });
+  expect(restored.landscapeSkySources[0]).toMatchObject({ textureRotation: 39, textureTiling: 'mirror-y' });
+});

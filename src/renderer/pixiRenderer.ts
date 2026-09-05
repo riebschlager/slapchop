@@ -1,3 +1,5 @@
+import { mirroredTextureSource } from '../lib/textureMapping';
+import { TextureTiling } from '../types';
 import {
   autoDetectRenderer,
   BlurFilter,
@@ -123,7 +125,7 @@ interface PolygonNode {
 interface GifVoronoiCellNode {
   wrapper: Container;
   content: Container;
-  sprite: Sprite;
+  sprite: TilingSprite;
   fill: Sprite;
   maskG: Graphics;
 }
@@ -140,6 +142,7 @@ export class PixiSceneRenderer {
   private root = new Container();
   private symContainer = new Container();
   private polyContainer = new Container();
+  private mirroredTextures = new Map<Texture, Map<TextureTiling, Texture>>();
   private gifVoronoiContainer = new Container();
   private mesh3dSprite = new Sprite();
   private flythroughSprite = new Sprite();
@@ -291,6 +294,8 @@ export class PixiSceneRenderer {
 
   destroy() {
     this.destroyed = true;
+    for (const modes of this.mirroredTextures.values()) for (const texture of modes.values()) texture.destroy(true);
+    this.mirroredTextures.clear();
     for (const arr of this.gifTextures.values()) arr.forEach((tx) => tx.destroy(true));
     this.gifTextures.clear();
     for (const tx of this.staticTextures.values()) tx.destroy(true);
@@ -435,10 +440,9 @@ export class PixiSceneRenderer {
   private createGifVoronoiCellNode(): GifVoronoiCellNode {
     const wrapper = new Container();
     const content = new Container();
-    const sprite = new Sprite();
+    const sprite = new TilingSprite({ texture: Texture.EMPTY, width: 1, height: 1 });
     const fill = new Sprite(Texture.WHITE);
     const maskG = new Graphics();
-    sprite.anchor.set(0.5);
     fill.anchor.set(0.5);
     content.addChild(fill, sprite);
     content.mask = maskG;
@@ -511,7 +515,7 @@ export class PixiSceneRenderer {
         const sourceTime = gifVoronoiSourceTime(cell, config, t, stageBounds);
         const frameIndex = getGifFrameIndexAtTime(cell.asset.gifData, sourceTime, 1);
         const textures = this.getGifTextures(cell.asset.gifData);
-        const texture = textures[frameIndex] ?? Texture.EMPTY;
+        const texture = this.mirroredTexture(textures[frameIndex] ?? Texture.EMPTY, config.textureTiling);
         const rect = gifVoronoiCoverRect(
           cell.asset.width,
           cell.asset.height,
@@ -523,9 +527,16 @@ export class PixiSceneRenderer {
         node.sprite.visible = true;
         node.fill.visible = false;
         node.sprite.texture = texture;
-        node.sprite.position.set(rect.x + rect.width / 2, rect.y + rect.height / 2);
-        node.sprite.width = rect.width;
-        node.sprite.height = rect.height;
+        node.sprite.position.set(cell.bounds.minX, cell.bounds.minY);
+        node.sprite.width = cell.bounds.maxX - cell.bounds.minX;
+        node.sprite.height = cell.bounds.maxY - cell.bounds.minY;
+        const angle = (config.textureRotation ?? 0) * DEG;
+        node.sprite.tileScale.set(rect.width / cell.asset.width, rect.height / cell.asset.height);
+        node.sprite.tileRotation = angle;
+        node.sprite.tilePosition.set(
+          rect.x + rect.width / 2 - cell.bounds.minX - Math.cos(angle) * rect.width / 2 + Math.sin(angle) * rect.height / 2,
+          rect.y + rect.height / 2 - cell.bounds.minY - Math.sin(angle) * rect.width / 2 - Math.cos(angle) * rect.height / 2
+        );
       } else {
         node.sprite.visible = false;
         node.fill.visible = cell.blankColor !== null;
@@ -966,6 +977,7 @@ export class PixiSceneRenderer {
       }
     }
     if (!texture && polygon.src) texture = this.getStaticTexture(polygon.src);
+    if (texture) texture = this.mirroredTexture(texture, polygon.textureTiling);
 
     const points = getDeformedPoints(polygon, t);
     // Vertex noise makes `points` a fresh array every frame even when the
@@ -1203,6 +1215,23 @@ export class PixiSceneRenderer {
    * layer no longer exists in the document. The underlying ImageBitmaps are
    * left intact, so undoing a delete rebuilds textures from them.
    */
+  private mirroredTexture(texture: Texture, mode: TextureTiling = 'repeat'): Texture {
+    if (mode === 'repeat' || mode === 'clamp' || texture === Texture.EMPTY) return texture;
+    let modes = this.mirroredTextures.get(texture);
+    if (!modes) {
+      modes = new Map();
+      this.mirroredTextures.set(texture, modes);
+    }
+    let mirrored = modes.get(mode);
+    if (!mirrored) {
+      const source = mirroredTextureSource(texture.source.resource, mode);
+      if (!(source instanceof HTMLCanvasElement)) throw new Error('Mirrored texture must be a canvas.');
+      mirrored = new Texture({ source: new ImageSource({ resource: source, autoGarbageCollect: false }) });
+      modes.set(mode, mirrored);
+    }
+    return mirrored;
+  }
+
   private sweepTextures(state: RenderState) {
     const gifs = new Set<GifData>();
     const srcs = new Set<string>();
@@ -1228,6 +1257,12 @@ export class PixiSceneRenderer {
       if (!srcs.has(src)) {
         tex.destroy(true);
         this.staticTextures.delete(src);
+      }
+    }
+    for (const [original, modes] of this.mirroredTextures) {
+      if (original.destroyed) {
+        for (const texture of modes.values()) texture.destroy(true);
+        this.mirroredTextures.delete(original);
       }
     }
   }

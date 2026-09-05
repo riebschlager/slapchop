@@ -5,6 +5,8 @@ export interface PolygonPoint {
   y: number;
 }
 
+export type TextureTiling = 'repeat' | 'mirror' | 'mirror-x' | 'mirror-y' | 'clamp';
+
 export interface PolygonLayer {
   id: string;
   name: string;
@@ -12,6 +14,7 @@ export interface PolygonLayer {
   src?: string;
   gifData?: GifData;
   gifSpeed?: number;
+  textureTiling?: TextureTiling;
   textureScale: number;
   textureRotation: number;
   textureOffsetX: number;
@@ -351,6 +354,7 @@ export interface Mesh3dLayer {
   src?: string;
   gifData?: GifData;
   gifSpeed?: number;
+  uvTiling?: TextureTiling;
   uvScale: number;
   uvRotation: number;
   uvOffsetX: number;
@@ -521,9 +525,11 @@ export interface TunnelConfig {
   bendY: number;
   bendWavelength: number;
   twistPerRing: number;
+  textureTiling?: TextureTiling;
   textureScale: number;
   textureOffsetX: number;
   textureOffsetY: number;
+  textureRotation?: number;
   gifEvery: number;
   ringPatternOffset: number;
   ringPhase: number;
@@ -603,6 +609,8 @@ export interface GifVoronoiConfig {
   gifSpeed: number;
   phaseMode: GifVoronoiPhaseMode;
   phaseSpread: number;
+  textureRotation?: number;
+  textureTiling?: TextureTiling;
   coverZoom: number;
   coverOffsetX: number;
   coverOffsetY: number;
@@ -656,6 +664,7 @@ export interface LandscapeSkySource {
   id: string;
   name: string;
   assets: LandscapeAsset[];
+  textureTiling?: TextureTiling;
   textureScale: number;
   textureOffsetX: number;
   textureOffsetY: number;
@@ -683,6 +692,8 @@ export interface LandscapeConfig {
   cameraX: number;
   lookAhead: number;
   fov: number;
+  terrainTextureRotation?: number;
+  terrainTextureTiling?: TextureTiling;
   terrainTextureScale: number;
   terrainTextureOffsetX: number;
   terrainTextureOffsetY: number;
