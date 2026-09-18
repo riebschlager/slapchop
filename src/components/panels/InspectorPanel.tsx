@@ -1,3 +1,4 @@
+import RingsInspector from '../../modes/rings/RingsInspector';
 import { useState } from 'react';
 import { Download, Video, Loader2, Radio, PanelRightOpen, Github } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -80,6 +81,8 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
           <PolygonModeInspector />
         ) : appMode === 'flythrough' ? (
           <FlythroughInspector />
+        ) : appMode === 'rings' ? (
+          <RingsInspector />
         ) : appMode === 'tunnel' ? (
           <TunnelInspector />
         ) : appMode === 'gif-voronoi' ? (

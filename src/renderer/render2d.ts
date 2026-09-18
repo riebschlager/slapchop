@@ -1,3 +1,4 @@
+import { resolveRings, RingsAsset, RingsConfig } from '../modes/rings/model';
 import { mirroredTextureSource, rotateTextureUv } from '../lib/textureMapping';
 import { drawImageTriangle } from './texture2d';
 import {
@@ -47,6 +48,8 @@ export interface RenderState {
   camera3d: Camera3dConfig;
   flythroughAssets: FlythroughAsset[];
   flythrough: FlythroughConfig;
+  ringsAssets: RingsAsset[];
+  rings: RingsConfig;
   tunnelAssets: TunnelAsset[];
   tunnel: TunnelConfig;
   gifVoronoiAssets: GifVoronoiAsset[];
@@ -376,7 +379,7 @@ export function renderFrame(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = state.appMode === 'tunnel'
+  ctx.fillStyle = state.appMode === 'rings' ? state.rings.backgroundColor : state.appMode === 'tunnel'
     ? state.tunnel.voidColor
     : state.appMode === 'gif-voronoi'
       ? state.gifVoronoi.backgroundColor
@@ -444,6 +447,20 @@ export function renderFrame(
     renderMesh3dScene(ctx, t, state.mesh3dLayers, state.camera3d, width, height);
   } else if (state.appMode === 'flythrough') {
     renderFlythroughScene(ctx, t, state.flythroughAssets, state.flythrough, width, height);
+  } else if (state.appMode === 'rings') {
+    for (const item of resolveRings(state.ringsAssets, state.rings, t)) {
+      const source = item.asset.gifData
+        ? getGifFrameAtTime(item.asset.gifData, item.sourceTime, 1)
+        : getCachedImage(item.asset.src);
+      if (!source) continue;
+      ctx.save();
+      ctx.scale(width / CANVAS_WIDTH, height / CANVAS_HEIGHT);
+      ctx.translate(CANVAS_WIDTH / 2 + item.x, CANVAS_HEIGHT / 2 + item.y);
+      ctx.rotate(item.rotation);
+      ctx.globalAlpha = item.alpha;
+      ctx.drawImage(source, -item.width / 2, -item.height / 2, item.width, item.height);
+      ctx.restore();
+    }
   } else if (state.appMode === 'tunnel') {
     renderTunnelScene(ctx, t, state.tunnelAssets, state.tunnel, width, height);
   } else if (state.appMode === 'gif-voronoi') {

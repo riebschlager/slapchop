@@ -1,3 +1,4 @@
+import { normalizeRings, RingsAsset, RingsConfig } from '../modes/rings/model';
 import { DocumentState, clearHistory, getDocumentSnapshot, useStore } from '../store';
 import { saveBlob } from './native';
 import {
@@ -150,7 +151,14 @@ interface ProjectFileV6 {
   assets: Record<string, ProjectAsset>;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6;
+// V7 adds GIF Rings; versions 1–6 open with an empty ring library.
+interface ProjectFileV7 extends Omit<ProjectFileV6, 'version'> {
+  version: 7;
+  ringsAssets: (Omit<RingsAsset, 'src' | 'gifData'> & { assetId: string })[];
+  rings: RingsConfig;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -251,9 +259,15 @@ export async function saveProject(): Promise<void> {
     assets: await Promise.all(source.assets.map(serializeLandscapeAsset))
   })));
 
-  const payload: ProjectFileV6 = {
+  const ringsAssets = await Promise.all(doc.ringsAssets.map(async source => {
+    const { src, gifData, ...rest } = source;
+    void gifData;
+    return { ...rest, assetId: await assetIdFor(src, source.name) };
+  }));
+
+  const payload: ProjectFileV7 = {
     app: 'slapchop',
-    version: 6,
+    version: 7,
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
     masterFx: doc.masterFx,
@@ -263,6 +277,8 @@ export async function saveProject(): Promise<void> {
     camera3d: doc.camera3d,
     flythroughAssets,
     flythrough: doc.flythrough,
+    ringsAssets,
+    rings: doc.rings,
     tunnelAssets,
     tunnel: doc.tunnel,
     gifVoronoiAssets,
@@ -279,7 +295,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6].includes(payload.version)) {
+  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7].includes(payload.version)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -382,20 +398,29 @@ export function restoreProjectDocument(
     if (!asset?.gifData) throw new Error(`Landscape source “${source.name}” could not be decoded.`);
     return { ...rest, src: asset.src, gifData: asset.gifData };
   };
-  const landscapeTerrainAssets: LandscapeAsset[] = payload.version === 6
+  const landscapeTerrainAssets: LandscapeAsset[] = 'landscapeTerrainAssets' in payload
     ? payload.landscapeTerrainAssets.map(materializeLandscapeAsset)
     : [];
-  const landscapeSkySources: LandscapeSkySource[] = payload.version === 6
+  const landscapeSkySources: LandscapeSkySource[] = 'landscapeTerrainAssets' in payload
     ? payload.landscapeSkySources.map(source => ({
       ...source,
       assets: source.assets.map(materializeLandscapeAsset)
     }))
     : [];
-  const landscape: LandscapeConfig = payload.version === 6 && payload.landscape
+  const landscape: LandscapeConfig = 'landscapeTerrainAssets' in payload && payload.landscape
     ? { ...DEFAULT_LANDSCAPE, ...payload.landscape }
     : { ...DEFAULT_LANDSCAPE };
 
+  const ringsAssets: RingsAsset[] = payload.version === 7 ? payload.ringsAssets.map(source => {
+    const { assetId, ...rest } = source;
+    const asset = materialized.get(assetId);
+    if (!asset) throw new Error(`GIF Rings source “${source.name}” is missing.`);
+    return { ...rest, src: asset.src, gifData: asset.gifData };
+  }) : [];
+
   return {
+    ringsAssets,
+    rings: normalizeRings(payload.version === 7 ? payload.rings : undefined),
     layers,
     polygonLayers,
     mesh3dLayers,

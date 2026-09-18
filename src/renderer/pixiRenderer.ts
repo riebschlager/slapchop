@@ -1,3 +1,4 @@
+import { resolveRings } from '../modes/rings/model';
 import { mirroredTextureSource } from '../lib/textureMapping';
 import { TextureTiling } from '../types';
 import {
@@ -146,6 +147,8 @@ export class PixiSceneRenderer {
   private gifVoronoiContainer = new Container();
   private mesh3dSprite = new Sprite();
   private flythroughSprite = new Sprite();
+  private ringsContainer = new Container();
+  private ringsSprites: Sprite[] = [];
   private tunnelSprite = new Sprite();
   private landscapeSprite = new Sprite();
 
@@ -207,7 +210,7 @@ export class PixiSceneRenderer {
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
     this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite, this.tunnelSprite, this.landscapeSprite);
-    this.root.addChild(this.symContainer, this.polyContainer, this.gifVoronoiContainer);
+    this.root.addChild(this.ringsContainer, this.symContainer, this.polyContainer, this.gifVoronoiContainer);
     this.gifVoronoiContainer.addChild(this.gifVoronoiGutterG);
     this.mesh3dSprite.visible = false;
     this.flythroughSprite.visible = false;
@@ -331,7 +334,7 @@ export class PixiSceneRenderer {
     this.layout(
       width,
       height,
-      state.appMode === 'tunnel'
+      state.appMode === 'rings' ? state.rings.backgroundColor : state.appMode === 'tunnel'
         ? state.tunnel.voidColor
         : state.appMode === 'gif-voronoi'
           ? state.gifVoronoi.backgroundColor
@@ -346,6 +349,11 @@ export class PixiSceneRenderer {
     const tunnelVisible = state.appMode === 'tunnel';
     const gifVoronoiVisible = state.appMode === 'gif-voronoi';
     const landscapeVisible = state.appMode === 'landscape';
+    this.ringsContainer.visible = state.appMode === 'rings';
+    if (state.appMode !== 'rings') {
+      this.ringsSprites.forEach(sprite => sprite.destroy());
+      this.ringsSprites = [];
+    }
     this.symContainer.visible = symVisible;
     this.polyContainer.visible = state.appMode === 'polygon';
     this.gifVoronoiContainer.visible = gifVoronoiVisible;
@@ -377,7 +385,9 @@ export class PixiSceneRenderer {
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (landscapeVisible) {
+    if (state.appMode === 'rings') {
+      this.syncRings(t, state);
+    } else if (landscapeVisible) {
       this.syncLandscape(t, state, width, height);
     } else if (gifVoronoiVisible) {
       this.syncGifVoronoi(t, state);
@@ -395,6 +405,32 @@ export class PixiSceneRenderer {
 
     this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  private syncRings(t: number, state: RenderState) {
+    const items = resolveRings(state.ringsAssets, state.rings, t);
+    while (this.ringsSprites.length > items.length) this.ringsSprites.pop()!.destroy();
+    items.forEach((item, index) => {
+      let sprite = this.ringsSprites[index];
+      if (!sprite) {
+        sprite = new Sprite();
+        sprite.anchor.set(0.5);
+        this.ringsSprites.push(sprite);
+        this.ringsContainer.addChild(sprite);
+      }
+      const gif = item.asset.gifData;
+      const texture = gif
+        ? this.getGifTextures(gif)[getGifFrameIndexAtTime(gif, item.sourceTime, 1)]
+        : this.getStaticTexture(item.asset.src);
+      sprite.visible = Boolean(texture);
+      if (!texture) return;
+      sprite.texture = texture;
+      sprite.position.set(item.x, item.y);
+      sprite.width = item.width;
+      sprite.height = item.height;
+      sprite.rotation = item.rotation;
+      sprite.alpha = item.alpha;
+    });
   }
 
   // ------------------------------------------------------------ GIF landscape
@@ -1242,6 +1278,10 @@ export class PixiSceneRenderer {
     for (const p of state.polygonLayers) {
       if (p.gifData) gifs.add(p.gifData);
       if (p.src) srcs.add(p.src);
+    }
+    for (const asset of state.appMode === 'rings' ? state.ringsAssets : []) {
+      if (asset.gifData) gifs.add(asset.gifData);
+      if (asset.src) srcs.add(asset.src);
     }
     for (const asset of state.gifVoronoiAssets) {
       gifs.add(asset.gifData);

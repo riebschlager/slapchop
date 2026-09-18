@@ -1,3 +1,4 @@
+import { DEFAULT_RINGS } from '../modes/rings/model';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, Layer, PolygonLayer } from '../types';
 import { renderFrame, RenderState } from './render2d';
@@ -65,6 +66,8 @@ function state(appMode: RenderState['appMode'], layers: Layer[] = []): RenderSta
     camera3d: DEFAULT_CAMERA3D,
     flythroughAssets: [],
     flythrough: DEFAULT_FLYTHROUGH,
+    ringsAssets: [],
+    rings: DEFAULT_RINGS,
     tunnelAssets: [],
     tunnel: DEFAULT_TUNNEL,
     gifVoronoiAssets: [],

@@ -71,6 +71,15 @@ const MODES = [
     ),
   },
   {
+    name: 'GIF Rings',
+    description: 'Fly through endless rings, each repeating one GIF from your folder.',
+    art: (
+      <svg viewBox="0 0 48 48" fill="none" className="w-8 h-8" aria-hidden="true">
+        {[8, 14, 21].map(r => <circle key={r} cx="24" cy="24" r={r} stroke="currentColor" strokeWidth="3" strokeDasharray="3 5" />)}
+      </svg>
+    ),
+  },
+  {
     name: 'GIF Tunnel',
     description: 'Endlessly advancing tunnel wallpapered with ordered or seeded GIFs.',
     art: (
@@ -198,7 +207,7 @@ function StepIntro() {
       </div>
 
       <div className="grid grid-cols-3 gap-3 w-full max-w-xs text-xs text-ui-text-subtle">
-        {['7 creative modes', 'Motion on everything', 'Frame-exact export'].map((tag) => (
+        {['8 creative modes', 'Motion on everything', 'Frame-exact export'].map((tag) => (
           <div key={tag} className="bg-ui-surface border border-ui-border rounded-lg px-2 py-2 text-center leading-tight">
             {tag}
           </div>

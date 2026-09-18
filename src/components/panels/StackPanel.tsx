@@ -24,6 +24,7 @@ const MODE_OPTIONS: ModeOption<AppMode>[] = [
   { value: 'polygon', label: 'Tiled GIF', description: 'Texture-filled polygon mosaics', icon: Shapes },
   { value: '3d', label: '3D Space', description: 'Textured meshes & camera depth', icon: Box },
   { value: 'flythrough', label: 'GIF Flythrough', description: 'Folder-fed planes rushing through space', icon: Rocket },
+  { value: 'rings', label: 'GIF Rings', description: 'Fly through endless rings of repeated GIFs', icon: Circle },
   { value: 'tunnel', label: 'GIF Tunnel', description: 'Procedural wallpapered infinite tunnel', icon: Circle },
   { value: 'gif-voronoi', label: 'GIF Voronoi', description: 'Folder-fed animated cell mosaic', icon: Grid2X2 },
   { value: 'landscape', label: 'GIF Landscape', description: 'Noise terrain beneath a concentric GIF sky', icon: Mountain }
@@ -91,12 +92,12 @@ export default function StackPanel() {
   const onReplaceFlythroughAssets = useStore(s => s.replaceFlythroughAssets);
   const onRemoveFlythroughAsset = useStore(s => s.removeFlythroughAsset);
   const onClearFlythroughAssets = useStore(s => s.clearFlythroughAssets);
-  const tunnelAssets = useStore(s => s.tunnelAssets);
-  const onReplaceTunnelAssets = useStore(s => s.replaceTunnelAssets);
-  const onAddTunnelAssets = useStore(s => s.addTunnelAssets);
-  const onRemoveTunnelAsset = useStore(s => s.removeTunnelAsset);
-  const onClearTunnelAssets = useStore(s => s.clearTunnelAssets);
-  const onReorderTunnelAssets = useStore(s => s.reorderTunnelAssets);
+  const tunnelAssets = useStore(s => s.appMode === 'rings' ? s.ringsAssets : s.tunnelAssets);
+  const onReplaceTunnelAssets = useStore(s => s.appMode === 'rings' ? s.replaceRingsAssets : s.replaceTunnelAssets);
+  const onAddTunnelAssets = useStore(s => s.appMode === 'rings' ? s.addRingsAssets : s.addTunnelAssets);
+  const onRemoveTunnelAsset = useStore(s => s.appMode === 'rings' ? s.removeRingsAsset : s.removeTunnelAsset);
+  const onClearTunnelAssets = useStore(s => s.appMode === 'rings' ? s.clearRingsAssets : s.clearTunnelAssets);
+  const onReorderTunnelAssets = useStore(s => s.appMode === 'rings' ? s.reorderRingsAssets : s.reorderTunnelAssets);
   const gifVoronoiAssets = useStore(s => s.gifVoronoiAssets);
   const onReplaceGifVoronoiAssets = useStore(s => s.replaceGifVoronoiAssets);
   const onAddGifVoronoiAssets = useStore(s => s.addGifVoronoiAssets);
@@ -671,8 +672,8 @@ export default function StackPanel() {
         </>
       )}
 
-      {/* MODE 5: GIF TUNNEL */}
-      {appMode === 'tunnel' && (
+      {/* Tunnel and Rings share ordered image-library interactions. */}
+      {(appMode === 'tunnel' || appMode === 'rings') && (
         <>
           <div className="shrink-0 border-b border-ui-border p-3">
             <button
@@ -686,7 +687,7 @@ export default function StackPanel() {
                   <FolderInput className="size-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className={SOURCE_CARD_TITLE}>Choose wallpaper folder</div>
+                  <div className={SOURCE_CARD_TITLE}>{appMode === 'rings' ? 'Choose GIF ring folder' : 'Choose wallpaper folder'}</div>
                   <div className={SOURCE_CARD_HINT}>GIF, PNG, JPEG, or WebP · replaces library</div>
                 </div>
               </div>
@@ -712,7 +713,7 @@ export default function StackPanel() {
                   {tunnelAssets.length === 0 && (
                     <div className="px-4 py-8 text-center">
                       <Circle className="mx-auto mb-2 size-7 text-ui-border-strong" />
-                      <p className="text-xs text-ui-text-subtle">The palette is live. Add images to wallpaper selected panes.</p>
+                      <p className="text-xs text-ui-text-subtle">{appMode === 'rings' ? 'Choose a folder to fly through rings of GIFs. Each ring repeats one source.' : 'The palette is live. Add images to wallpaper selected panes.'}</p>
                     </div>
                   )}
                 </div>

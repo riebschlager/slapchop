@@ -26,7 +26,7 @@ nothing; the only network requests it makes are for its own code.
 
 | Capability | Browser edition | Desktop app |
 | --- | --- | --- |
-| All seven creative modes | Yes | Yes |
+| All eight creative modes | Yes | Yes |
 | Rendering | WebGPU, falling back to WebGL and Canvas 2D | WebGL (what WKWebView supports reliably) |
 | Image and GIF import | File picker and drag-and-drop | Native file dialogs |
 | Folder libraries | Directory picker; current desktop browsers only | Native folder dialogs |
@@ -111,6 +111,12 @@ for the product decision and incremental architecture direction.
   deterministic Three.js particle field that rushes past the camera. GIFs
   retain their source aspect ratios, with camera-facing, XY, XZ, and YZ plane
   orientations plus speed, drift, spin, and scale modulation.
+- **GIF Rings** — fly through an endless corridor of separate GIF rings. Each
+  ring repeats one source with its original aspect ratio. Choose GIFs per ring,
+  speed (including reverse), radius, spacing, size, twist, rotation, radial
+  orientation, camera offsets/roll/FOV, playback speed/phase, shuffle, and depth
+  fog. Folder libraries can also include static images. Project V7 embeds the
+  library; V1–V6 projects remain readable.
 - **GIF Tunnel** — wallpaper a procedurally bent, endlessly advancing low-poly
   tunnel with an ordered or seeded library of GIFs and static images. Configure
   ring detail, pane occupancy, palette/transparent gaps, UV crop, camera,

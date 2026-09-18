@@ -1,3 +1,5 @@
+import { createRingsResourceTracker } from './modes/rings/resources';
+import { DEFAULT_RINGS, normalizeRings, RingsAsset, RingsConfig } from './modes/rings/model';
 import { create } from 'zustand';
 import { temporal } from 'zundo';
 import {
@@ -36,6 +38,8 @@ export interface DocumentState {
   camera3d: Camera3dConfig;
   flythroughAssets: FlythroughAsset[];
   flythrough: FlythroughConfig;
+  ringsAssets: RingsAsset[];
+  rings: RingsConfig;
   tunnelAssets: TunnelAsset[];
   tunnel: TunnelConfig;
   gifVoronoiAssets: GifVoronoiAsset[];
@@ -106,6 +110,15 @@ export interface AppState extends DocumentState {
   updateFlythrough: (updates: Partial<FlythroughConfig>) => void;
   reseedFlythrough: () => void;
 
+  // GIF rings library and procedural scene
+  replaceRingsAssets: (files: File[]) => Promise<void>;
+  addRingsAssets: (files: File[]) => Promise<void>;
+  removeRingsAsset: (id: string) => void;
+  clearRingsAssets: () => void;
+  reorderRingsAssets: (activeId: string, overId: string) => void;
+  updateRings: (updates: Partial<RingsConfig>) => void;
+  reseedRings: () => void;
+
   // GIF tunnel wallpaper library and procedural scene
   replaceTunnelAssets: (files: File[]) => Promise<void>;
   addTunnelAssets: (files: File[]) => Promise<void>;
@@ -154,7 +167,7 @@ function swap<T>(items: T[], i: number, j: number): T[] {
 
 const TUNNEL_IMAGE_EXTENSIONS = new Set(['gif', 'png', 'jpg', 'jpeg', 'webp']);
 
-async function tunnelAssetsFromFiles(files: File[]): Promise<TunnelAsset[]> {
+async function imageAssetsFromFiles(files: File[]): Promise<TunnelAsset[]> {
   const images = files.filter(file => {
     const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
     return file.type.startsWith('image/') || TUNNEL_IMAGE_EXTENSIONS.has(extension);
@@ -239,6 +252,8 @@ export const useStore = create<AppState>()(
       camera3d: { ...DEFAULT_CAMERA3D },
       flythroughAssets: [],
       flythrough: { ...DEFAULT_FLYTHROUGH },
+      ringsAssets: [],
+      rings: { ...DEFAULT_RINGS },
       tunnelAssets: [],
       tunnel: { ...DEFAULT_TUNNEL, palette: [...DEFAULT_TUNNEL.palette] },
       gifVoronoiAssets: [],
@@ -264,6 +279,8 @@ export const useStore = create<AppState>()(
         camera3d: doc.camera3d ? { ...DEFAULT_CAMERA3D, ...doc.camera3d } : { ...DEFAULT_CAMERA3D },
         flythroughAssets: doc.flythroughAssets ?? [],
         flythrough: doc.flythrough ? { ...DEFAULT_FLYTHROUGH, ...doc.flythrough } : { ...DEFAULT_FLYTHROUGH },
+        ringsAssets: doc.ringsAssets ?? [],
+        rings: normalizeRings(doc.rings),
         tunnelAssets: doc.tunnelAssets ?? [],
         tunnel: doc.tunnel
           ? { ...DEFAULT_TUNNEL, ...doc.tunnel, palette: [...(doc.tunnel.palette ?? DEFAULT_TUNNEL.palette)] }
@@ -504,9 +521,28 @@ export const useStore = create<AppState>()(
         flythrough: { ...s.flythrough, seed: (s.flythrough.seed + 1) % 100000 }
       })),
 
-      replaceTunnelAssets: async (files) => set({ tunnelAssets: await tunnelAssetsFromFiles(files) }),
+      replaceRingsAssets: async (files) => set({ ringsAssets: await imageAssetsFromFiles(files) }),
+      addRingsAssets: async (files) => {
+        const assets = await imageAssetsFromFiles(files);
+        set(s => ({ ringsAssets: [...s.ringsAssets, ...assets] }));
+      },
+      removeRingsAsset: (id) => set(s => ({
+        ringsAssets: s.ringsAssets.filter(asset => asset.id !== id)
+      })),
+      clearRingsAssets: () => set({ ringsAssets: [] }),
+      reorderRingsAssets: (activeId, overId) => set(s => ({
+        ringsAssets: reorder(s.ringsAssets, activeId, overId)
+      })),
+      updateRings: (updates) => set(s => ({
+        rings: normalizeRings({ ...s.rings, ...updates })
+      })),
+      reseedRings: () => set(s => ({
+        rings: { ...s.rings, seed: (s.rings.seed + 1) % 100000 }
+      })),
+
+      replaceTunnelAssets: async (files) => set({ tunnelAssets: await imageAssetsFromFiles(files) }),
       addTunnelAssets: async (files) => {
-        const assets = await tunnelAssetsFromFiles(files);
+        const assets = await imageAssetsFromFiles(files);
         set(s => ({ tunnelAssets: [...s.tunnelAssets, ...assets] }));
       },
       removeTunnelAsset: (id) => set(s => ({
@@ -596,6 +632,8 @@ export const useStore = create<AppState>()(
         camera3d: s.camera3d,
         flythroughAssets: s.flythroughAssets,
         flythrough: s.flythrough,
+        ringsAssets: s.ringsAssets,
+        rings: s.rings,
         tunnelAssets: s.tunnelAssets,
         tunnel: s.tunnel,
         gifVoronoiAssets: s.gifVoronoiAssets,
@@ -610,6 +648,7 @@ export const useStore = create<AppState>()(
         a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.mesh3dLayers === b.mesh3dLayers
         && a.camera3d === b.camera3d && a.flythroughAssets === b.flythroughAssets
         && a.flythrough === b.flythrough && a.tunnelAssets === b.tunnelAssets
+        && a.rings === b.rings && a.ringsAssets === b.ringsAssets
         && a.tunnel === b.tunnel && a.gifVoronoiAssets === b.gifVoronoiAssets
         && a.gifVoronoi === b.gifVoronoi && a.landscapeTerrainAssets === b.landscapeTerrainAssets
         && a.landscapeSkySources === b.landscapeSkySources && a.landscape === b.landscape
@@ -631,8 +670,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx } = useStore.getState();
-  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx };
+  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx } = useStore.getState();
+  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();
@@ -645,3 +684,28 @@ export const clearHistory = () => useStore.temporal.getState().clear();
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   Object.assign(window as object, { __store: useStore, __undo: undo, __redo: redo });
 }
+
+const ringsResources = createRingsResourceTracker();
+let ringsSweepQueued = false;
+function scheduleRingsResourceSweep() {
+  if (ringsSweepQueued) return;
+  ringsSweepQueued = true;
+  // zundo records history after the document notification, so inspect it once
+  // this mutation has finished rather than closing an asset that undo needs.
+  queueMicrotask(() => {
+    ringsSweepQueued = false;
+    const history = useStore.temporal.getState();
+    ringsResources.sweep([useStore.getState(), ...history.pastStates, ...history.futureStates]);
+  });
+}
+const stopRingsTracking = useStore.subscribe((state, previous) => {
+  if (state.ringsAssets === previous.ringsAssets) return;
+  ringsResources.remember(previous.ringsAssets);
+  ringsResources.remember(state.ringsAssets);
+  scheduleRingsResourceSweep();
+});
+const stopRingsHistoryTracking = useStore.temporal.subscribe(scheduleRingsResourceSweep);
+if (import.meta.hot) import.meta.hot.dispose(() => {
+  stopRingsTracking();
+  stopRingsHistoryTracking();
+});
