@@ -1,4 +1,4 @@
-import { PolygonPoint, PolygonLayer, BlendMode } from '../types';
+import { PolygonPoint, PolygonLayer, PolygonTextureAsset, BlendMode } from '../types';
 
 export function createPresetPolygonPoints(type: 'triangle' | 'rectangle' | 'star' | 'hexagon', radius: number = 180): PolygonPoint[] {
   if (type === 'triangle') {
@@ -106,4 +106,20 @@ export function isPointInPolygon(pt: PolygonPoint, polyPoints: PolygonPoint[]): 
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+/**
+ * Picks a random folder texture, skipping `avoidSrc` when another choice
+ * exists so a re-roll or consecutive shape visibly changes.
+ */
+export function pickFolderTexture(
+  assets: readonly PolygonTextureAsset[],
+  avoidSrc?: string,
+  random: () => number = Math.random
+): PolygonTextureAsset | null {
+  const candidates = assets.length > 1 && avoidSrc
+    ? assets.filter(asset => asset.src !== avoidSrc)
+    : assets;
+  if (candidates.length === 0) return null;
+  return candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
 }

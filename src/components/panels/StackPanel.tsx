@@ -90,6 +90,9 @@ export default function StackPanel() {
   const onLoadPolygonUnderpainting = useStore(s => s.loadPolygonUnderpainting);
   const onSetPolygonUnderpainting = useStore(s => s.setPolygonUnderpainting);
   const onUpdatePolygonUnderpainting = useStore(s => s.updatePolygonUnderpainting);
+  const polygonTextureFolder = useStore(s => s.polygonTextureFolder);
+  const onLoadPolygonTextureFolder = useStore(s => s.loadPolygonTextureFolder);
+  const onSetPolygonTextureFolder = useStore(s => s.setPolygonTextureFolder);
   const mesh3dLayers = useStore(s => s.mesh3dLayers);
   const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
   const onSelectMesh3d = useStore(s => s.selectMesh3d);
@@ -135,6 +138,7 @@ export default function StackPanel() {
   const landscapeTerrainFolderInputRef = useRef<HTMLInputElement>(null);
   const landscapeSkyFolderInputRef = useRef<HTMLInputElement>(null);
   const landscapeSkyReplaceIdRef = useRef<string | null>(null);
+  const polygonTextureFolderInputRef = useRef<HTMLInputElement>(null);
 
   const handleProjectFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -232,6 +236,27 @@ export default function StackPanel() {
     input.setAttribute('webkitdirectory', '');
     input.setAttribute('directory', '');
     input.click();
+  };
+
+  // An empty pick keeps the current folder, so say why nothing changed.
+  const loadPolygonTextureFolder = async (files: File[]) => {
+    const count = await onLoadPolygonTextureFolder(files);
+    if (count === 0) alert('That folder has no GIF, PNG, JPEG, or WebP images to use as shape textures.');
+  };
+
+  const handlePolygonTextureFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length > 0) void loadPolygonTextureFolder(files);
+  };
+
+  const handleChoosePolygonTextureFolder = async () => {
+    if (!isNative()) {
+      openFolderPicker(polygonTextureFolderInputRef.current);
+      return;
+    }
+    const files = await pickImageFolder();
+    if (files) await loadPolygonTextureFolder(files);
   };
 
   const handleFlythroughFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -560,6 +585,40 @@ export default function StackPanel() {
                 {selectedPolygon ? "Upload Texture for Selected Shape" : "Upload GIF / Texture"}
                 <input type="file" accept="image/*" className="hidden" onChange={handlePolygonTextureFileChange} />
               </label>
+            </div>
+
+            {/* New shapes each take a random texture from this folder. */}
+            <div className="pt-2 border-t border-ui-border space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider">Texture Folder</label>
+                {polygonTextureFolder && (
+                  <button
+                    type="button"
+                    onClick={() => onSetPolygonTextureFolder(null)}
+                    className="p-0.5 rounded text-ui-text-subtle hover:text-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
+                    title="Stop using this folder for new shapes"
+                    aria-label="Remove texture folder"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleChoosePolygonTextureFolder()}
+                className="flex items-center justify-center gap-2 w-full py-1.5 bg-ui-surface hover:bg-ui-surface-raised rounded-md transition-colors text-xs text-ui-text border border-ui-border focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
+                title={polygonTextureFolder ? `Replace ${polygonTextureFolder.name}` : 'Choose a folder; each new shape gets a random texture from it'}
+              >
+                <FolderInput className="w-3.5 h-3.5 shrink-0 text-ui-text-muted" />
+                <span className="truncate">{polygonTextureFolder ? polygonTextureFolder.name : 'Choose Texture Folder'}</span>
+                {polygonTextureFolder && (
+                  <span className="shrink-0 text-[10px] text-ui-text-subtle">{polygonTextureFolder.assets.length}</span>
+                )}
+              </button>
+              <input ref={polygonTextureFolderInputRef} type="file" multiple accept="image/*" className="hidden" onChange={handlePolygonTextureFolderChange} />
+              {polygonTextureFolder && (
+                <p className="text-[10px] leading-snug text-ui-text-subtle">New shapes get a random texture from this folder.</p>
+              )}
             </div>
 
             {/* Tracing reference: editor-only, never rendered into exports. */}

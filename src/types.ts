@@ -101,6 +101,21 @@ export interface PolygonUnderpainting {
   opacity: number;
 }
 
+// Tiled GIF texture folder: an authoring source, not rendered content. Each new
+// shape copies one asset's `src`/`gifData` onto itself, so the rendered
+// document never depends on the folder still being loaded.
+export interface PolygonTextureAsset {
+  id: string;
+  name: string;
+  src: string;
+  gifData?: GifData;
+}
+
+export interface PolygonTextureFolder {
+  name: string;
+  assets: PolygonTextureAsset[];
+}
+
 
 export type SymmetryType =
   | 'none' | 'mirror-x' | 'mirror-y' | 'quad' | 'radial'

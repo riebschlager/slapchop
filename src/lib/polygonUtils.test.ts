@@ -3,7 +3,8 @@ import {
   createNewPolygonLayer,
   createPresetPolygonPoints,
   getPolygonCentroid,
-  isPointInPolygon
+  isPointInPolygon,
+  pickFolderTexture
 } from './polygonUtils';
 
 describe('createPresetPolygonPoints', () => {
@@ -85,5 +86,24 @@ describe('createNewPolygonLayer', () => {
     expect(b.strokeWidth).toBe(7);
     expect(b.opacity).toBe(0.5);
     expect(b.blendMode).toBe('normal');
+  });
+});
+
+describe('pickFolderTexture', () => {
+  const assets = ['a', 'b', 'c'].map(id => ({ id, name: `${id}.gif`, src: `blob:${id}` }));
+
+  it('returns null for an empty folder', () => {
+    expect(pickFolderTexture([])).toBeNull();
+  });
+
+  it('maps the random value across the folder, including the upper edge', () => {
+    expect(pickFolderTexture(assets, undefined, () => 0)?.id).toBe('a');
+    expect(pickFolderTexture(assets, undefined, () => 0.5)?.id).toBe('b');
+    expect(pickFolderTexture(assets, undefined, () => 1)?.id).toBe('c');
+  });
+
+  it('skips the avoided texture when there is an alternative', () => {
+    expect(pickFolderTexture(assets, 'blob:a', () => 0)?.id).toBe('b');
+    expect(pickFolderTexture([assets[0]], 'blob:a', () => 0)?.id).toBe('a');
   });
 });

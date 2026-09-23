@@ -21,6 +21,7 @@ import {
   MasterFxConfig,
   Mesh3dLayer,
   PolygonLayer,
+  PolygonTextureFolder,
   PolygonUnderpainting,
   TunnelAsset,
   TunnelConfig
@@ -155,6 +156,9 @@ interface ProjectFileV6 {
 }
 
 type SerializedPolygonUnderpainting = Omit<PolygonUnderpainting, 'src'> & { assetId: string };
+type SerializedPolygonTextureFolder = Omit<PolygonTextureFolder, 'assets'> & {
+  assets: { id: string; name: string; assetId: string }[];
+};
 
 // V7 adds GIF Rings; versions 1–6 open with an empty ring library.
 // `polygonUnderpainting` was added later as an optional V7 field rather than a
@@ -171,8 +175,13 @@ interface ProjectFileV7 extends Omit<ProjectFileV6, 'version'> {
 // polygon's `points` are an open centerline, which a V7 reader would fill as a
 // closed outline, so older builds must refuse the file rather than misrender
 // it. The payload shape is otherwise identical to V7.
+//
+// `polygonTextureFolder` is an optional V8 field for the same reason as the
+// underpainting: it only feeds new shapes, and every shape already embeds its
+// own texture, so a build that ignores it renders the file identically.
 interface ProjectFileV8 extends Omit<ProjectFileV7, 'version'> {
   version: 8;
+  polygonTextureFolder?: SerializedPolygonTextureFolder;
 }
 
 type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8;
@@ -289,6 +298,18 @@ export async function saveProject(): Promise<void> {
     polygonUnderpainting = { ...rest, assetId: await assetIdFor(src, underpainting.name) };
   }
 
+  // Folder assets dedupe by object URL, so shapes textured from the folder
+  // share its embedded copy instead of storing each GIF twice.
+  const textureFolder = useStore.getState().polygonTextureFolder;
+  let polygonTextureFolder: SerializedPolygonTextureFolder | undefined;
+  if (textureFolder) {
+    const assets = [];
+    for (const { id, name, src } of textureFolder.assets) {
+      assets.push({ id, name, assetId: await assetIdFor(src, name) });
+    }
+    polygonTextureFolder = { name: textureFolder.name, assets };
+  }
+
   const payload: ProjectFileV8 = {
     app: 'slapchop',
     version: 8,
@@ -311,6 +332,7 @@ export async function saveProject(): Promise<void> {
     landscapeSkySources,
     landscape: doc.landscape,
     polygonUnderpainting,
+    polygonTextureFolder,
     assets
   };
 
@@ -336,8 +358,10 @@ export async function openProject(file: File): Promise<void> {
 
   const doc = restoreProjectDocument(payload, materialized);
   const underpainting = restorePolygonUnderpainting(payload, materialized);
+  const textureFolder = restorePolygonTextureFolder(payload, materialized);
   useStore.getState().loadDocument(doc);
   useStore.getState().setPolygonUnderpainting(underpainting);
+  useStore.getState().setPolygonTextureFolder(textureFolder);
   clearHistory();
 }
 
@@ -482,4 +506,18 @@ export function restorePolygonUnderpainting(
     visible: rest.visible !== false,
     opacity: Number.isFinite(rest.opacity) ? Math.min(1, Math.max(0, rest.opacity)) : 0.5
   };
+}
+
+export function restorePolygonTextureFolder(
+  payload: ProjectFile,
+  materialized: ReadonlyMap<string, MaterializedAsset> = new Map()
+): PolygonTextureFolder | null {
+  if (payload.version !== 8 || !payload.polygonTextureFolder) return null;
+  const { name, assets } = payload.polygonTextureFolder;
+  const restored = assets.map(({ id, name: assetName, assetId }) => {
+    const asset = materialized.get(assetId);
+    if (!asset) throw new Error(`Tiled GIF folder texture “${assetName}” is missing from the project file.`);
+    return { id, name: assetName, src: asset.src, gifData: asset.gifData };
+  });
+  return restored.length > 0 ? { name, assets: restored } : null;
 }

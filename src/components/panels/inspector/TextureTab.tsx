@@ -2,8 +2,9 @@ import TextureTilingControl from '../../controls/TextureTilingControl';
 import { cn } from '../../../lib/utils';
 import { formatRate } from '../../../lib/sliderScale';
 import Slider from '../../controls/Slider';
-import { Film } from 'lucide-react';
-import { PolygonLayer } from '../../../types';
+import { Film, Shuffle } from 'lucide-react';
+import { useStore } from '../../../store';
+import { PolygonLayer, PolygonTextureFolder } from '../../../types';
 
 const TEXTURE_SCALE_PRESETS = [0.25, 0.5, 1.0, 2.0, 4.0];
 const GIF_SPEED_PRESETS = [0.25, 0.5, 1.0, 2.0, 3.0];
@@ -11,8 +12,10 @@ const GIF_SPEED_PRESETS = [0.25, 0.5, 1.0, 2.0, 3.0];
 // Polygon-mode texture controls. A polygon's geometry is edited on canvas via
 // its points, so this tab owns only its fill texture transform and playback.
 export default function TextureTab({ polygon, onChange }: { polygon: PolygonLayer; onChange: (updates: Partial<PolygonLayer>) => void }) {
+  const textureFolder = useStore(s => s.polygonTextureFolder);
   return (
     <div className="space-y-3">
+      {textureFolder && <FolderTexturePicker folder={textureFolder} polygon={polygon} onChange={onChange} />}
       <TextureTilingControl value={polygon.textureTiling} onChange={textureTiling => onChange({ textureTiling })} />
       <div>
         <Slider
@@ -98,6 +101,49 @@ export default function TextureTab({ polygon, onChange }: { polygon: PolygonLaye
           min={-500} max={500} step={5}
           onChange={(textureOffsetY) => onChange({ textureOffsetY })}
         />
+      </div>
+    </div>
+  );
+}
+
+// Swaps this shape's texture for another from the loaded folder. The pick is a
+// plain src/gifData update, so it undoes like any other texture change.
+function FolderTexturePicker({ folder, polygon, onChange }: {
+  folder: PolygonTextureFolder;
+  polygon: PolygonLayer;
+  onChange: (updates: Partial<PolygonLayer>) => void;
+}) {
+  const onShuffle = useStore(s => s.shufflePolygonTexture);
+  return (
+    <div className="pb-2 border-b border-ui-border space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-ui-text truncate" title={folder.name}>From {folder.name}</span>
+        <button
+          type="button"
+          onClick={() => onShuffle(polygon.id)}
+          disabled={folder.assets.length < 2 && polygon.src === folder.assets[0]?.src}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border border-ui-border bg-ui-canvas text-ui-text-muted hover:text-ui-text hover:border-ui-border-strong disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
+          title="Pick a different random texture from the folder"
+        >
+          <Shuffle className="w-3 h-3" /> Shuffle
+        </button>
+      </div>
+      <div className="grid grid-cols-5 gap-1 max-h-32 overflow-y-auto">
+        {folder.assets.map(asset => (
+          <button
+            key={asset.id}
+            type="button"
+            onClick={() => onChange({ src: asset.src, gifData: asset.gifData })}
+            aria-pressed={polygon.src === asset.src}
+            title={asset.name}
+            className={cn(
+              "aspect-square rounded overflow-hidden border bg-ui-canvas focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent",
+              polygon.src === asset.src ? "border-ui-accent ring-1 ring-ui-accent" : "border-ui-border hover:border-ui-border-strong"
+            )}
+          >
+            <img src={asset.src} alt={asset.name} loading="lazy" draggable={false} className="w-full h-full object-cover" />
+          </button>
+        ))}
       </div>
     </div>
   );

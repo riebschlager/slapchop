@@ -26,12 +26,13 @@ import {
   Mesh3dPrimitive,
   PolygonLayer,
   PolygonPoint,
+  PolygonTextureFolder,
   PolygonUnderpainting,
   TunnelAsset,
   TunnelConfig
 } from './types';
 import { parseGifFile } from './lib/gifUtils';
-import { createNewPolygonLayer, createPresetPolygonPoints } from './lib/polygonUtils';
+import { createNewPolygonLayer, createPresetPolygonPoints, pickFolderTexture } from './lib/polygonUtils';
 import type { RecordedBrushStroke } from './lib/brushStroke';
 import { createMesh3dLayer, createMesh3dPresetName } from './lib/mesh3dUtils';
 
@@ -65,6 +66,7 @@ export interface AppState extends DocumentState {
   isBrushingPolygon: boolean;
   brushTool: BrushToolSettings;
   polygonUnderpainting: PolygonUnderpainting | null;
+  polygonTextureFolder: PolygonTextureFolder | null;
 
   setAppMode: (mode: AppMode) => void;
   setCanvasBg: (color: string) => void;
@@ -103,6 +105,10 @@ export interface AppState extends DocumentState {
   loadPolygonUnderpainting: (file: File) => void;
   setPolygonUnderpainting: (underpainting: PolygonUnderpainting | null) => void;
   updatePolygonUnderpainting: (updates: Partial<Pick<PolygonUnderpainting, 'visible' | 'opacity'>>) => void;
+  /** Resolves to the number of usable images; an empty folder leaves the current one in place. */
+  loadPolygonTextureFolder: (files: File[]) => Promise<number>;
+  setPolygonTextureFolder: (folder: PolygonTextureFolder | null) => void;
+  shufflePolygonTexture: (id: string) => void;
 
   // 3D mesh layers
   addMesh3dPreset: (primitive: Mesh3dPrimitive) => void;
@@ -262,6 +268,37 @@ function replaceUnderpainting(
   return next;
 }
 
+// The texture folder sits outside undo history, but shapes (and their history
+// snapshots) share its object URLs and decoded frames. On replacement, release
+// only the assets that no present, past, or future polygon still references;
+// with the folder gone, nothing else can reach them again.
+function releaseTextureFolder(
+  previous: PolygonTextureFolder | null,
+  next: PolygonTextureFolder | null
+): void {
+  if (!previous || previous === next) return;
+  const history = useStore.temporal.getState();
+  const documents: Partial<DocumentState>[] = [useStore.getState(), ...history.pastStates, ...history.futureStates];
+  const retained = new Set<string | undefined>(documents.flatMap(doc => (doc.polygonLayers ?? []).map(poly => poly.src)));
+  next?.assets.forEach(asset => retained.add(asset.src));
+  for (const asset of previous.assets) {
+    if (retained.has(asset.src)) continue;
+    URL.revokeObjectURL(asset.src);
+    for (const frame of asset.gifData?.frames ?? []) {
+      if ('close' in frame.image) frame.image.close();
+    }
+  }
+}
+
+// Every newly created shape takes a random folder texture. Avoiding the newest
+// shape's texture keeps consecutive shapes visibly distinct.
+function folderTextureForNewShape(): Partial<PolygonLayer> {
+  const { polygonTextureFolder, polygonLayers } = useStore.getState();
+  const asset = polygonTextureFolder
+    && pickFolderTexture(polygonTextureFolder.assets, polygonLayers[polygonLayers.length - 1]?.src);
+  return asset ? { src: asset.src, gifData: asset.gifData } : {};
+}
+
 const INITIAL_POLYGON = createNewPolygonLayer(
   'Hexagon Tile',
   createPresetPolygonPoints('hexagon', 220),
@@ -297,6 +334,7 @@ export const useStore = create<AppState>()(
       isBrushingPolygon: false,
       brushTool: { ...DEFAULT_BRUSH_TOOL },
       polygonUnderpainting: null,
+      polygonTextureFolder: null,
 
       setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false, isBrushingPolygon: false }),
       setCanvasBg: (color) => set({ canvasBg: color }),
@@ -328,7 +366,8 @@ export const useStore = create<AppState>()(
         selectedLandscapeSkySourceId: null,
         isDrawingPolygon: false,
         isBrushingPolygon: false,
-        polygonUnderpainting: replaceUnderpainting(get().polygonUnderpainting, null)
+        polygonUnderpainting: replaceUnderpainting(get().polygonUnderpainting, null),
+        polygonTextureFolder: (releaseTextureFolder(get().polygonTextureFolder, null), null)
       }),
 
       updateMasterFx: (updates) => set(s => ({
@@ -395,7 +434,7 @@ export const useStore = create<AppState>()(
         const newPoly = createNewPolygonLayer(
           `${type.charAt(0).toUpperCase() + type.slice(1)} ${get().polygonLayers.length + 1}`,
           pts,
-          { textureScale: 0.5, strokeColor: '#818cf8', fillColor: '#6366f1' }
+          { textureScale: 0.5, strokeColor: '#818cf8', fillColor: '#6366f1', ...folderTextureForNewShape() }
         );
         set(s => ({ polygonLayers: [...s.polygonLayers, newPoly], selectedPolygonId: newPoly.id }));
       },
@@ -423,7 +462,7 @@ export const useStore = create<AppState>()(
         const newPoly = createNewPolygonLayer(
           `Custom Polygon ${get().polygonLayers.length + 1}`,
           points,
-          { textureScale: 0.5, strokeColor: '#c084fc', fillColor: '#8b5cf6' }
+          { textureScale: 0.5, strokeColor: '#c084fc', fillColor: '#8b5cf6', ...folderTextureForNewShape() }
         );
         set(s => ({
           polygonLayers: [...s.polygonLayers, newPoly],
@@ -468,7 +507,9 @@ export const useStore = create<AppState>()(
         const { smoothing, ...shapeSettings } = brushTool;
         void smoothing; // capture-only; already applied to the recorded points
         // Painting with the selected shape's texture lets consecutive strokes
-        // share one GIF without re-uploading it for every stroke.
+        // share one GIF without re-uploading it for every stroke. A loaded
+        // texture folder still wins for the GIF itself: every new shape draws
+        // from it, while the rest of the look carries over.
         const source = polygonLayers.find(p => p.id === selectedPolygonId);
         const inherited: Partial<PolygonLayer> = source ? {
           src: source.src,
@@ -489,6 +530,7 @@ export const useStore = create<AppState>()(
           {
             strokeColor: '#ffffff',
             ...inherited,
+            ...folderTextureForNewShape(),
             brush: {
               ...shapeSettings,
               pressures,
@@ -517,6 +559,22 @@ export const useStore = create<AppState>()(
       updatePolygonUnderpainting: (updates) => set(s => ({
         polygonUnderpainting: s.polygonUnderpainting ? { ...s.polygonUnderpainting, ...updates } : null
       })),
+      loadPolygonTextureFolder: async (files) => {
+        const assets = (await imageAssetsFromFiles(files)).map(({ id, name, src, gifData }) => ({ id, name, src, gifData }));
+        if (assets.length === 0) return 0;
+        get().setPolygonTextureFolder({ name: landscapeFolderName(files, 'Texture folder'), assets });
+        return assets.length;
+      },
+      setPolygonTextureFolder: (folder) => {
+        releaseTextureFolder(get().polygonTextureFolder, folder);
+        set({ polygonTextureFolder: folder });
+      },
+      shufflePolygonTexture: (id) => {
+        const { polygonLayers, polygonTextureFolder } = get();
+        const poly = polygonLayers.find(p => p.id === id);
+        const asset = poly && polygonTextureFolder && pickFolderTexture(polygonTextureFolder.assets, poly.src);
+        if (asset) get().updatePolygon(id, { src: asset.src, gifData: asset.gifData });
+      },
 
       addMesh3dPreset: (primitive) => {
         const name = createMesh3dPresetName(primitive, get().mesh3dLayers.length);

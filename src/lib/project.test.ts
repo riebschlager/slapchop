@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_TUNNEL } from '../types';
-import { restoreProjectDocument, restorePolygonUnderpainting } from './project';
+import { restoreProjectDocument, restorePolygonTextureFolder, restorePolygonUnderpainting } from './project';
 
 describe('restoreProjectDocument', () => {
   it('preserves legacy Voronoi fields while restoring a V1 project', () => {
@@ -275,6 +275,40 @@ describe('restorePolygonUnderpainting', () => {
   it('rejects a reference whose embedded image is missing', () => {
     const payload = v7({ assetId: 'gone', name: 'sketch.png', visible: true, opacity: 0.5 });
     expect(() => restorePolygonUnderpainting(payload)).toThrow(/sketch\.png/);
+  });
+});
+
+describe('restorePolygonTextureFolder', () => {
+  const v8 = (polygonTextureFolder?: unknown) => JSON.parse(JSON.stringify({
+    app: 'slapchop', version: 8, savedAt: '', canvasBg: '#000000',
+    layers: [], polygonLayers: [], mesh3dLayers: [], flythroughAssets: [], tunnelAssets: [],
+    gifVoronoiAssets: [], landscapeTerrainAssets: [], landscapeSkySources: [], ringsAssets: [],
+    rings: {}, assets: {}, polygonTextureFolder
+  }));
+
+  it('restores the folder with each asset resolved to its embedded texture', () => {
+    const payload = v8({ name: 'loops', assets: [
+      { id: 'a', name: 'a.gif', assetId: 'x' },
+      { id: 'b', name: 'b.png', assetId: 'y' }
+    ] });
+    const materialized = new Map([['x', { src: 'blob:x' }], ['y', { src: 'blob:y' }]]);
+    expect(restorePolygonTextureFolder(payload, materialized)).toEqual({
+      name: 'loops',
+      assets: [
+        { id: 'a', name: 'a.gif', src: 'blob:x', gifData: undefined },
+        { id: 'b', name: 'b.png', src: 'blob:y', gifData: undefined }
+      ]
+    });
+  });
+
+  it('opens files saved without a texture folder as having none', () => {
+    expect(restorePolygonTextureFolder(v8())).toBeNull();
+    expect(restorePolygonTextureFolder(v8({ name: 'empty', assets: [] }))).toBeNull();
+  });
+
+  it('rejects a folder texture whose embedded image is missing', () => {
+    const payload = v8({ name: 'loops', assets: [{ id: 'a', name: 'lost.gif', assetId: 'gone' }] });
+    expect(() => restorePolygonTextureFolder(payload)).toThrow(/lost\.gif/);
   });
 });
 
