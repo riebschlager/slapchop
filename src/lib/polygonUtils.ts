@@ -65,7 +65,7 @@ export function createNewPolygonLayer(
     opacity: 1.0,
     blendMode: 'normal' as BlendMode,
     strokeColor: '#ffffff',
-    strokeWidth: 2,
+    strokeWidth: 0,
     fillColor: '#6366f1',
     gifSpeed: 1,
     symmetry: 'none',

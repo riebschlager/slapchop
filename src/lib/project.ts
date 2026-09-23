@@ -20,6 +20,7 @@ import {
   MasterFxConfig,
   Mesh3dLayer,
   PolygonLayer,
+  PolygonUnderpainting,
   TunnelAsset,
   TunnelConfig
 } from '../types';
@@ -151,11 +152,17 @@ interface ProjectFileV6 {
   assets: Record<string, ProjectAsset>;
 }
 
+type SerializedPolygonUnderpainting = Omit<PolygonUnderpainting, 'src'> & { assetId: string };
+
 // V7 adds GIF Rings; versions 1–6 open with an empty ring library.
+// `polygonUnderpainting` was added later as an optional V7 field rather than a
+// version bump: it is editor-only (never rendered or exported), so a build
+// that ignores it still opens the file with identical output.
 interface ProjectFileV7 extends Omit<ProjectFileV6, 'version'> {
   version: 7;
   ringsAssets: (Omit<RingsAsset, 'src' | 'gifData'> & { assetId: string })[];
   rings: RingsConfig;
+  polygonUnderpainting?: SerializedPolygonUnderpainting;
 }
 
 type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7;
@@ -265,6 +272,13 @@ export async function saveProject(): Promise<void> {
     return { ...rest, assetId: await assetIdFor(src, source.name) };
   }));
 
+  const underpainting = useStore.getState().polygonUnderpainting;
+  let polygonUnderpainting: SerializedPolygonUnderpainting | undefined;
+  if (underpainting) {
+    const { src, ...rest } = underpainting;
+    polygonUnderpainting = { ...rest, assetId: await assetIdFor(src, underpainting.name) };
+  }
+
   const payload: ProjectFileV7 = {
     app: 'slapchop',
     version: 7,
@@ -286,6 +300,7 @@ export async function saveProject(): Promise<void> {
     landscapeTerrainAssets,
     landscapeSkySources,
     landscape: doc.landscape,
+    polygonUnderpainting,
     assets
   };
 
@@ -310,7 +325,9 @@ export async function openProject(file: File): Promise<void> {
   }
 
   const doc = restoreProjectDocument(payload, materialized);
+  const underpainting = restorePolygonUnderpainting(payload, materialized);
   useStore.getState().loadDocument(doc);
+  useStore.getState().setPolygonUnderpainting(underpainting);
   clearHistory();
 }
 
@@ -436,5 +453,21 @@ export function restoreProjectDocument(
     landscape,
     canvasBg: payload.canvasBg,
     masterFx
+  };
+}
+
+export function restorePolygonUnderpainting(
+  payload: ProjectFile,
+  materialized: ReadonlyMap<string, MaterializedAsset> = new Map()
+): PolygonUnderpainting | null {
+  if (payload.version !== 7 || !payload.polygonUnderpainting) return null;
+  const { assetId, ...rest } = payload.polygonUnderpainting;
+  const asset = materialized.get(assetId);
+  if (!asset) throw new Error(`Tiled GIF underpainting “${rest.name}” is missing from the project file.`);
+  return {
+    ...rest,
+    src: asset.src,
+    visible: rest.visible !== false,
+    opacity: Number.isFinite(rest.opacity) ? Math.min(1, Math.max(0, rest.opacity)) : 0.5
   };
 }

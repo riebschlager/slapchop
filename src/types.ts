@@ -42,6 +42,17 @@ export interface PolygonLayer {
   vertexNoise?: MotionConfig & { incoherence: number };
 }
 
+// Tiled GIF tracing reference. Editor-only: it is drawn as a DOM overlay on
+// the live stage and is never part of RenderState, so exports, live output,
+// and Master FX never see it. Persisted with the project but kept out of undo
+// history, like selection.
+export interface PolygonUnderpainting {
+  src: string;
+  name: string;
+  visible: boolean;
+  opacity: number;
+}
+
 
 export type SymmetryType =
   | 'none' | 'mirror-x' | 'mirror-y' | 'quad' | 'radial'

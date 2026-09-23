@@ -24,6 +24,7 @@ import {
   Mesh3dPrimitive,
   PolygonLayer,
   PolygonPoint,
+  PolygonUnderpainting,
   TunnelAsset,
   TunnelConfig
 } from './types';
@@ -58,6 +59,7 @@ export interface AppState extends DocumentState {
   selectedMesh3dId: string | null;
   selectedLandscapeSkySourceId: string | null;
   isDrawingPolygon: boolean;
+  polygonUnderpainting: PolygonUnderpainting | null;
 
   setAppMode: (mode: AppMode) => void;
   setCanvasBg: (color: string) => void;
@@ -90,6 +92,9 @@ export interface AppState extends DocumentState {
   movePolygonUp: (id: string) => void;
   movePolygonDown: (id: string) => void;
   toggleDrawPolygon: () => void;
+  loadPolygonUnderpainting: (file: File) => void;
+  setPolygonUnderpainting: (underpainting: PolygonUnderpainting | null) => void;
+  updatePolygonUnderpainting: (updates: Partial<Pick<PolygonUnderpainting, 'visible' | 'opacity'>>) => void;
 
   // 3D mesh layers
   addMesh3dPreset: (primitive: Mesh3dPrimitive) => void;
@@ -237,10 +242,22 @@ function landscapeFolderName(files: File[], fallback: string): string {
   return relativePath?.split('/')[0] || fallback;
 }
 
+const DEFAULT_UNDERPAINTING_OPACITY = 0.5;
+
+// The underpainting sits outside undo history, so no snapshot can still refer
+// to its object URL once it is replaced; release it immediately.
+function replaceUnderpainting(
+  previous: PolygonUnderpainting | null,
+  next: PolygonUnderpainting | null
+): PolygonUnderpainting | null {
+  if (previous && previous.src !== next?.src) URL.revokeObjectURL(previous.src);
+  return next;
+}
+
 const INITIAL_POLYGON = createNewPolygonLayer(
   'Hexagon Tile',
   createPresetPolygonPoints('hexagon', 220),
-  { textureScale: 0.5, strokeColor: '#818cf8', strokeWidth: 3, fillColor: '#4f46e5' }
+  { textureScale: 0.5, strokeColor: '#818cf8', fillColor: '#4f46e5' }
 );
 
 export const useStore = create<AppState>()(
@@ -269,6 +286,7 @@ export const useStore = create<AppState>()(
       selectedMesh3dId: null,
       selectedLandscapeSkySourceId: null,
       isDrawingPolygon: false,
+      polygonUnderpainting: null,
 
       setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false }),
       setCanvasBg: (color) => set({ canvasBg: color }),
@@ -298,7 +316,8 @@ export const useStore = create<AppState>()(
         selectedPolygonId: null,
         selectedMesh3dId: null,
         selectedLandscapeSkySourceId: null,
-        isDrawingPolygon: false
+        isDrawingPolygon: false,
+        polygonUnderpainting: replaceUnderpainting(get().polygonUnderpainting, null)
       }),
 
       updateMasterFx: (updates) => set(s => ({
@@ -365,7 +384,7 @@ export const useStore = create<AppState>()(
         const newPoly = createNewPolygonLayer(
           `${type.charAt(0).toUpperCase() + type.slice(1)} ${get().polygonLayers.length + 1}`,
           pts,
-          { textureScale: 0.5, strokeColor: '#818cf8', strokeWidth: 3, fillColor: '#6366f1' }
+          { textureScale: 0.5, strokeColor: '#818cf8', fillColor: '#6366f1' }
         );
         set(s => ({ polygonLayers: [...s.polygonLayers, newPoly], selectedPolygonId: newPoly.id }));
       },
@@ -383,7 +402,7 @@ export const useStore = create<AppState>()(
           const newPoly = createNewPolygonLayer(
             file.name,
             createPresetPolygonPoints('hexagon', 220),
-            { src: url, gifData: gifData || undefined, textureScale: 0.5, strokeColor: '#ffffff', strokeWidth: 2 }
+            { src: url, gifData: gifData || undefined, textureScale: 0.5, strokeColor: '#ffffff' }
           );
           set(s => ({ polygonLayers: [...s.polygonLayers, newPoly], selectedPolygonId: newPoly.id }));
         }
@@ -393,7 +412,7 @@ export const useStore = create<AppState>()(
         const newPoly = createNewPolygonLayer(
           `Custom Polygon ${get().polygonLayers.length + 1}`,
           points,
-          { textureScale: 0.5, strokeColor: '#c084fc', strokeWidth: 3, fillColor: '#8b5cf6' }
+          { textureScale: 0.5, strokeColor: '#c084fc', fillColor: '#8b5cf6' }
         );
         set(s => ({
           polygonLayers: [...s.polygonLayers, newPoly],
@@ -430,6 +449,23 @@ export const useStore = create<AppState>()(
         return i === -1 || i >= s.polygonLayers.length - 1 ? s : { polygonLayers: swap(s.polygonLayers, i, i + 1) };
       }),
       toggleDrawPolygon: () => set(s => ({ isDrawingPolygon: !s.isDrawingPolygon })),
+      loadPolygonUnderpainting: (file) => {
+        const previous = get().polygonUnderpainting;
+        set({
+          polygonUnderpainting: replaceUnderpainting(previous, {
+            src: URL.createObjectURL(file),
+            name: file.name,
+            visible: true,
+            opacity: previous?.opacity ?? DEFAULT_UNDERPAINTING_OPACITY
+          })
+        });
+      },
+      setPolygonUnderpainting: (underpainting) => set(s => ({
+        polygonUnderpainting: replaceUnderpainting(s.polygonUnderpainting, underpainting)
+      })),
+      updatePolygonUnderpainting: (updates) => set(s => ({
+        polygonUnderpainting: s.polygonUnderpainting ? { ...s.polygonUnderpainting, ...updates } : null
+      })),
 
       addMesh3dPreset: (primitive) => {
         const name = createMesh3dPresetName(primitive, get().mesh3dLayers.length);

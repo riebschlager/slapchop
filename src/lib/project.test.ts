@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_TUNNEL } from '../types';
-import { restoreProjectDocument } from './project';
+import { restoreProjectDocument, restorePolygonUnderpainting } from './project';
 
 describe('restoreProjectDocument', () => {
   it('preserves legacy Voronoi fields while restoring a V1 project', () => {
@@ -250,4 +250,30 @@ it('round-trips additive texture fields across every texture editor', async () =
   expect(restored.gifVoronoi).toMatchObject({ textureRotation: 51, textureTiling: 'mirror-x', coverZoom: 0.5 });
   expect(restored.landscape).toMatchObject({ terrainTextureRotation: 18, terrainTextureTiling: 'repeat' });
   expect(restored.landscapeSkySources[0]).toMatchObject({ textureRotation: 39, textureTiling: 'mirror-y' });
+});
+
+describe('restorePolygonUnderpainting', () => {
+  const v7 = (polygonUnderpainting?: unknown) => JSON.parse(JSON.stringify({
+    app: 'slapchop', version: 7, savedAt: '', canvasBg: '#000000',
+    layers: [], polygonLayers: [], mesh3dLayers: [], flythroughAssets: [], tunnelAssets: [],
+    gifVoronoiAssets: [], landscapeTerrainAssets: [], landscapeSkySources: [], ringsAssets: [],
+    rings: {}, assets: {}, polygonUnderpainting
+  }));
+
+  it('restores the tracing reference with its visibility and opacity', () => {
+    const payload = v7({ assetId: 'ref', name: 'sketch.png', visible: false, opacity: 0.35 });
+    const materialized = new Map([['ref', { src: 'blob:ref' }]]);
+    expect(restorePolygonUnderpainting(payload, materialized)).toEqual({
+      src: 'blob:ref', name: 'sketch.png', visible: false, opacity: 0.35
+    });
+  });
+
+  it('opens files saved without an underpainting as having none', () => {
+    expect(restorePolygonUnderpainting(v7())).toBeNull();
+  });
+
+  it('rejects a reference whose embedded image is missing', () => {
+    const payload = v7({ assetId: 'gone', name: 'sketch.png', visible: true, opacity: 0.5 });
+    expect(() => restorePolygonUnderpainting(payload)).toThrow(/sketch\.png/);
+  });
 });

@@ -81,7 +81,7 @@ describe('createNewPolygonLayer', () => {
     const a = createNewPolygonLayer('A', pts);
     const b = createNewPolygonLayer('B', pts, { strokeWidth: 7, opacity: 0.5 });
     expect(a.id).not.toEqual(b.id);
-    expect(a.strokeWidth).toBe(2);
+    expect(a.strokeWidth).toBe(0);
     expect(b.strokeWidth).toBe(7);
     expect(b.opacity).toBe(0.5);
     expect(b.blendMode).toBe('normal');

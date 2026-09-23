@@ -102,6 +102,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const landscape = useStore(s => s.landscape);
   const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
+  const polygonUnderpainting = useStore(s => s.polygonUnderpainting);
   const canvasBg = useStore(s => s.canvasBg);
 
   const onSelectLayer = useStore(s => s.selectLayer);
@@ -1026,6 +1027,19 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         {/* Polygon Interactive Handle Overlay */}
         {appMode === 'polygon' && (
           <div className="absolute inset-0 pointer-events-none">
+            {/* Underpainting: a DOM layer over the rendered frame rather than a
+                renderer layer, so it cannot reach exports, live output, or
+                Master FX. It stays beneath the edit handles and is fitted
+                (contain) to the 1080 x 1920 frame. */}
+            {polygonUnderpainting?.visible && (
+              <img
+                src={polygonUnderpainting.src}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
+                style={{ opacity: polygonUnderpainting.opacity }}
+              />
+            )}
             {/* Draw active polygon guidance line. `overflow: visible` keeps the
                 in-progress geometry legible when vertices land outside the
                 frame — an SVG root clips to its viewport otherwise. */}

@@ -13,6 +13,8 @@ import LayerRow from './LayerRow';
 import PolygonRow from './PolygonRow';
 import Mesh3dRow from './Mesh3dRow';
 import TunnelAssetRow from './TunnelAssetRow';
+import Slider from '../controls/Slider';
+import Toggle from '../controls/Toggle';
 import GifVoronoiAssetRow from './GifVoronoiAssetRow';
 import { AppMode, Mesh3dPrimitive } from '../../types';
 import { MESH3D_PRIMITIVE_EMOJI } from '../../lib/mesh3dUtils';
@@ -79,6 +81,10 @@ export default function StackPanel() {
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
   const onToggleDrawPolygon = useStore(s => s.toggleDrawPolygon);
   const onUploadPolygonTexture = useStore(s => s.uploadPolygonTexture);
+  const polygonUnderpainting = useStore(s => s.polygonUnderpainting);
+  const onLoadPolygonUnderpainting = useStore(s => s.loadPolygonUnderpainting);
+  const onSetPolygonUnderpainting = useStore(s => s.setPolygonUnderpainting);
+  const onUpdatePolygonUnderpainting = useStore(s => s.updatePolygonUnderpainting);
   const mesh3dLayers = useStore(s => s.mesh3dLayers);
   const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
   const onSelectMesh3d = useStore(s => s.selectMesh3d);
@@ -192,6 +198,12 @@ export default function StackPanel() {
       });
       e.target.value = '';
     }
+  };
+
+  const handleUnderpaintingFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) onLoadPolygonUnderpainting(file);
   };
 
   const handlePolygonTextureFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -510,6 +522,49 @@ export default function StackPanel() {
                 {selectedPolygon ? "Upload Texture for Selected Shape" : "Upload GIF / Texture"}
                 <input type="file" accept="image/*" className="hidden" onChange={handlePolygonTextureFileChange} />
               </label>
+            </div>
+
+            {/* Tracing reference: editor-only, never rendered into exports. */}
+            <div className="pt-2 border-t border-ui-border space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider">Underpainting</label>
+                {polygonUnderpainting && (
+                  <div className="flex items-center gap-1.5">
+                    <Toggle
+                      title={polygonUnderpainting.visible ? 'Hide underpainting' : 'Show underpainting'}
+                      checked={polygonUnderpainting.visible}
+                      onChange={(visible) => onUpdatePolygonUnderpainting({ visible })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onSetPolygonUnderpainting(null)}
+                      className="p-0.5 rounded text-ui-text-subtle hover:text-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
+                      title="Remove underpainting"
+                      aria-label="Remove underpainting"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <label
+                className="flex items-center justify-center gap-2 w-full py-1.5 bg-ui-surface hover:bg-ui-surface-raised rounded-md cursor-pointer transition-colors text-xs text-ui-text border border-ui-border focus-within:outline-none focus-within:ring-2 focus-within:ring-ui-accent"
+                title={polygonUnderpainting ? `Replace ${polygonUnderpainting.name}` : 'Load a reference image to trace polygons over'}
+              >
+                <ImageIcon className="w-3.5 h-3.5 shrink-0 text-ui-text-muted" />
+                <span className="truncate">{polygonUnderpainting ? polygonUnderpainting.name : 'Load Tracing Image'}</span>
+                <input type="file" accept="image/*" className="hidden" onChange={handleUnderpaintingFileChange} />
+              </label>
+              {polygonUnderpainting?.visible && (
+                <Slider
+                  size="sm"
+                  label="Opacity"
+                  display={`${Math.round(polygonUnderpainting.opacity * 100)}%`}
+                  value={polygonUnderpainting.opacity}
+                  min={0} max={1} step={0.01}
+                  onChange={(opacity) => onUpdatePolygonUnderpainting({ opacity })}
+                />
+              )}
             </div>
           </div>
 
