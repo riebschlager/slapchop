@@ -277,3 +277,28 @@ describe('restorePolygonUnderpainting', () => {
     expect(() => restorePolygonUnderpainting(payload)).toThrow(/sketch\.png/);
   });
 });
+
+it('restores V8 brush shapes with their centerline and parallel pressures', async () => {
+  const { createNewPolygonLayer } = await import('./polygonUtils');
+  const brushed = createNewPolygonLayer('Brush Stroke 1', [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 8, y: 0 }], {
+    brush: {
+      size: 40, thinning: 0.5, taperStart: 0.2, taperEnd: 0.3, roughness: 0.1, nibRoundness: 0.4, nibAngle: 30,
+      pressures: [0.2, 0.9], seed: 11, drawOnDuration: 2, drawOnHold: 0.5,
+      motionSize: { type: 'sine', speed: 1, amplitude: 5, phase: 0 }
+    }
+  });
+  const payload = JSON.parse(JSON.stringify({
+    app: 'slapchop', version: 8, savedAt: '', canvasBg: '#000000',
+    layers: [], polygonLayers: [brushed], mesh3dLayers: [], flythroughAssets: [], tunnelAssets: [],
+    gifVoronoiAssets: [], landscapeTerrainAssets: [], landscapeSkySources: [], ringsAssets: [],
+    rings: {}, assets: {}
+  }));
+  const [restored] = restoreProjectDocument(payload).polygonLayers;
+  expect(restored.points).toHaveLength(3);
+  expect(restored.brush).toMatchObject({
+    size: 40, taperStart: 0.2, taperEnd: 0.3, nibRoundness: 0.4, nibAngle: 30, seed: 11,
+    drawOnDuration: 2, drawOnHold: 0.5, motionSize: { type: 'sine', amplitude: 5 }
+  });
+  // The file was one pressure short; restore pads it rather than desyncing.
+  expect(restored.brush?.pressures).toEqual([0.2, 0.9, 1]);
+});

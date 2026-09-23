@@ -105,7 +105,7 @@ the same. See [Independent creative modes](docs/architecture/mode-independence.m
 for the product decision and incremental architecture direction.
 
 - **Symmetry canvas** — drop images/GIFs as layers; each layer has position/rotation/scale, mirror/quad/radial symmetry, blend mode, opacity, and sine/noise motion modulators.
-- **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture, mode-owned repeat patterns and Voronoi partitioning, and animatable scale, rotation, and offset. An optional underpainting image (toggle and opacity in the Stack) helps trace polygons; it is saved with the project but never appears in exports or live output.
+- **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture, mode-owned repeat patterns and Voronoi partitioning, and animatable scale, rotation, and offset. A Brush tool paints tapered, pressure-sensitive stroke shapes (pen pressure, or speed-simulated for a mouse) with editable size, taper, roughness, flat-nib angle, size breathing, and draw-on animation. An optional underpainting image (toggle and opacity in the Stack) helps trace polygons; it is saved with the project but never appears in exports or live output.
 - **3D space** — textured meshes, camera depth, 3D deformation, spatial symmetry, and animated transforms.
 - **GIF flythrough** — point the app at a folder of GIFs to build a seeded,
   deterministic Three.js particle field that rushes past the camera. GIFs
@@ -163,6 +163,10 @@ folder. Meshes, tunnel panes, and terrain also offer Clamp to Edge. Tunnel UV
 Scale and Voronoi Cover Zoom can go below 1 to reveal multiple tiles.
 Texture settings are saved in `.slapchop` projects; older projects keep their
 existing mapping defaults.
+
+Projects now save as format version 8, which adds brush-stroke shapes. Older
+projects still open; builds from before brush strokes will refuse a version 8
+file rather than draw its strokes as closed polygons.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

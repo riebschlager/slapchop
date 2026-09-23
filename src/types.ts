@@ -40,7 +40,55 @@ export interface PolygonLayer {
   // incoherence (0..1) desyncs each vertex's phase so they don't pulse in
   // unison; reuses MotionConfig/applyMotion rather than a new time system.
   vertexNoise?: MotionConfig & { incoherence: number };
+  // Present only on brush-painted shapes. `points` then holds the stroke's
+  // open centerline, not a closed outline; the filled shape is rebuilt from
+  // it at render time so width, taper, and draw-on stay editable/animatable.
+  brush?: PolygonBrush;
 }
+
+/** Shape parameters shared by the brush tool and a painted stroke. */
+export interface BrushShapeSettings {
+  /** Full stroke width at pressure 1, in design px. */
+  size: number;
+  /** 0..1: how strongly pressure narrows the stroke (0 = uniform width). */
+  thinning: number;
+  /** 0..1 fraction of the stroke's length tapered to a point at each end. */
+  taperStart: number;
+  taperEnd: number;
+  /** 0..1 seeded width wobble along the stroke. */
+  roughness: number;
+  /** 0.05..1 nib aspect; 1 is round, lower is a flat calligraphy nib. */
+  nibRoundness: number;
+  /** Flat nib angle in degrees; ignored when the nib is round. */
+  nibAngle: number;
+}
+
+export interface PolygonBrush extends BrushShapeSettings {
+  /** Pen pressure (0..1) per centerline sample, parallel to `points`. */
+  pressures: number[];
+  seed: number;
+  motionSize?: MotionConfig;
+  /** Seconds to draw the stroke on; 0 disables draw-on. */
+  drawOnDuration: number;
+  /** Seconds the finished stroke holds before the draw-on repeats. */
+  drawOnHold: number;
+}
+
+export interface BrushToolSettings extends BrushShapeSettings {
+  /** 0..1 capture-time streamline; applied once when the stroke is recorded. */
+  smoothing: number;
+}
+
+export const DEFAULT_BRUSH_TOOL: BrushToolSettings = {
+  size: 60,
+  thinning: 0.6,
+  taperStart: 0.15,
+  taperEnd: 0.25,
+  roughness: 0,
+  nibRoundness: 1,
+  nibAngle: 45,
+  smoothing: 0.5
+};
 
 // Tiled GIF tracing reference. Editor-only: it is drawn as a DOM overlay on
 // the live stage and is never part of RenderState, so exports, live output,

@@ -27,6 +27,7 @@ import { deformGeometry } from '../lib/deformation3d';
 import { buildMeshWorldMatrix, mat4TransformPoint, Vec3, vecCross, vecNormalize, vecSub } from '../lib/mat4';
 import { createScreen3dProjector, ScreenPoint } from '../lib/project3d';
 import { getVoronoiCells } from '../lib/voronoi';
+import { getBrushPieces, getPiecesBounds, isPolygonShapeRenderable } from '../lib/brushStroke';
 import { resolveFlythroughParticles } from '../lib/flythrough';
 import { resolveTunnelScene, TunnelVec3 } from '../lib/tunnel';
 import {
@@ -146,6 +147,29 @@ function tracePolygonPath(
   ctx.closePath();
 }
 
+// A polygon's filled shape as one or more rings: the outline itself, or a
+// brush stroke's convex pieces. All rings share a winding, so the default
+// nonzero rule unions them in both fill() and clip().
+function traceShapePath(
+  ctx: CanvasRenderingContext2D,
+  rings: PolygonPoint[][],
+  width: number,
+  height: number,
+  scaleX: number,
+  scaleY: number
+) {
+  ctx.beginPath();
+  for (const ring of rings) {
+    ring.forEach((pt, i) => {
+      const px = (width / 2) + pt.x * scaleX;
+      const py = (height / 2) + pt.y * scaleY;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+  }
+}
+
 /**
  * Voronoi is a subdivision/masking effect, not a repeat-and-transform one,
  * so it bypasses getPolygonSymmetryTransforms entirely: each shard clips to
@@ -157,7 +181,7 @@ function tracePolygonPath(
 function renderVoronoiPolygon(
   ctx: CanvasRenderingContext2D,
   polygon: PolygonLayer,
-  points: PolygonPoint[],
+  shape: PolygonPoint[][],
   frameSource: CanvasImageSource | null,
   scaleVal: number,
   rotationVal: number,
@@ -168,18 +192,13 @@ function renderVoronoiPolygon(
   width: number,
   height: number
 ) {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of points) {
-    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-  }
   const params = resolveSymmetryParams(polygon.symmetryParams);
-  const cells = getVoronoiCells({ minX, minY, maxX, maxY }, params.voronoiCells, params.voronoiSeed);
+  const cells = getVoronoiCells(getPiecesBounds(shape), params.voronoiCells, params.voronoiSeed);
   const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
 
   for (const cell of cells) {
     ctx.save();
-    tracePolygonPath(ctx, points, width, height, scaleX, scaleY);
+    traceShapePath(ctx, shape, width, height, scaleX, scaleY);
     ctx.clip();
     tracePolygonPath(ctx, cell.points, width, height, scaleX, scaleY);
     ctx.clip();
@@ -232,8 +251,11 @@ function renderPolygon(
   width: number,
   height: number
 ) {
-  if (!polygon.points || polygon.points.length < 3) return;
+  if (!polygon.points || !isPolygonShapeRenderable(polygon)) return;
   const points = getDeformedPoints(polygon, t);
+  const shape = polygon.brush ? getBrushPieces(points, polygon.brush, t) : [points];
+  // A brush stroke before its draw-on starts has no geometry yet.
+  if (shape.length === 0) return;
 
   const scaleVal = applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t);
   const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
@@ -252,13 +274,19 @@ function renderPolygon(
   }
 
   if ((polygon.symmetry ?? 'none') === 'voronoi') {
-    renderVoronoiPolygon(ctx, polygon, points, frameSource, scaleVal, rotationVal, offsetX, offsetY, scaleX, scaleY, width, height);
+    renderVoronoiPolygon(ctx, polygon, shape, frameSource, scaleVal, rotationVal, offsetX, offsetY, scaleX, scaleY, width, height);
     return;
   }
 
   const origin = resolveSymmetryParams(polygon.symmetryParams);
   const originPxX = (width / 2) + origin.originX * scaleX;
   const originPxY = (height / 2) + origin.originY * scaleY;
+  const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
+  // A brush shape's union has no single outline to stroke, so its border is
+  // the stroke grown by the border width, painted behind the fill.
+  const brushBorder = polygon.brush && hasStroke
+    ? getBrushPieces(points, polygon.brush, t, polygon.strokeWidth)
+    : null;
 
   // Each symmetrized copy wraps the whole draw (path + texture pattern +
   // stroke) in a rigid transform around the origin, so the pattern mirrors
@@ -271,10 +299,16 @@ function renderPolygon(
     ctx.scale((tr.mirrorX ? -1 : 1) * tr.scaleMult, (tr.mirrorY ? -1 : 1) * tr.scaleMult);
     ctx.translate(-originPxX, -originPxY);
 
-    tracePolygonPath(ctx, points, width, height, scaleX, scaleY);
-
     ctx.globalAlpha = Math.max(0, Math.min(1, polygon.opacity));
     ctx.globalCompositeOperation = BLEND_MAP[polygon.blendMode] || 'source-over';
+
+    if (brushBorder) {
+      traceShapePath(ctx, brushBorder, width, height, scaleX, scaleY);
+      ctx.fillStyle = polygon.strokeColor;
+      ctx.fill();
+    }
+
+    traceShapePath(ctx, shape, width, height, scaleX, scaleY);
 
     if (frameSource) {
       try {
@@ -301,7 +335,7 @@ function renderPolygon(
       ctx.fill();
     }
 
-    if (polygon.strokeWidth > 0 && polygon.strokeColor && polygon.strokeColor !== 'transparent') {
+    if (hasStroke && !polygon.brush) {
       ctx.lineWidth = polygon.strokeWidth * Math.min(scaleX, scaleY);
       ctx.strokeStyle = polygon.strokeColor;
       ctx.lineJoin = 'round';

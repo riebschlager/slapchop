@@ -1,8 +1,9 @@
 import React, { RefObject, useEffect, useRef, useState } from 'react';
 import { DEFAULT_SYMMETRY_PARAMS, PolygonPoint } from '../types';
 import { cn } from '../lib/utils';
-import { PenTool } from 'lucide-react';
+import { Brush, PenTool } from 'lucide-react';
 import { getPolygonCentroid, isPointInPolygon } from '../lib/polygonUtils';
+import { getBrushPieces, isPointInBrushPieces, RawBrushInput, recordBrushStroke } from '../lib/brushStroke';
 import {
   clampHandleToBounds,
   getVisibleHandleBounds,
@@ -102,6 +103,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const landscape = useStore(s => s.landscape);
   const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
+  const isBrushingPolygon = useStore(s => s.isBrushingPolygon);
+  const brushSize = useStore(s => s.brushTool.size);
   const polygonUnderpainting = useStore(s => s.polygonUnderpainting);
   const canvasBg = useStore(s => s.canvasBg);
 
@@ -112,6 +115,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const onUpdatePolygon = useStore(s => s.updatePolygon);
   const onFinishDrawingPolygon = useStore(s => s.finishDrawingPolygon);
   const onToggleDrawPolygon = useStore(s => s.toggleDrawPolygon);
+  const onToggleBrushPolygon = useStore(s => s.toggleBrushPolygon);
+  const onFinishBrushStroke = useStore(s => s.finishBrushStroke);
   const onSelectMesh3d = useStore(s => s.selectMesh3d);
   const onUpdateMesh3d = useStore(s => s.updateMesh3d);
   const onUpdateCamera3d = useStore(s => s.updateCamera3d);
@@ -147,6 +152,13 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   // Drawing mode points state
   const [drawingPoints, setDrawingPoints] = useState<PolygonPoint[]>([]);
   const [mouseCanvasPos, setMouseCanvasPos] = useState<PolygonPoint | null>(null);
+
+  // Brush painting runs outside React state: the preview path and size cursor
+  // are written to the DOM directly so a stroke never re-renders the stage
+  // per pointer event.
+  const brushPreviewRef = useRef<SVGPathElement>(null);
+  const brushCursorRef = useRef<HTMLDivElement>(null);
+  const brushStrokeCleanupRef = useRef<(() => void) | null>(null);
 
   // The render loop lives outside React: it reads the store imperatively and
   // repaints the canvas every frame without triggering any component renders.
@@ -253,6 +265,19 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
       setMouseCanvasPos(null);
     }
   }, [isDrawingPolygon]);
+
+  // Abandon an in-flight stroke if the tool is switched off or the stage unmounts.
+  useEffect(() => {
+    if (!isBrushingPolygon) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !brushStrokeCleanupRef.current) onToggleBrushPolygon();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      brushStrokeCleanupRef.current?.();
+    };
+  }, [isBrushingPolygon, onToggleBrushPolygon]);
 
   const selectedPolygon = polygonLayers.find(p => p.id === selectedPolygonId);
   const selectedLayer = layers.find(l => l.id === selectedLayerId);
@@ -532,17 +557,23 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   };
 
   const handleContainerMouseDown = (e: React.MouseEvent) => {
-    if (isDrawingPolygon) return;
+    if (isDrawingPolygon || isBrushingPolygon) return;
 
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
     if (appMode === 'polygon') {
       // Hit-test polygon layers from top to bottom
+      const t = getPlaybackTime();
       for (let i = polygonLayers.length - 1; i >= 0; i--) {
         const poly = polygonLayers[i];
         if (poly.hidden) continue;
-        if (isPointInPolygon(coords, poly.points)) {
+        // Brush strokes hit-test their full painted shape, even mid draw-on,
+        // so a stroke stays selectable while it is still animating in.
+        const hit = poly.brush
+          ? isPointInBrushPieces(coords, getBrushPieces(poly.points, { ...poly.brush, drawOnDuration: 0 }, t))
+          : isPointInPolygon(coords, poly.points);
+        if (hit) {
           onSelectPolygon(poly.id);
           startPolygonDrag(poly.id, coords);
           return;
@@ -564,6 +595,86 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     } else if (appMode === '3d') {
       handleMesh3dMouseDown(e, coords);
     }
+  };
+
+  const toBrushCss = (pt: PolygonPoint) =>
+    `${((CANVAS_WIDTH / 2 + pt.x) * scaleRef.current).toFixed(1)},${((CANVAS_HEIGHT / 2 + pt.y) * scaleRef.current).toFixed(1)}`;
+
+  const handleWorkspacePointerMove = (e: React.PointerEvent) => {
+    const cursor = brushCursorRef.current;
+    if (!isBrushingPolygon || !cursor) return;
+    const coords = canvasCoordsFromClient(e.clientX, e.clientY);
+    if (!coords || !isDrawingSurface(e.target)) {
+      cursor.style.visibility = 'hidden';
+      return;
+    }
+    cursor.style.visibility = 'visible';
+    cursor.style.left = `${(CANVAS_WIDTH / 2 + coords.x) * scaleRef.current}px`;
+    cursor.style.top = `${(CANVAS_HEIGHT / 2 + coords.y) * scaleRef.current}px`;
+  };
+
+  const handleWorkspacePointerLeave = () => {
+    if (brushCursorRef.current) brushCursorRef.current.style.visibility = 'hidden';
+  };
+
+  // One stroke per press: raw input (including coalesced pen samples between
+  // frames) is collected on window listeners so the stroke survives leaving
+  // the frame, previewed once per animation frame, and committed as a single
+  // undo step on release. pointercancel discards it.
+  const handleWorkspacePointerDown = (e: React.PointerEvent) => {
+    if (!isBrushingPolygon || e.button !== 0 || !isDrawingSurface(e.target) || brushStrokeCleanupRef.current) return;
+    e.preventDefault();
+    const pointerId = e.pointerId;
+    const seed = Math.floor(Math.random() * 100000);
+    const input: RawBrushInput[] = [];
+    const push = (ev: PointerEvent) => {
+      const coords = canvasCoordsFromClient(ev.clientX, ev.clientY);
+      if (!coords) return;
+      input.push({ ...coords, time: ev.timeStamp, pressure: ev.pointerType === 'pen' ? ev.pressure : undefined });
+    };
+
+    let raf = 0;
+    const drawPreview = () => {
+      raf = 0;
+      const path = brushPreviewRef.current;
+      if (!path) return;
+      const tool = useStore.getState().brushTool;
+      const stroke = recordBrushStroke(input, tool.smoothing);
+      const pieces = getBrushPieces(stroke.points, {
+        ...tool, pressures: stroke.pressures, seed, drawOnDuration: 0, drawOnHold: 0
+      }, 0);
+      path.setAttribute('d', pieces.map(piece => `M${piece.map(toBrushCss).join('L')}Z`).join(''));
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      const coalesced = ev.getCoalescedEvents?.() ?? [];
+      if (coalesced.length > 0) coalesced.forEach(push);
+      else push(ev);
+      if (!raf) raf = requestAnimationFrame(drawPreview);
+    };
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      brushPreviewRef.current?.setAttribute('d', '');
+      brushStrokeCleanupRef.current = null;
+    };
+    const onEnd = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      cleanup();
+      if (ev.type !== 'pointerup') return;
+      onFinishBrushStroke(recordBrushStroke(input, useStore.getState().brushTool.smoothing), seed);
+    };
+
+    push(e.nativeEvent);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    brushStrokeCleanupRef.current = cleanup;
+    drawPreview();
   };
 
   const handleWorkspaceClick = (e: React.MouseEvent) => {
@@ -877,8 +988,12 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
       ref={wrapRef}
       className={cn(
         "flex-1 bg-ui-canvas flex items-center justify-center relative overflow-hidden select-none",
-        isDrawingPolygon ? "cursor-crosshair" : ""
+        isDrawingPolygon || isBrushingPolygon ? "cursor-crosshair" : "",
+        isBrushingPolygon && "touch-none"
       )}
+      onPointerDown={handleWorkspacePointerDown}
+      onPointerMove={handleWorkspacePointerMove}
+      onPointerLeave={handleWorkspacePointerLeave}
       onClick={handleWorkspaceClick}
       onDoubleClick={handleWorkspaceDoubleClick}
       onMouseMove={handleWorkspaceMouseMove}
@@ -950,6 +1065,20 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         </div>
       )}
 
+      {isBrushingPolygon && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-amber-950/90 border border-amber-500/80 px-4 py-2 rounded-full shadow-2xl backdrop-blur text-amber-200 text-xs">
+          <Brush className="w-4 h-4 text-amber-400" />
+          <span>Drag to paint. Each stroke becomes a shape using the selected shape&apos;s texture.</span>
+          <button
+            onClick={onToggleBrushPolygon}
+            className="px-2.5 py-1 bg-amber-500 text-black font-bold rounded-full hover:bg-amber-400 transition-colors"
+            title="Stop painting (Esc)"
+          >
+            Done
+          </button>
+        </div>
+      )}
+
       {/* Main Interactive Canvas Box */}
       <div
         ref={containerRef}
@@ -962,7 +1091,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           // clips itself.
           "relative shadow-2xl transition-all duration-75",
           isDraggingOver ? "ring-4 ring-ui-accent/50" : "",
-          isDrawingPolygon
+          isDrawingPolygon || isBrushingPolygon
             ? "cursor-crosshair"
             : appMode === '3d' && camera3dNavArmed ? "cursor-grab" : "cursor-default"
         )}
@@ -1081,8 +1210,25 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
               </svg>
             )}
 
+            {/* Live brush stroke preview and size cursor. */}
+            {isBrushingPolygon && (
+              <>
+                <svg
+                  className="w-full h-full absolute inset-0 pointer-events-none"
+                  style={{ overflow: 'visible' }}
+                >
+                  <path ref={brushPreviewRef} fill={OVERLAY_DRAW_STROKE} fillOpacity={0.55} />
+                </svg>
+                <div
+                  ref={brushCursorRef}
+                  className="absolute rounded-full border border-white/80 shadow-[0_0_0_1px_rgba(0,0,0,0.6)] pointer-events-none -translate-x-1/2 -translate-y-1/2"
+                  style={{ width: brushSize * scale, height: brushSize * scale, visibility: 'hidden' }}
+                />
+              </>
+            )}
+
             {/* Selected polygon handles */}
-            {selectedPolygon && !isDrawingPolygon && (
+            {selectedPolygon && !isDrawingPolygon && !isBrushingPolygon && (
               <div className="w-full h-full relative pointer-events-none">
                 {/* The renderer clips the shape to the frame, so once part of
                     it lies outside, trace the true outline over the margin to
@@ -1092,16 +1238,20 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                     className="w-full h-full absolute inset-0 pointer-events-none"
                     style={{ overflow: 'visible' }}
                   >
-                    <polygon
-                      points={selectedPolygon.points
-                        .map(p => `${(CANVAS_WIDTH / 2 + p.x) * scale},${(CANVAS_HEIGHT / 2 + p.y) * scale}`)
-                        .join(' ')}
-                      fill="none"
-                      stroke={OVERLAY_ACCENT}
-                      strokeWidth={1.5}
-                      strokeDasharray="6 4"
-                      opacity={0.7}
-                    />
+                    {/* A brush stroke's points are its open centerline. */}
+                    {(() => {
+                      const outline = {
+                        points: selectedPolygon.points
+                          .map(p => `${(CANVAS_WIDTH / 2 + p.x) * scale},${(CANVAS_HEIGHT / 2 + p.y) * scale}`)
+                          .join(' '),
+                        fill: 'none',
+                        stroke: OVERLAY_ACCENT,
+                        strokeWidth: 1.5,
+                        strokeDasharray: '6 4',
+                        opacity: 0.7
+                      };
+                      return selectedPolygon.brush ? <polyline {...outline} /> : <polygon {...outline} />;
+                    })()}
                   </svg>
                 )}
 
@@ -1138,7 +1288,9 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                 {/* Vertex Point Handles. A vertex dragged past the edge of the
                     workspace keeps a handle pinned at the boundary so it can
                     always be grabbed and brought back. */}
-                {selectedPolygon.points.map((pt, i) => {
+                {/* Brush strokes are reshaped through their Brush tab, not
+                    per-sample handles along the centerline. */}
+                {!selectedPolygon.brush && selectedPolygon.points.map((pt, i) => {
                   const vertex = clampHandleToBounds(pt, handleBounds);
                   return (
                     <div

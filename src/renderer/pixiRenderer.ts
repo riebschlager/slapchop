@@ -35,6 +35,7 @@ import {
   resolveSymmetryParams
 } from '../lib/motion';
 import { getVoronoiCells, VoronoiCell } from '../lib/voronoi';
+import { getBrushDrawOnProgress, getBrushPieces, getPiecesBounds, isBrushAnimated, isPolygonShapeRenderable } from '../lib/brushStroke';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage, getLayerSize } from './render2d';
 import type { ThreeSceneRenderer } from './threeRenderer';
 import type { FlythroughRenderer } from './flythroughRenderer';
@@ -68,6 +69,15 @@ function clamp01(v: number): number {
 
 const DEG = Math.PI / 180;
 
+// Draws a polygon's shape rings (its outline, or a brush stroke's convex
+// pieces) as separately triangulated fills, so overlapping pieces union in
+// both masks and colour fills without ever triangulating a self-intersecting
+// outline.
+function fillRings(g: Graphics, rings: PolygonPoint[][], color: number | string): void {
+  g.clear();
+  for (const ring of rings) g.poly(ring, true).fill(color);
+}
+
 // A masked copy of the layer's own sprite, used only in voronoi mode. Mask
 // and sprite live in the same wrapper so displacing the wrapper moves both
 // together (a rigid "shard"), matching the Canvas 2D voronoi path.
@@ -90,6 +100,8 @@ interface SymmetryNode {
 // pooled the same way SymmetryNode pools sprites.
 interface PolygonInstanceNode {
   wrapper: Container;
+  // Brush shapes only: the border drawn as an outset stroke behind the fill.
+  borderG: Graphics;
   tiler: TilingSprite;
   maskG: Graphics;
   fillG: Graphics;
@@ -118,6 +130,7 @@ interface PolygonNode {
   voronoiCells: VoronoiCell[];
   // Change-detection keys so Graphics geometry is only rebuilt when needed.
   pointsRef: PolygonLayer['points'] | null;
+  brushRef: PolygonLayer['brush'] | null;
   fillColor: string | undefined;
   strokeColor: string | undefined;
   strokeWidth: number;
@@ -871,7 +884,7 @@ export class PixiSceneRenderer {
     const container = new Container();
     return {
       container, instances: [], voronoiShards: [], voronoiKey: '', voronoiCells: [],
-      pointsRef: null, fillColor: undefined, strokeColor: undefined, strokeWidth: -1
+      pointsRef: null, brushRef: null, fillColor: undefined, strokeColor: undefined, strokeWidth: -1
     };
   }
 
@@ -881,12 +894,13 @@ export class PixiSceneRenderer {
     // Cover the full canvas; local origin lands on the canvas top-left so the
     // tile transform matches the Canvas 2D pattern space exactly.
     tiler.position.set(-CANVAS_WIDTH / 2, -CANVAS_HEIGHT / 2);
+    const borderG = new Graphics();
     const maskG = new Graphics();
     const fillG = new Graphics();
     const strokeG = new Graphics();
     tiler.mask = maskG;
-    wrapper.addChild(tiler, fillG, maskG, strokeG);
-    return { wrapper, tiler, maskG, fillG, strokeG };
+    wrapper.addChild(borderG, tiler, fillG, maskG, strokeG);
+    return { wrapper, borderG, tiler, maskG, fillG, strokeG };
   }
 
   // ------------------------------------------------------------ symmetry mode
@@ -997,7 +1011,9 @@ export class PixiSceneRenderer {
   // ------------------------------------------------------------- polygon mode
 
   private syncPolygon(node: PolygonNode, polygon: PolygonLayer, t: number) {
-    const visible = !polygon.hidden && polygon.points && polygon.points.length >= 3;
+    // A brush stroke before its draw-on starts has no geometry yet.
+    const visible = !polygon.hidden && !!polygon.points && isPolygonShapeRenderable(polygon)
+      && !(polygon.brush && getBrushDrawOnProgress(polygon.brush, t) <= 0);
     node.container.visible = visible;
     if (!visible) return;
 
@@ -1022,13 +1038,19 @@ export class PixiSceneRenderer {
     // actively animating (Canvas 2D redraws every frame regardless, so this
     // only affects the cached-geometry Pixi path).
     const isAnimatingVertices = !!polygon.vertexNoise && polygon.vertexNoise.type !== 'none';
-    const shapeChanged = isAnimatingVertices || node.pointsRef !== polygon.points;
+    const brush = polygon.brush;
+    const shapeChanged = isAnimatingVertices || node.pointsRef !== polygon.points
+      || node.brushRef !== (brush ?? null) || (!!brush && isBrushAnimated(brush));
     const fillColor = polygon.fillColor || '#6366f1';
+    // Brush pieces are only rebuilt when some Graphics below actually redraws.
+    let shapeCache: PolygonPoint[][] | null = null;
+    const shape = () => (shapeCache ??= brush ? getBrushPieces(points, brush, t) : [points]);
 
     if ((polygon.symmetry ?? 'none') === 'voronoi') {
-      this.syncPolygonVoronoi(node, polygon, points, texture, t, shapeChanged);
+      this.syncPolygonVoronoi(node, polygon, shape, texture, t, shapeChanged);
       while (node.instances.length > 0) node.instances.pop()!.wrapper.destroy({ children: true });
       node.pointsRef = polygon.points;
+      node.brushRef = brush ?? null;
       node.fillColor = fillColor;
       node.strokeColor = polygon.strokeColor;
       node.strokeWidth = polygon.strokeWidth;
@@ -1062,6 +1084,8 @@ export class PixiSceneRenderer {
     const offsetX = applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
     const offsetY = applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
     const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
+    let borderCache: PolygonPoint[][] | null = null;
+    const border = () => (borderCache ??= brush ? getBrushPieces(points, brush, t, polygon.strokeWidth) : []);
 
     for (let i = 0; i < transforms.length; i++) {
       const tr = transforms[i];
@@ -1076,7 +1100,7 @@ export class PixiSceneRenderer {
       inst.wrapper.scale.set((tr.mirrorX ? -1 : 1) * tr.scaleMult, (tr.mirrorY ? -1 : 1) * tr.scaleMult);
 
       if (geometryChanged) {
-        inst.maskG.clear().poly(points, true).fill(0xffffff);
+        fillRings(inst.maskG, shape(), 0xffffff);
       }
 
       if (texture) {
@@ -1090,13 +1114,16 @@ export class PixiSceneRenderer {
         inst.tiler.visible = false;
         inst.fillG.visible = true;
         if (styleChanged) {
-          inst.fillG.clear().poly(points, true).fill(fillColor);
+          fillRings(inst.fillG, shape(), fillColor);
         }
       }
 
       if (strokeChanged) {
         inst.strokeG.clear();
-        if (hasStroke) {
+        inst.borderG.clear();
+        if (hasStroke && brush) {
+          fillRings(inst.borderG, border(), polygon.strokeColor);
+        } else if (hasStroke) {
           inst.strokeG.poly(points, true).stroke({
             width: polygon.strokeWidth,
             color: polygon.strokeColor,
@@ -1107,6 +1134,7 @@ export class PixiSceneRenderer {
     }
 
     node.pointsRef = polygon.points;
+    node.brushRef = brush ?? null;
     node.fillColor = fillColor;
     node.strokeColor = polygon.strokeColor;
     node.strokeWidth = polygon.strokeWidth;
@@ -1143,16 +1171,14 @@ export class PixiSceneRenderer {
   private syncPolygonVoronoi(
     node: PolygonNode,
     polygon: PolygonLayer,
-    points: PolygonPoint[],
+    shape: () => PolygonPoint[][],
     texture: Texture | null,
     t: number,
     shapeChanged: boolean
   ) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of points) {
-      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-    }
+    // Voronoi cells follow the rendered shape's bounds every frame, so the
+    // shape is always resolved here (Canvas 2D does the same).
+    const { minX, minY, maxX, maxY } = getPiecesBounds(shape());
     const params = resolveSymmetryParams(polygon.symmetryParams);
     const key = `${minX}|${minY}|${maxX}|${maxY}|${params.voronoiCells}|${params.voronoiSeed}`;
     let cellsChanged = node.voronoiKey !== key;
@@ -1186,7 +1212,7 @@ export class PixiSceneRenderer {
       const shard = node.voronoiShards[i];
 
       if (shapeNeedsRedraw) {
-        shard.parentMaskG.clear().poly(points, true).fill(0xffffff);
+        fillRings(shard.parentMaskG, shape(), 0xffffff);
       }
       if (cellsChanged) {
         shard.cellMaskG.clear().poly(cell.points, true).fill(0xffffff);

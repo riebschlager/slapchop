@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe('ring document integration', () => {
-  it('saves a self-contained V7 library with all ring settings and restores it', async () => {
+  it('saves a self-contained ring library with all ring settings and restores it', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ blob: async () => new Blob(['source'], { type: 'image/png' }) }));
     vi.stubGlobal('FileReader', class {
       result = 'data:image/png;base64,c291cmNl';
@@ -28,7 +28,7 @@ describe('ring document integration', () => {
     await saveProject();
     const blob = vi.mocked(saveBlob).mock.calls.at(-1)![0];
     const payload = JSON.parse(await blob.text());
-    expect(payload.version).toBe(7);
+    expect(payload.version).toBe(8);
     expect(payload.ringsAssets[0].src).toBeUndefined();
     const id = payload.ringsAssets[0].assetId;
     expect(payload.assets[id].dataUrl).toBe('data:image/png;base64,c291cmNl');

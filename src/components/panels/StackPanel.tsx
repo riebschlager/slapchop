@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Image as ImageIcon, Shapes, PenTool, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle, Grid2X2, Mountain, Sun } from 'lucide-react';
+import { Image as ImageIcon, Shapes, PenTool, Brush, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle, Grid2X2, Mountain, Sun } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
 import { cn } from '../../lib/utils';
 import { openProject, saveProject } from '../../lib/project';
@@ -16,6 +16,7 @@ import TunnelAssetRow from './TunnelAssetRow';
 import Slider from '../controls/Slider';
 import Toggle from '../controls/Toggle';
 import GifVoronoiAssetRow from './GifVoronoiAssetRow';
+import BrushSettingsFields from './inspector/polygon/BrushSettingsFields';
 import { AppMode, Mesh3dPrimitive } from '../../types';
 import { MESH3D_PRIMITIVE_EMOJI } from '../../lib/mesh3dUtils';
 
@@ -80,6 +81,10 @@ export default function StackPanel() {
   const onAddPresetPolygon = useStore(s => s.addPresetPolygon);
   const isDrawingPolygon = useStore(s => s.isDrawingPolygon);
   const onToggleDrawPolygon = useStore(s => s.toggleDrawPolygon);
+  const isBrushingPolygon = useStore(s => s.isBrushingPolygon);
+  const onToggleBrushPolygon = useStore(s => s.toggleBrushPolygon);
+  const brushTool = useStore(s => s.brushTool);
+  const onUpdateBrushTool = useStore(s => s.updateBrushTool);
   const onUploadPolygonTexture = useStore(s => s.uploadPolygonTexture);
   const polygonUnderpainting = useStore(s => s.polygonUnderpainting);
   const onLoadPolygonUnderpainting = useStore(s => s.loadPolygonUnderpainting);
@@ -462,11 +467,13 @@ export default function StackPanel() {
         <>
           {/* Polygon Creation Controls */}
           <div className="p-3 border-b border-ui-border space-y-3 shrink-0">
-            <div>
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 onClick={onToggleDrawPolygon}
+                aria-pressed={isDrawingPolygon}
+                title="Click to place vertices"
                 className={cn(
-                  "w-full flex items-center justify-center gap-2 py-2 rounded-md font-semibold text-xs transition-colors border",
+                  "flex items-center justify-center gap-2 py-2 rounded-md font-semibold text-xs transition-colors border",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel",
                   isDrawingPolygon
                     ? "bg-amber-600 text-white border-amber-500 animate-pulse"
@@ -474,9 +481,40 @@ export default function StackPanel() {
                 )}
               >
                 <PenTool className="w-4 h-4" />
-                {isDrawingPolygon ? "Click Canvas to Draw Points..." : "Draw Custom Polygon"}
+                {isDrawingPolygon ? "Drawing…" : "Pen"}
+              </button>
+              <button
+                onClick={onToggleBrushPolygon}
+                aria-pressed={isBrushingPolygon}
+                title="Paint tapered brush-stroke shapes"
+                className={cn(
+                  "flex items-center justify-center gap-2 py-2 rounded-md font-semibold text-xs transition-colors border",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel",
+                  isBrushingPolygon
+                    ? "bg-amber-600 text-white border-amber-500"
+                    : "bg-ui-accent hover:bg-ui-accent-hover text-ui-accent-contrast border-ui-accent-strong"
+                )}
+              >
+                <Brush className="w-4 h-4" />
+                {isBrushingPolygon ? "Painting…" : "Brush"}
               </button>
             </div>
+
+            {/* Tool settings for the next stroke; a painted stroke is edited
+                afterwards in the Inspector's Brush tab. */}
+            {isBrushingPolygon && (
+              <div className="space-y-3 rounded-md border border-ui-border bg-ui-surface/40 p-2">
+                <BrushSettingsFields value={brushTool} onChange={onUpdateBrushTool} size="sm" />
+                <Slider
+                  size="sm"
+                  label="Smoothing"
+                  display={`${Math.round(brushTool.smoothing * 100)}%`}
+                  value={brushTool.smoothing}
+                  min={0} max={1} step={0.01}
+                  onChange={(smoothing) => onUpdateBrushTool({ smoothing })}
+                />
+              </div>
+            )}
 
             <div>
               <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block mb-1.5">Add Shape Presets</label>
@@ -596,7 +634,7 @@ export default function StackPanel() {
               </DndContext>
               {polygonLayers.length === 0 && (
                 <div className="p-4 text-center text-xs text-ui-text-subtle">
-                  No polygons created. Click "Draw Custom Polygon" or pick a shape preset above!
+                  No polygons created. Draw with the Pen or Brush, or pick a shape preset above!
                 </div>
               )}
             </div>

@@ -4,17 +4,24 @@ import Segmented, { SegmentedOption } from '../../../controls/Segmented';
 import SceneTab from '../SceneTab';
 import SubjectHeader from '../SubjectHeader';
 import TextureTab from '../TextureTab';
+import PolygonBrushTab from './PolygonBrushTab';
 import PolygonMotionTab from './PolygonMotionTab';
 import PolygonPatternTab from './PolygonPatternTab';
 import PolygonStyleTab from './PolygonStyleTab';
 
-type PolygonInspectorTab = 'texture' | 'style' | 'pattern' | 'motion';
+type PolygonInspectorTab = 'brush' | 'texture' | 'style' | 'pattern' | 'motion';
 
 const TAB_OPTIONS: SegmentedOption<PolygonInspectorTab>[] = [
   { value: 'texture', label: 'Texture' },
   { value: 'style', label: 'Style' },
   { value: 'pattern', label: 'Pattern' },
   { value: 'motion', label: 'Motion' }
+];
+
+// Brush-painted shapes lead with their stroke controls.
+const BRUSH_TAB_OPTIONS: SegmentedOption<PolygonInspectorTab>[] = [
+  { value: 'brush', label: 'Brush' },
+  ...TAB_OPTIONS
 ];
 
 export default function PolygonModeInspector() {
@@ -28,6 +35,8 @@ export default function PolygonModeInspector() {
 
   if (!selectedPolygon) return <SceneTab />;
 
+  const brush = selectedPolygon.brush;
+  const activeTab = tab === 'brush' && !brush ? 'texture' : tab;
   const onChange = (updates: Parameters<typeof updatePolygon>[1]) => updatePolygon(selectedPolygon.id, updates);
 
   return (
@@ -45,15 +54,16 @@ export default function PolygonModeInspector() {
       <Segmented
         label="Polygon properties"
         className="mb-3 border-b border-ui-border pb-2"
-        value={tab}
+        value={activeTab}
         onChange={setTab}
-        options={TAB_OPTIONS}
+        options={brush ? BRUSH_TAB_OPTIONS : TAB_OPTIONS}
       />
       <div>
-        {tab === 'texture' && <TextureTab polygon={selectedPolygon} onChange={onChange} />}
-        {tab === 'style' && <PolygonStyleTab polygon={selectedPolygon} onChange={onChange} />}
-        {tab === 'pattern' && <PolygonPatternTab polygon={selectedPolygon} onChange={onChange} />}
-        {tab === 'motion' && <PolygonMotionTab polygon={selectedPolygon} onChange={onChange} />}
+        {activeTab === 'brush' && brush && <PolygonBrushTab brush={brush} onChange={onChange} />}
+        {activeTab === 'texture' && <TextureTab polygon={selectedPolygon} onChange={onChange} />}
+        {activeTab === 'style' && <PolygonStyleTab polygon={selectedPolygon} onChange={onChange} />}
+        {activeTab === 'pattern' && <PolygonPatternTab polygon={selectedPolygon} onChange={onChange} />}
+        {activeTab === 'motion' && <PolygonMotionTab polygon={selectedPolygon} onChange={onChange} />}
       </div>
     </div>
   );

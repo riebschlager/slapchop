@@ -4,7 +4,9 @@ import { create } from 'zustand';
 import { temporal } from 'zundo';
 import {
   AppMode,
+  BrushToolSettings,
   Camera3dConfig,
+  DEFAULT_BRUSH_TOOL,
   DEFAULT_CAMERA3D,
   DEFAULT_FLYTHROUGH,
   DEFAULT_GIF_VORONOI,
@@ -30,6 +32,7 @@ import {
 } from './types';
 import { parseGifFile } from './lib/gifUtils';
 import { createNewPolygonLayer, createPresetPolygonPoints } from './lib/polygonUtils';
+import type { RecordedBrushStroke } from './lib/brushStroke';
 import { createMesh3dLayer, createMesh3dPresetName } from './lib/mesh3dUtils';
 
 export interface DocumentState {
@@ -59,6 +62,8 @@ export interface AppState extends DocumentState {
   selectedMesh3dId: string | null;
   selectedLandscapeSkySourceId: string | null;
   isDrawingPolygon: boolean;
+  isBrushingPolygon: boolean;
+  brushTool: BrushToolSettings;
   polygonUnderpainting: PolygonUnderpainting | null;
 
   setAppMode: (mode: AppMode) => void;
@@ -92,6 +97,9 @@ export interface AppState extends DocumentState {
   movePolygonUp: (id: string) => void;
   movePolygonDown: (id: string) => void;
   toggleDrawPolygon: () => void;
+  toggleBrushPolygon: () => void;
+  updateBrushTool: (updates: Partial<BrushToolSettings>) => void;
+  finishBrushStroke: (stroke: RecordedBrushStroke, seed: number) => void;
   loadPolygonUnderpainting: (file: File) => void;
   setPolygonUnderpainting: (underpainting: PolygonUnderpainting | null) => void;
   updatePolygonUnderpainting: (updates: Partial<Pick<PolygonUnderpainting, 'visible' | 'opacity'>>) => void;
@@ -286,9 +294,11 @@ export const useStore = create<AppState>()(
       selectedMesh3dId: null,
       selectedLandscapeSkySourceId: null,
       isDrawingPolygon: false,
+      isBrushingPolygon: false,
+      brushTool: { ...DEFAULT_BRUSH_TOOL },
       polygonUnderpainting: null,
 
-      setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false }),
+      setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false, isBrushingPolygon: false }),
       setCanvasBg: (color) => set({ canvasBg: color }),
       loadDocument: (doc) => set({
         layers: doc.layers,
@@ -317,6 +327,7 @@ export const useStore = create<AppState>()(
         selectedMesh3dId: null,
         selectedLandscapeSkySourceId: null,
         isDrawingPolygon: false,
+        isBrushingPolygon: false,
         polygonUnderpainting: replaceUnderpainting(get().polygonUnderpainting, null)
       }),
 
@@ -448,7 +459,47 @@ export const useStore = create<AppState>()(
         const i = s.polygonLayers.findIndex(p => p.id === id);
         return i === -1 || i >= s.polygonLayers.length - 1 ? s : { polygonLayers: swap(s.polygonLayers, i, i + 1) };
       }),
-      toggleDrawPolygon: () => set(s => ({ isDrawingPolygon: !s.isDrawingPolygon })),
+      toggleDrawPolygon: () => set(s => ({ isDrawingPolygon: !s.isDrawingPolygon, isBrushingPolygon: false })),
+      toggleBrushPolygon: () => set(s => ({ isBrushingPolygon: !s.isBrushingPolygon, isDrawingPolygon: false })),
+      updateBrushTool: (updates) => set(s => ({ brushTool: { ...s.brushTool, ...updates } })),
+      finishBrushStroke: ({ points, pressures }, seed) => {
+        if (points.length === 0) return;
+        const { brushTool, polygonLayers, selectedPolygonId } = get();
+        const { smoothing, ...shapeSettings } = brushTool;
+        void smoothing; // capture-only; already applied to the recorded points
+        // Painting with the selected shape's texture lets consecutive strokes
+        // share one GIF without re-uploading it for every stroke.
+        const source = polygonLayers.find(p => p.id === selectedPolygonId);
+        const inherited: Partial<PolygonLayer> = source ? {
+          src: source.src,
+          gifData: source.gifData,
+          gifSpeed: source.gifSpeed,
+          textureTiling: source.textureTiling,
+          textureScale: source.textureScale,
+          textureRotation: source.textureRotation,
+          textureOffsetX: source.textureOffsetX,
+          textureOffsetY: source.textureOffsetY,
+          opacity: source.opacity,
+          blendMode: source.blendMode,
+          fillColor: source.fillColor
+        } : { textureScale: 0.5 };
+        const newPoly = createNewPolygonLayer(
+          `Brush Stroke ${polygonLayers.length + 1}`,
+          points,
+          {
+            strokeColor: '#ffffff',
+            ...inherited,
+            brush: {
+              ...shapeSettings,
+              pressures,
+              seed,
+              drawOnDuration: 0,
+              drawOnHold: 0
+            }
+          }
+        );
+        set(s => ({ polygonLayers: [...s.polygonLayers, newPoly], selectedPolygonId: newPoly.id }));
+      },
       loadPolygonUnderpainting: (file) => {
         const previous = get().polygonUnderpainting;
         set({

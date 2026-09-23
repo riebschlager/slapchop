@@ -3,6 +3,7 @@ import { DocumentState, clearHistory, getDocumentSnapshot, useStore } from '../s
 import { saveBlob } from './native';
 import {
   Camera3dConfig,
+  DEFAULT_BRUSH_TOOL,
   DEFAULT_CAMERA3D,
   DEFAULT_FLYTHROUGH,
   DEFAULT_GIF_VORONOI,
@@ -25,6 +26,7 @@ import {
   TunnelConfig
 } from '../types';
 import { parseGifFile } from './gifUtils';
+import { normalizePolygonBrush } from './brushStroke';
 
 // .slapchop project file: the document state as JSON, with every image/GIF
 // embedded as a data URL so a project is a single self-contained file.
@@ -165,7 +167,15 @@ interface ProjectFileV7 extends Omit<ProjectFileV6, 'version'> {
   polygonUnderpainting?: SerializedPolygonUnderpainting;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7;
+// V8 adds brush-painted Tiled GIF shapes (`PolygonLayer.brush`). A brush
+// polygon's `points` are an open centerline, which a V7 reader would fill as a
+// closed outline, so older builds must refuse the file rather than misrender
+// it. The payload shape is otherwise identical to V7.
+interface ProjectFileV8 extends Omit<ProjectFileV7, 'version'> {
+  version: 8;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -279,9 +289,9 @@ export async function saveProject(): Promise<void> {
     polygonUnderpainting = { ...rest, assetId: await assetIdFor(src, underpainting.name) };
   }
 
-  const payload: ProjectFileV7 = {
+  const payload: ProjectFileV8 = {
     app: 'slapchop',
-    version: 7,
+    version: 8,
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
     masterFx: doc.masterFx,
@@ -310,7 +320,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7].includes(payload.version)) {
+  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7, 8].includes(payload.version)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -347,7 +357,9 @@ export function restoreProjectDocument(
   const polygonLayers: PolygonLayer[] = payload.polygonLayers.map((sp) => {
     const { assetId, ...rest } = sp;
     const asset = assetId ? materialized.get(assetId) : undefined;
-    return { ...rest, src: asset?.src, gifData: asset?.gifData };
+    const polygon: PolygonLayer = { ...rest, src: asset?.src, gifData: asset?.gifData };
+    if (polygon.brush) polygon.brush = normalizePolygonBrush(polygon.brush, polygon.points.length, DEFAULT_BRUSH_TOOL);
+    return polygon;
   });
 
   // V1 files predate 3D Mesh Mode entirely: no mesh3dLayers key, default camera.
@@ -428,7 +440,7 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_LANDSCAPE, ...payload.landscape }
     : { ...DEFAULT_LANDSCAPE };
 
-  const ringsAssets: RingsAsset[] = payload.version === 7 ? payload.ringsAssets.map(source => {
+  const ringsAssets: RingsAsset[] = (payload.version === 7 || payload.version === 8) ? payload.ringsAssets.map(source => {
     const { assetId, ...rest } = source;
     const asset = materialized.get(assetId);
     if (!asset) throw new Error(`GIF Rings source “${source.name}” is missing.`);
@@ -437,7 +449,7 @@ export function restoreProjectDocument(
 
   return {
     ringsAssets,
-    rings: normalizeRings(payload.version === 7 ? payload.rings : undefined),
+    rings: normalizeRings(payload.version === 7 || payload.version === 8 ? payload.rings : undefined),
     layers,
     polygonLayers,
     mesh3dLayers,
@@ -460,7 +472,7 @@ export function restorePolygonUnderpainting(
   payload: ProjectFile,
   materialized: ReadonlyMap<string, MaterializedAsset> = new Map()
 ): PolygonUnderpainting | null {
-  if (payload.version !== 7 || !payload.polygonUnderpainting) return null;
+  if ((payload.version !== 7 && payload.version !== 8) || !payload.polygonUnderpainting) return null;
   const { assetId, ...rest } = payload.polygonUnderpainting;
   const asset = materialized.get(assetId);
   if (!asset) throw new Error(`Tiled GIF underpainting “${rest.name}” is missing from the project file.`);
