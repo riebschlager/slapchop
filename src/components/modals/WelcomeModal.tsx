@@ -94,6 +94,17 @@ const MODES = [
     ),
   },
   {
+    name: 'GIF Grid',
+    description: 'Stretch a folder of GIFs with independent row and column waves.',
+    art: (
+      <svg viewBox="0 0 48 48" fill="none" className="w-8 h-8" aria-hidden="true">
+        <rect x="4" y="4" width="40" height="40" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M14 4V44 M34 4V44 M4 16H44 M4 35H44" stroke="currentColor" strokeWidth="1.5" />
+        <rect x="14" y="16" width="20" height="19" fill="currentColor" opacity="0.3" />
+      </svg>
+    ),
+  },
+  {
     name: 'GIF Voronoi',
     description: 'Organic cell fields populated from your GIF library with animated drift.',
     art: (
@@ -207,7 +218,7 @@ function StepIntro() {
       </div>
 
       <div className="grid grid-cols-3 gap-3 w-full max-w-xs text-xs text-ui-text-subtle">
-        {['8 creative modes', 'Motion on everything', 'Frame-exact export'].map((tag) => (
+        {['9 creative modes', 'Motion on everything', 'Frame-exact export'].map((tag) => (
           <div key={tag} className="bg-ui-surface border border-ui-border rounded-lg px-2 py-2 text-center leading-tight">
             {tag}
           </div>

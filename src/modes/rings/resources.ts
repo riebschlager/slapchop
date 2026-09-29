@@ -8,7 +8,7 @@ export function createRingsResourceTracker() {
     remember(assets: RingsAsset[]) { assets.forEach(asset => tracked.add(asset)); },
     sweep(documents: Partial<DocumentState>[]) {
       const retained = documents.flatMap(doc => [
-        ...(doc.ringsAssets ?? []), ...(doc.layers ?? []), ...(doc.polygonLayers ?? []),
+        ...(doc.ringsAssets ?? []), ...(doc.gridAssets ?? []), ...(doc.layers ?? []), ...(doc.polygonLayers ?? []),
         ...(doc.mesh3dLayers ?? []), ...(doc.flythroughAssets ?? []), ...(doc.tunnelAssets ?? []),
         ...(doc.gifVoronoiAssets ?? []), ...(doc.landscapeTerrainAssets ?? []),
         ...(doc.landscapeSkySources ?? []).flatMap(source => source.assets)

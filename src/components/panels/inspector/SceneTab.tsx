@@ -1,3 +1,4 @@
+import ControlSection from '../../controls/ControlSection';
 import { useStore } from '../../../store';
 import { ProjectionMode } from '../../../types';
 import Select, { SelectOption } from '../../controls/Select';
@@ -25,23 +26,23 @@ export default function SceneTab() {
 
   return (
     <div className="flex flex-col">
-      <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-        <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider">Canvas Background</label>
-        <input
-          type="color"
-          value={canvasBg}
-          onChange={(e) => onUpdateCanvasBg(e.target.value)}
-          className="w-8 h-6 rounded cursor-pointer border-0 bg-ui-surface p-0"
-        />
-      </div>
+      <ControlSection sectionKey="canvas-background" title="Canvas Background">
+        <label className="flex items-center justify-between text-[11px] text-ui-text-muted">Color
+          <input
+            type="color"
+            value={canvasBg}
+            onChange={(e) => onUpdateCanvasBg(e.target.value)}
+            className="w-8 h-6 rounded cursor-pointer border-0 bg-ui-surface p-0"
+          />
+        </label>
+      </ControlSection>
 
       {/* Camera3dConfig is document-wide (shared by every mesh), not a
           per-mesh field, so it lives here alongside Canvas Background and
           Master FX rather than in one of the per-mesh 3D inspector tabs —
           it stays reachable via the Scene row even with nothing selected. */}
       {appMode === '3d' && (
-        <div className="px-3 pb-3 space-y-3 border-b border-ui-border">
-          <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider block">Camera</label>
+        <ControlSection sectionKey="Camera" title={<span>Camera</span>}>
           <Select
             label="Projection"
             value={camera3d.projection}
@@ -67,7 +68,7 @@ export default function SceneTab() {
             <MotionControl label="Pitch Wobble" config={camera3d.motionPitch} onChange={c => onUpdateCamera3d({ motionPitch: c })} maxAmplitude={45} stepAmplitude={1} />
             <MotionControl label="Yaw Wobble" config={camera3d.motionYaw} onChange={c => onUpdateCamera3d({ motionYaw: c })} maxAmplitude={180} stepAmplitude={1} />
           </div>
-        </div>
+        </ControlSection>
       )}
 
       <MasterFxPanel />

@@ -1,3 +1,5 @@
+import ControlSection, { ControlSections, SectionActions } from '../controls/ControlSection';
+import GridInspector from '../../modes/grid/GridInspector';
 import RingsInspector from '../../modes/rings/RingsInspector';
 import { useState } from 'react';
 import { Download, Video, Loader2, Radio, PanelRightOpen, Github } from 'lucide-react';
@@ -30,7 +32,14 @@ const INSPECTOR_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:inspector', defau
 // their inspector composition in separate components below this shell.
 type Mesh3dTab = 'transform' | 'geometry' | 'texture' | 'deform' | 'symmetry';
 
-export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi: ExportApi; liveOutputApi: LiveOutputApi }) {
+type InspectorPanelProps = { exportApi: ExportApi; liveOutputApi: LiveOutputApi };
+
+export default function InspectorPanel(props: InspectorPanelProps) {
+  const appMode = useStore(s => s.appMode);
+  return <ControlSections scope={appMode}><InspectorPanelContent {...props} /></ControlSections>;
+}
+
+function InspectorPanelContent({ exportApi, liveOutputApi }: InspectorPanelProps) {
   const appMode = useStore(s => s.appMode);
   const mesh3dLayers = useStore(s => s.mesh3dLayers);
   const selectedMesh3dId = useStore(s => s.selectedMesh3dId);
@@ -74,6 +83,7 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
   return (
     <div className="relative bg-ui-panel border-l border-ui-border flex flex-col h-screen text-ui-text shrink-0" style={{ width }}>
       <ResizeHandle side="right" panelLabel="Inspector panel" onResizeStart={startResize} onCollapse={toggleCollapsed} />
+      <SectionActions />
       <div className="flex-1 overflow-y-auto min-h-0">
         {appMode === 'symmetry' ? (
           <SymmetryModeInspector />
@@ -81,6 +91,8 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
           <PolygonModeInspector />
         ) : appMode === 'flythrough' ? (
           <FlythroughInspector />
+        ) : appMode === 'gif-grid' ? (
+          <GridInspector />
         ) : appMode === 'rings' ? (
           <RingsInspector />
         ) : appMode === 'tunnel' ? (
@@ -111,13 +123,13 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
                 options={mesh3dTabOptions}
               />
 
-              <div>
+              <ControlSection sectionKey={`mesh-${mesh3dTab}`} title={mesh3dTab}>
                 {mesh3dTab === 'transform' && <Transform3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} />}
                 {mesh3dTab === 'geometry' && <Geometry3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} />}
                 {mesh3dTab === 'texture' && <Texture3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} onUploadTexture={onUploadMesh3dTexture} />}
                 {mesh3dTab === 'deform' && <Deform3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} />}
                 {mesh3dTab === 'symmetry' && <Symmetry3dTab mesh={selectedMesh} onChange={(u) => onUpdateMesh3d(selectedMesh.id, u)} />}
-              </div>
+              </ControlSection>
             </div>
           ) : (
             <SceneTab />
@@ -126,8 +138,7 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
       </div>
 
       {/* Output dock: export and live-output triggers, always reachable regardless of selection. */}
-      <div className="p-3 border-t border-ui-border space-y-2 shrink-0">
-        <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block mb-1">Output</label>
+      <ControlSection sectionKey="output" title="Output" className="border-t shrink-0" contentClassName="space-y-2">
         <button
           onClick={() => setShowLiveOutputModal(true)}
           className={cn(
@@ -168,7 +179,7 @@ export default function InspectorPanel({ exportApi, liveOutputApi }: { exportApi
           <Github className="w-3.5 h-3.5" />
           View Source
         </a>
-      </div>
+      </ControlSection>
 
       {showLiveOutputModal && <LiveOutputModal api={liveOutputApi} />}
       {exportApi.showExportModal && <ExportModal api={exportApi} />}

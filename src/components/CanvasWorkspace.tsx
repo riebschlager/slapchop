@@ -93,6 +93,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   const mesh3dLayers = useStore(s => s.mesh3dLayers);
   const flythroughAssets = useStore(s => s.flythroughAssets);
   const tunnelAssets = useStore(s => s.tunnelAssets);
+  const grid = useStore(s => s.grid);
+  const gridAssets = useStore(s => s.gridAssets);
   const rings = useStore(s => s.rings);
   const ringsAssets = useStore(s => s.ringsAssets);
   const tunnel = useStore(s => s.tunnel);
@@ -222,6 +224,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           if (files.length === 0) return;
           if (useStore.getState().appMode === 'flythrough') {
             await useStore.getState().replaceFlythroughAssets(files);
+            return;
+          }
+          if (useStore.getState().appMode === 'gif-grid') {
+            await useStore.getState().addGridAssets(files);
             return;
           }
           if (useStore.getState().appMode === 'rings') {
@@ -960,6 +966,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
       if (gifs.length > 0) void onReplaceFlythroughAssets(gifs);
       return;
     }
+    if (appMode === 'gif-grid') {
+      if (files.length > 0) void useStore.getState().addGridAssets(files).catch(error => window.alert(error instanceof Error ? error.message : 'Could not load GIFs.'));
+      return;
+    }
     if (appMode === 'rings') {
       if (files.length > 0) void useStore.getState().addRingsAssets(files);
       return;
@@ -1017,7 +1027,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                   ? '3D Space'
                   : appMode === 'flythrough'
                     ? 'GIF Flythrough'
-                    : appMode === 'rings'
+                    : appMode === 'gif-grid' ? 'GIF Grid' : appMode === 'rings'
                       ? 'GIF Rings'
                     : appMode === 'tunnel'
                       ? 'GIF Tunnel'
@@ -1098,7 +1108,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         style={{
           width: CANVAS_WIDTH * scale,
           height: CANVAS_HEIGHT * scale,
-          backgroundColor: appMode === 'rings'
+          backgroundColor: appMode === 'gif-grid' ? grid.backgroundColor : appMode === 'rings'
             ? rings.backgroundColor
             : appMode === 'tunnel'
             ? tunnel.voidColor
@@ -1124,6 +1134,9 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           </div>
         )}
 
+        {appMode === 'gif-grid' && gridAssets.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center text-xs text-ui-text-subtle">Choose a GIF folder in the Stack<br />to stretch it into motion</div>
+        )}
         {appMode === 'rings' && ringsAssets.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-ui-text-subtle">Choose a GIF folder in the Stack to start your ring flight</div>
         )}

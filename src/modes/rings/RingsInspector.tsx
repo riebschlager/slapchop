@@ -1,3 +1,4 @@
+import ControlSection from '../../components/controls/ControlSection';
 import { useStore } from '../../store';
 import Slider from '../../components/controls/Slider';
 import Toggle from '../../components/controls/Toggle';
@@ -33,14 +34,13 @@ export default function RingsInspector() {
       <h2 className="text-xs font-bold uppercase tracking-[0.16em] text-ui-text">Ring Flight</h2>
       <p className="mt-1 text-[10px] text-ui-text-subtle">One GIF per ring · an endless open corridor</p>
     </div>
-    {sections.map(section => <section key={section.title} className="space-y-3 border-b border-ui-border p-3">
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">{section.title}</h3>
+    {sections.map(section => <ControlSection sectionKey={section.title} title={<span>{section.title}</span>} key={section.title}>
       {section.controls.map(([key, label, min, max, step]) => <Slider key={key} size="sm" label={label}
         value={config[key]} min={min} max={max} step={step}
         scale={key === 'gifSpeed' ? 'log' : 'linear'}
         onChange={value => update({ [key]: value })} />)}
-    </section>)}
-    <section className="space-y-3 border-b border-ui-border p-3">
+    </ControlSection>)}
+    <ControlSection sectionKey="assignment" title="Orientation & assignment">
       <div className="flex items-center justify-between text-[11px] text-ui-text-muted">
         Radial GIF orientation
         <Toggle checked={config.radialOrientation} onChange={radialOrientation => update({ radialOrientation })} title="Orient GIFs around the ring" />
@@ -51,14 +51,13 @@ export default function RingsInspector() {
       </div>
       {config.shuffle && <button type="button" onClick={reseed} className="rounded border border-ui-border px-2 py-1 text-[10px] text-ui-text-muted hover:text-ui-accent focus-visible:ring-2 focus-visible:ring-ui-accent">Reseed sequence</button>}
       <p className="text-[10px] text-ui-text-subtle">With shuffle off, rings cycle through your library in order. Copies within a ring play in sync.</p>
-    </section>
-    <section className="space-y-3 border-b border-ui-border p-3">
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">Void & depth</h3>
+    </ControlSection>
+    <ControlSection sectionKey="Void & depth" title={<span>Void & depth</span>}>
       <Slider size="sm" label="Depth Fog" value={config.fog} display={config.fog.toFixed(5)} min={0} max={0.001} step={0.00001} onChange={fog => update({ fog })} />
       <label className="flex items-center justify-between text-[11px] text-ui-text-muted">Void Color
         <input type="color" value={config.backgroundColor} onChange={e => update({ backgroundColor: e.target.value })} className="h-7 w-12 cursor-pointer rounded border border-ui-border bg-ui-canvas" />
       </label>
-    </section>
+    </ControlSection>
     <MasterFxPanel />
   </div>;
 }

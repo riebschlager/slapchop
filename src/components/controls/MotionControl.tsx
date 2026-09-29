@@ -1,3 +1,4 @@
+import ControlSection from './ControlSection';
 import { useId } from 'react';
 import { formatRate } from '../../lib/sliderScale';
 import { MotionConfig, MotionType } from '../../types';
@@ -7,11 +8,10 @@ export default function MotionControl({ label, config, onChange, maxAmplitude = 
   const typeId = useId();
   const isEnabled = config && config.type !== 'none';
   return (
-    <div className="mb-2 border border-ui-border p-2 rounded bg-ui-surface/40">
-      <div className="flex items-center justify-between">
-        <label htmlFor={typeId} className="text-[11px] font-semibold text-ui-text">{label}</label>
+    <ControlSection sectionKey={`motion-${label}`} title={label} className="mb-2 rounded border border-ui-border bg-ui-surface/40" contentClassName={isEnabled ? "px-2 pb-2" : "hidden"} actions={
         <select
           id={typeId}
+          aria-label={`${label} motion type`}
           value={config?.type || 'none'}
           onChange={(e) => {
              const type = e.target.value as MotionType;
@@ -27,7 +27,7 @@ export default function MotionControl({ label, config, onChange, maxAmplitude = 
           <option value="sine">Sine</option>
           <option value="noise">Noise</option>
         </select>
-      </div>
+      }>
       {isEnabled && (
         <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-ui-border/60">
            <Slider
@@ -57,6 +57,6 @@ export default function MotionControl({ label, config, onChange, maxAmplitude = 
            />
         </div>
       )}
-    </div>
+    </ControlSection>
   );
 }

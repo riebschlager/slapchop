@@ -1,3 +1,5 @@
+import { loadGridAssets } from './modes/grid/assets';
+import { DEFAULT_GRID, normalizeGrid, GridAsset, GridConfig } from './modes/grid/model';
 import { createRingsResourceTracker } from './modes/rings/resources';
 import { DEFAULT_RINGS, normalizeRings, RingsAsset, RingsConfig } from './modes/rings/model';
 import { create } from 'zustand';
@@ -43,6 +45,8 @@ export interface DocumentState {
   camera3d: Camera3dConfig;
   flythroughAssets: FlythroughAsset[];
   flythrough: FlythroughConfig;
+  gridAssets: GridAsset[];
+  grid: GridConfig;
   ringsAssets: RingsAsset[];
   rings: RingsConfig;
   tunnelAssets: TunnelAsset[];
@@ -128,6 +132,13 @@ export interface AppState extends DocumentState {
   clearFlythroughAssets: () => void;
   updateFlythrough: (updates: Partial<FlythroughConfig>) => void;
   reseedFlythrough: () => void;
+
+  replaceGridAssets: (files: File[]) => Promise<void>;
+  addGridAssets: (files: File[]) => Promise<void>;
+  removeGridAsset: (id: string) => void;
+  clearGridAssets: () => void;
+  reorderGridAssets: (activeId: string, overId: string) => void;
+  updateGrid: (updates: Partial<GridConfig>) => void;
 
   // GIF rings library and procedural scene
   replaceRingsAssets: (files: File[]) => Promise<void>;
@@ -314,6 +325,8 @@ export const useStore = create<AppState>()(
       camera3d: { ...DEFAULT_CAMERA3D },
       flythroughAssets: [],
       flythrough: { ...DEFAULT_FLYTHROUGH },
+      gridAssets: [],
+      grid: normalizeGrid(DEFAULT_GRID),
       ringsAssets: [],
       rings: { ...DEFAULT_RINGS },
       tunnelAssets: [],
@@ -345,6 +358,8 @@ export const useStore = create<AppState>()(
         camera3d: doc.camera3d ? { ...DEFAULT_CAMERA3D, ...doc.camera3d } : { ...DEFAULT_CAMERA3D },
         flythroughAssets: doc.flythroughAssets ?? [],
         flythrough: doc.flythrough ? { ...DEFAULT_FLYTHROUGH, ...doc.flythrough } : { ...DEFAULT_FLYTHROUGH },
+        gridAssets: doc.gridAssets ?? [],
+        grid: normalizeGrid(doc.grid),
         ringsAssets: doc.ringsAssets ?? [],
         rings: normalizeRings(doc.rings),
         tunnelAssets: doc.tunnelAssets ?? [],
@@ -666,6 +681,16 @@ export const useStore = create<AppState>()(
         flythrough: { ...s.flythrough, seed: (s.flythrough.seed + 1) % 100000 }
       })),
 
+      replaceGridAssets: async files => set({ gridAssets: await loadGridAssets(files) }),
+      addGridAssets: async files => {
+        const assets = await loadGridAssets(files);
+        set(s => ({ gridAssets: [...s.gridAssets, ...assets] }));
+      },
+      removeGridAsset: id => set(s => ({ gridAssets: s.gridAssets.filter(asset => asset.id !== id) })),
+      clearGridAssets: () => set({ gridAssets: [] }),
+      reorderGridAssets: (activeId, overId) => set(s => ({ gridAssets: reorder(s.gridAssets, activeId, overId) })),
+      updateGrid: updates => set(s => ({ grid: normalizeGrid({ ...s.grid, ...updates }) })),
+
       replaceRingsAssets: async (files) => set({ ringsAssets: await imageAssetsFromFiles(files) }),
       addRingsAssets: async (files) => {
         const assets = await imageAssetsFromFiles(files);
@@ -777,6 +802,8 @@ export const useStore = create<AppState>()(
         camera3d: s.camera3d,
         flythroughAssets: s.flythroughAssets,
         flythrough: s.flythrough,
+        gridAssets: s.gridAssets,
+        grid: s.grid,
         ringsAssets: s.ringsAssets,
         rings: s.rings,
         tunnelAssets: s.tunnelAssets,
@@ -793,6 +820,7 @@ export const useStore = create<AppState>()(
         a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.mesh3dLayers === b.mesh3dLayers
         && a.camera3d === b.camera3d && a.flythroughAssets === b.flythroughAssets
         && a.flythrough === b.flythrough && a.tunnelAssets === b.tunnelAssets
+        && a.grid === b.grid && a.gridAssets === b.gridAssets
         && a.rings === b.rings && a.ringsAssets === b.ringsAssets
         && a.tunnel === b.tunnel && a.gifVoronoiAssets === b.gifVoronoiAssets
         && a.gifVoronoi === b.gifVoronoi && a.landscapeTerrainAssets === b.landscapeTerrainAssets
@@ -815,8 +843,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx } = useStore.getState();
-  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx };
+  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx } = useStore.getState();
+  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();
@@ -844,7 +872,9 @@ function scheduleRingsResourceSweep() {
   });
 }
 const stopRingsTracking = useStore.subscribe((state, previous) => {
-  if (state.ringsAssets === previous.ringsAssets) return;
+  if (state.ringsAssets === previous.ringsAssets && state.gridAssets === previous.gridAssets) return;
+  ringsResources.remember(previous.gridAssets);
+  ringsResources.remember(state.gridAssets);
   ringsResources.remember(previous.ringsAssets);
   ringsResources.remember(state.ringsAssets);
   scheduleRingsResourceSweep();

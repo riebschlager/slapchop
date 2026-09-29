@@ -1,3 +1,4 @@
+import ControlSection from '../../../controls/ControlSection';
 import { useState } from 'react';
 import { useStore } from '../../../../store';
 import Segmented, { SegmentedOption } from '../../../controls/Segmented';
@@ -58,13 +59,13 @@ export default function PolygonModeInspector() {
         onChange={setTab}
         options={brush ? BRUSH_TAB_OPTIONS : TAB_OPTIONS}
       />
-      <div>
+      <ControlSection sectionKey={`polygon-${activeTab}`} title={activeTab}>
         {activeTab === 'brush' && brush && <PolygonBrushTab brush={brush} onChange={onChange} />}
         {activeTab === 'texture' && <TextureTab polygon={selectedPolygon} onChange={onChange} />}
         {activeTab === 'style' && <PolygonStyleTab polygon={selectedPolygon} onChange={onChange} />}
         {activeTab === 'pattern' && <PolygonPatternTab polygon={selectedPolygon} onChange={onChange} />}
         {activeTab === 'motion' && <PolygonMotionTab polygon={selectedPolygon} onChange={onChange} />}
-      </div>
+      </ControlSection>
     </div>
   );
 }

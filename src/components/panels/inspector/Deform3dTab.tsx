@@ -1,3 +1,4 @@
+import ControlSection from '../../controls/ControlSection';
 import { ReactNode } from 'react';
 import {
   DEFAULT_NOISE_DEFORMER,
@@ -96,12 +97,8 @@ function DeformerSection({ title, enabled, onToggle, children }: {
   children: ReactNode;
 }) {
   return (
-    <div className="border border-ui-border rounded bg-ui-surface p-2">
-      <div className="flex items-center justify-between">
-        <label className="text-[11px] font-semibold text-ui-text">{title}</label>
-        <Toggle checked={enabled} onChange={onToggle} title={`${title} enabled`} />
-      </div>
+    <ControlSection sectionKey={`deformer-${title}`} title={title} actions={<Toggle checked={enabled} onChange={onToggle} title={`${title} enabled`} />} className="rounded border border-ui-border bg-ui-surface">
       {enabled && <div className="mt-2 pt-2 border-t border-ui-border/50 space-y-2">{children}</div>}
-    </div>
+    </ControlSection>
   );
 }

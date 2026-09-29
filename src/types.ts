@@ -1,4 +1,4 @@
-export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough' | 'tunnel' | 'gif-voronoi' | 'landscape' | 'rings';
+export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough' | 'tunnel' | 'gif-voronoi' | 'landscape' | 'rings' | 'gif-grid';
 
 export interface PolygonPoint {
   x: number;

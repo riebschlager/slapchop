@@ -1,3 +1,4 @@
+import ControlSection from '../../controls/ControlSection';
 import TextureTilingControl from '../../controls/TextureTilingControl';
 import { Camera, Dices, Grid3X3, Image as ImageIcon, Mountain, Play, Sun, Waves } from 'lucide-react';
 import { formatRate } from '../../../lib/sliderScale';
@@ -9,10 +10,10 @@ import MasterFxPanel from '../MasterFxPanel';
 
 function SectionTitle({ icon: Icon, children }: { icon: typeof Mountain; children: string }) {
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+    <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
       <Icon className="size-3" />
       {children}
-    </div>
+    </span>
   );
 }
 
@@ -43,8 +44,7 @@ export default function LandscapeInspector() {
         </div>
       </div>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Grid3X3}>Terrain Mesh</SectionTitle>
+      <ControlSection sectionKey="Terrain Mesh" title={<SectionTitle icon={Grid3X3}>Terrain Mesh</SectionTitle>}>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Columns" display={Math.round(config.meshColumns)} value={config.meshColumns} min={4} max={28} step={1} onChange={meshColumns => update({ meshColumns })} />
           <Slider size="sm" label="Depth Rows" display={Math.round(config.meshRows)} value={config.meshRows} min={8} max={56} step={1} onChange={meshRows => update({ meshRows })} />
@@ -69,10 +69,9 @@ export default function LandscapeInspector() {
             <Toggle checked={config.wireframe} onChange={wireframe => update({ wireframe })} title="Toggle wire grid" />
           </div>
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={ImageIcon}>Terrain Mapping</SectionTitle>
+      <ControlSection sectionKey="Terrain Mapping" title={<SectionTitle icon={ImageIcon}>Terrain Mapping</SectionTitle>}>
         <TextureTilingControl allowClamp value={config.terrainTextureTiling ?? 'clamp'} onChange={terrainTextureTiling => update({ terrainTextureTiling })} />
         <Slider label="Texture Rotation" display={`${Math.round(config.terrainTextureRotation ?? 0)}°`} value={config.terrainTextureRotation ?? 0} min={-180} max={180} step={1} onChange={terrainTextureRotation => update({ terrainTextureRotation })} />
         <Slider label="Tile Crop" display={`${config.terrainTextureScale.toFixed(2)}×`} value={config.terrainTextureScale} min={0.5} max={3} step={0.01} onChange={terrainTextureScale => update({ terrainTextureScale })} />
@@ -85,10 +84,9 @@ export default function LandscapeInspector() {
           <div className="text-[11px] font-semibold text-ui-text">Seeded Shuffle</div>
           <Toggle checked={config.terrainShuffle} onChange={terrainShuffle => update({ terrainShuffle })} title="Toggle terrain source shuffle" />
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Camera}>Flight Camera</SectionTitle>
+      <ControlSection sectionKey="Flight Camera" title={<SectionTitle icon={Camera}>Flight Camera</SectionTitle>}>
         <Slider label="Flight Speed" display={Math.round(config.flightSpeed)} value={config.flightSpeed} min={0} max={2600} step={10} scale="log" minPositive={1} onChange={flightSpeed => update({ flightSpeed })} />
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Height" display={Math.round(config.cameraHeight)} value={config.cameraHeight} min={120} max={3200} step={20} onChange={cameraHeight => update({ cameraHeight })} />
@@ -107,10 +105,9 @@ export default function LandscapeInspector() {
           <label className="text-[10px] text-ui-text-muted"><span className="mb-1 block">Fog</span><input type="color" value={config.fogColor} onChange={event => update({ fogColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-ui-border bg-ui-canvas p-0.5" /></label>
           <Slider size="sm" label="Density" display={config.fogDensity.toFixed(5)} value={config.fogDensity} min={0} max={0.0006} step={0.00001} onChange={fogDensity => update({ fogDensity })} />
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Sun}>Concentric Sky</SectionTitle>
+      <ControlSection sectionKey="Concentric Sky" title={<SectionTitle icon={Sun}>Concentric Sky</SectionTitle>}>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Sun X" display={Math.round(config.skyCenterX)} value={config.skyCenterX} min={-540} max={540} step={5} onChange={skyCenterX => update({ skyCenterX })} />
           <Slider size="sm" label="Sun Y" display={Math.round(config.skyCenterY)} value={config.skyCenterY} min={-960} max={960} step={5} onChange={skyCenterY => update({ skyCenterY })} />
@@ -124,11 +121,10 @@ export default function LandscapeInspector() {
           <MotionControl label="Ring Breathing" config={config.motionSkyRingWidth} onChange={motionSkyRingWidth => update({ motionSkyRingWidth })} maxAmplitude={210} stepAmplitude={5} />
         </div>
         <label className="text-[10px] text-ui-text-muted"><span className="mb-1 block">Sky Ground</span><input type="color" value={config.skyBackgroundColor} onChange={event => update({ skyBackgroundColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-ui-border bg-ui-canvas p-0.5" /></label>
-      </section>
+      </ControlSection>
 
       {selectedSkySource && (
-        <section className="space-y-3 border-b border-ui-border bg-ui-surface p-3">
-          <SectionTitle icon={Waves}>Selected Sky Folder</SectionTitle>
+        <ControlSection sectionKey="Selected Sky Folder" title={<SectionTitle icon={Waves}>Selected Sky Folder</SectionTitle>}>
           <div className="text-[11px] font-semibold text-ui-text">{selectedSkySource.name}</div>
           <div className="text-[9px] uppercase tracking-wider text-ui-text-subtle">{selectedSkySource.assets.length} GIFs · one tiled GIF per assigned ring</div>
           <TextureTilingControl value={selectedSkySource.textureTiling} onChange={textureTiling => updateSkySource(selectedSkySource.id, { textureTiling })} />
@@ -145,7 +141,7 @@ export default function LandscapeInspector() {
             <MotionControl label="Tile Drift Y" config={selectedSkySource.motionTextureOffsetY} onChange={motionTextureOffsetY => updateSkySource(selectedSkySource.id, { motionTextureOffsetY })} maxAmplitude={2} stepAmplitude={0.05} />
             <MotionControl label="Tile Spin" config={selectedSkySource.motionTextureRotation} onChange={motionTextureRotation => updateSkySource(selectedSkySource.id, { motionTextureRotation })} maxAmplitude={180} stepAmplitude={1} />
           </div>
-        </section>
+        </ControlSection>
       )}
 
       <div className="px-3 pt-3 text-[9px] uppercase tracking-[0.18em] text-ui-text-subtle"><Play className="mr-1 inline size-2.5" />Frame-exact flyover · folder-mapped horizon</div>

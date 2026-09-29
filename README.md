@@ -26,7 +26,7 @@ nothing; the only network requests it makes are for its own code.
 
 | Capability | Browser edition | Desktop app |
 | --- | --- | --- |
-| All eight creative modes | Yes | Yes |
+| All nine creative modes | Yes | Yes |
 | Rendering | WebGPU, falling back to WebGL and Canvas 2D | WebGL (what WKWebView supports reliably) |
 | Image and GIF import | File picker and drag-and-drop | Native file dialogs |
 | Folder libraries | Directory picker; current desktop browsers only | Native folder dialogs |
@@ -121,6 +121,14 @@ for the product decision and incremental architecture direction.
   tunnel with an ordered or seeded library of GIFs and static images. Configure
   ring detail, pane occupancy, palette/transparent gaps, UV crop, camera,
   synchronized or phase-shifted playback, fog, twist, and path modulation.
+- **GIF Grid** — stretch a folder of animated GIFs across an elastic grid. Set
+  rows, columns, gutters, and margins; animate row heights and column widths
+  independently with wave strength, speed, frequency, phase, direction, and a
+  secondary harmonic. Adjust individual row/column base sizes, GIF playback,
+  per-cell playback phase, library order, and seeded shuffle. Images stretch
+  to fill cells without cropping. Folder selection replaces the library;
+  Add GIF files appends to it. Animated GIFs are required. All assets are
+  embedded in projects, with identical layout semantics in GPU and Canvas 2D.
 - **GIF Voronoi** — divide the flat output stage into a seeded organic cell
   field and populate it from a sortable folder library of GIFs. Configure cell
   density, irregularity, animated point drift, occupancy,
@@ -151,6 +159,13 @@ it, as is the red/green/blue X/Y/Z axis convention in the 3D gizmo. See
 
 ## Inspector controls
 
+Control groups have clickable, keyboard-accessible headers to fold or unfold
+settings. **Expand all** and **Collapse all** stay at the top of each toolbar;
+the Inspector actions include nested motion controls, Master FX modules, and
+Output. Groups can stay open independently, and each mode remembers its layout
+while you switch selections or tabs during the session. Folding controls does
+not disable effects, change the document, or add an undo step.
+
 Slider readouts can be clicked to enter an exact numeric value. Rate controls
 such as motion, GIF playback, deformation, and animated effects use a
 slow-focused logarithmic track with a distinct zero stop and values down to
@@ -164,9 +179,9 @@ Scale and Voronoi Cover Zoom can go below 1 to reveal multiple tiles.
 Texture settings are saved in `.slapchop` projects; older projects keep their
 existing mapping defaults.
 
-Projects now save as format version 8, which adds brush-stroke shapes. Older
-projects still open; builds from before brush strokes will refuse a version 8
-file rather than draw its strokes as closed polygons.
+Projects now save as format version 9, which adds the GIF Grid library and
+distortion settings. Versions 1–8 still open; older builds refuse version 9
+files rather than silently discard the new mode.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

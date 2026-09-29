@@ -1,3 +1,4 @@
+import { DEFAULT_GRID } from '../modes/grid/model';
 import { DEFAULT_RINGS } from '../modes/rings/model';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, Layer, PolygonLayer } from '../types';
@@ -66,6 +67,8 @@ function state(appMode: RenderState['appMode'], layers: Layer[] = []): RenderSta
     camera3d: DEFAULT_CAMERA3D,
     flythroughAssets: [],
     flythrough: DEFAULT_FLYTHROUGH,
+    gridAssets: [],
+    grid: DEFAULT_GRID,
     ringsAssets: [],
     rings: DEFAULT_RINGS,
     tunnelAssets: [],
@@ -210,4 +213,18 @@ describe('renderFrame mode boundary', () => {
     expect(first).toEqual(renderTrace(landscapeState, 0.25));
     expect(first).not.toEqual(renderTrace(landscapeState, 0.75));
   });
+});
+
+
+it('stretches entire GIF frames into deterministic grid cells in Canvas 2D', () => {
+  const renderState = state('gif-grid');
+  renderState.grid = { ...DEFAULT_GRID, rows: 2, columns: 2 };
+  renderState.gridAssets = [{ id: 'grid', name: 'grid.gif', src: '', gifData: {
+    width: 80, height: 40, totalDurationMs: 1000,
+    frames: [{ image: { width: 80, height: 40 } as ImageBitmap, delayMs: 1000, startTimeMs: 0, endTimeMs: 1000 }]
+  } }];
+  const trace = renderTrace(renderState, 0.25);
+  expect(trace).toEqual(renderTrace(renderState, 0.25));
+  expect(trace.filter(line => line.startsWith('drawImage:'))).toHaveLength(4);
+  expect(trace).not.toEqual(renderTrace(renderState, 1.25));
 });

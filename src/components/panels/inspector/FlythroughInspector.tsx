@@ -1,3 +1,4 @@
+import ControlSection from '../../controls/ControlSection';
 import { Dices, Gauge, Orbit, PanelsTopLeft } from 'lucide-react';
 import { useStore } from '../../../store';
 import { FlythroughPlane } from '../../../types';
@@ -44,11 +45,10 @@ export default function FlythroughInspector() {
         </div>
       </div>
 
-      <section className="p-3 space-y-3 border-b border-ui-border">
-        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+      <ControlSection sectionKey="Particle Field" title={<span className="flex items-center gap-1.5">
           <Gauge className="w-3 h-3" />
           Particle Field
-        </div>
+        </span>}>
         <Slider label="Population" display={`${Math.round(config.particleCount)} planes`} value={config.particleCount} min={1} max={160} step={1} onChange={particleCount => update({ particleCount })} />
         <Slider label="Flight Speed" display={`${Math.round(config.speed)} u/s`} value={config.speed} min={0} max={2400} step={20} onChange={speed => update({ speed })} />
         <Slider label="Tunnel Depth" display={`${Math.round(config.depth)} u`} value={config.depth} min={1200} max={18000} step={100} onChange={depth => update({ depth })} />
@@ -60,31 +60,30 @@ export default function FlythroughInspector() {
           <Slider size="sm" label="Min Size" display={Math.round(config.minSize)} value={config.minSize} min={40} max={1200} step={10} onChange={minSize => update({ minSize: Math.min(minSize, config.maxSize) })} />
           <Slider size="sm" label="Max Size" display={Math.round(config.maxSize)} value={config.maxSize} min={80} max={1800} step={10} onChange={maxSize => update({ maxSize: Math.max(maxSize, config.minSize) })} />
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="p-3 space-y-3 border-b border-ui-border">
-        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+      <ControlSection sectionKey="Plane & Lens" title={<span className="flex items-center gap-1.5">
           <PanelsTopLeft className="w-3 h-3" />
           Plane & Lens
-        </div>
+        </span>}>
         <Select label="GIF Plane" value={config.plane} options={PLANE_OPTIONS} onChange={plane => update({ plane })} />
         <Slider label="Field of View" display={`${Math.round(config.fov)}°`} value={config.fov} min={25} max={120} step={1} onChange={fov => update({ fov })} />
         <Slider label="Opacity" display={`${Math.round(config.opacity * 100)}%`} value={config.opacity} min={0.05} max={1} step={0.01} onChange={opacity => update({ opacity })} />
-      </section>
+      </ControlSection>
 
-      <section className="p-3 pb-1 border-b border-ui-border">
-        <label className="text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted block mb-2">Modulation</label>
+      <ControlSection sectionKey="Modulation" title={<span>Modulation</span>}>
         <MotionControl label="Velocity Pulse" config={config.motionSpeed} onChange={motionSpeed => update({ motionSpeed })} maxAmplitude={1200} stepAmplitude={20} />
         <MotionControl label="Horizontal Drift" config={config.motionDriftX} onChange={motionDriftX => update({ motionDriftX })} maxAmplitude={2400} stepAmplitude={20} />
         <MotionControl label="Vertical Drift" config={config.motionDriftY} onChange={motionDriftY => update({ motionDriftY })} maxAmplitude={3200} stepAmplitude={20} />
         <MotionControl label="Plane Spin" config={config.motionRotation} onChange={motionRotation => update({ motionRotation })} maxAmplitude={360} stepAmplitude={1} />
         <MotionControl label="Scale Breathing" config={config.motionScale} onChange={motionScale => update({ motionScale })} maxAmplitude={1.5} stepAmplitude={0.05} />
-      </section>
+      </ControlSection>
 
-      <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-        <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider">Void Color</label>
-        <input type="color" value={canvasBg} onChange={event => setCanvasBg(event.target.value)} className="w-8 h-6 rounded cursor-pointer border-0 bg-ui-surface p-0" />
-      </div>
+      <ControlSection sectionKey="void-color" title="Void Color">
+        <label className="flex items-center justify-between text-[11px] text-ui-text-muted">Color
+          <input type="color" value={canvasBg} onChange={event => setCanvasBg(event.target.value)} className="w-8 h-6 rounded cursor-pointer border-0 bg-ui-surface p-0" />
+        </label>
+      </ControlSection>
       <MasterFxPanel />
     </div>
   );

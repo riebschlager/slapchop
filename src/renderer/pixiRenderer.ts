@@ -1,3 +1,4 @@
+import { resolveGrid } from '../modes/grid/model';
 import { resolveRings } from '../modes/rings/model';
 import { mirroredTextureSource } from '../lib/textureMapping';
 import { TextureTiling } from '../types';
@@ -160,6 +161,8 @@ export class PixiSceneRenderer {
   private gifVoronoiContainer = new Container();
   private mesh3dSprite = new Sprite();
   private flythroughSprite = new Sprite();
+  private gridContainer = new Container();
+  private gridSprites: Sprite[] = [];
   private ringsContainer = new Container();
   private ringsSprites: Sprite[] = [];
   private tunnelSprite = new Sprite();
@@ -223,7 +226,7 @@ export class PixiSceneRenderer {
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
     this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite, this.tunnelSprite, this.landscapeSprite);
-    this.root.addChild(this.ringsContainer, this.symContainer, this.polyContainer, this.gifVoronoiContainer);
+    this.root.addChild(this.gridContainer, this.ringsContainer, this.symContainer, this.polyContainer, this.gifVoronoiContainer);
     this.gifVoronoiContainer.addChild(this.gifVoronoiGutterG);
     this.mesh3dSprite.visible = false;
     this.flythroughSprite.visible = false;
@@ -347,7 +350,7 @@ export class PixiSceneRenderer {
     this.layout(
       width,
       height,
-      state.appMode === 'rings' ? state.rings.backgroundColor : state.appMode === 'tunnel'
+      state.appMode === 'gif-grid' ? state.grid.backgroundColor : state.appMode === 'rings' ? state.rings.backgroundColor : state.appMode === 'tunnel'
         ? state.tunnel.voidColor
         : state.appMode === 'gif-voronoi'
           ? state.gifVoronoi.backgroundColor
@@ -362,6 +365,11 @@ export class PixiSceneRenderer {
     const tunnelVisible = state.appMode === 'tunnel';
     const gifVoronoiVisible = state.appMode === 'gif-voronoi';
     const landscapeVisible = state.appMode === 'landscape';
+    this.gridContainer.visible = state.appMode === 'gif-grid';
+    if (state.appMode !== 'gif-grid') {
+      this.gridSprites.forEach(sprite => sprite.destroy());
+      this.gridSprites = [];
+    }
     this.ringsContainer.visible = state.appMode === 'rings';
     if (state.appMode !== 'rings') {
       this.ringsSprites.forEach(sprite => sprite.destroy());
@@ -398,7 +406,9 @@ export class PixiSceneRenderer {
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (state.appMode === 'rings') {
+    if (state.appMode === 'gif-grid') {
+      this.syncGrid(t, state);
+    } else if (state.appMode === 'rings') {
       this.syncRings(t, state);
     } else if (landscapeVisible) {
       this.syncLandscape(t, state, width, height);
@@ -418,6 +428,32 @@ export class PixiSceneRenderer {
 
     this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  private syncGrid(t: number, state: RenderState) {
+    const items = resolveGrid(state.gridAssets, state.grid, t);
+    while (this.gridSprites.length > items.length) this.gridSprites.pop()!.destroy();
+    items.forEach((item, index) => {
+      let sprite = this.gridSprites[index];
+      if (!sprite) {
+        sprite = new Sprite();
+        sprite.anchor.set(0.5);
+        this.gridSprites.push(sprite);
+        this.gridContainer.addChild(sprite);
+      }
+      const gif = item.asset.gifData;
+      const texture = gif
+        ? this.getGifTextures(gif)[getGifFrameIndexAtTime(gif, item.sourceTime, 1)]
+        : this.getStaticTexture(item.asset.src);
+      sprite.visible = Boolean(texture);
+      if (!texture) return;
+      sprite.texture = texture;
+      sprite.position.set(item.x, item.y);
+      sprite.width = item.width;
+      sprite.height = item.height;
+      sprite.rotation = 0;
+      sprite.alpha = 1;
+    });
   }
 
   private syncRings(t: number, state: RenderState) {
@@ -1304,6 +1340,10 @@ export class PixiSceneRenderer {
     for (const p of state.polygonLayers) {
       if (p.gifData) gifs.add(p.gifData);
       if (p.src) srcs.add(p.src);
+    }
+    for (const asset of state.appMode === 'gif-grid' ? state.gridAssets : []) {
+      gifs.add(asset.gifData);
+      srcs.add(asset.src);
     }
     for (const asset of state.appMode === 'rings' ? state.ringsAssets : []) {
       if (asset.gifData) gifs.add(asset.gifData);

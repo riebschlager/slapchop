@@ -1,3 +1,4 @@
+import ControlSection from '../../controls/ControlSection';
 import TextureTilingControl from '../../controls/TextureTilingControl';
 import { Dices, Grid2X2, Image as ImageIcon, Palette, Play, Plus, Waves, X } from 'lucide-react';
 import { formatRate } from '../../../lib/sliderScale';
@@ -39,10 +40,10 @@ const PALETTE_PRESETS = [
 
 function SectionTitle({ icon: Icon, children }: { icon: typeof Grid2X2; children: string }) {
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+    <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
       <Icon className="size-3" />
       {children}
-    </div>
+    </span>
   );
 }
 
@@ -82,8 +83,7 @@ export default function GifVoronoiInspector() {
         </div>
       </div>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Grid2X2}>Mesh</SectionTitle>
+      <ControlSection sectionKey="Mesh" title={<SectionTitle icon={Grid2X2}>Mesh</SectionTitle>}>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Cells" display={Math.round(config.cellCount)} value={config.cellCount} min={4} max={120} step={1} onChange={cellCount => update({ cellCount })} />
           <Slider size="sm" label="Irregularity" display={`${Math.round(config.irregularity * 100)}%`} value={config.irregularity} min={0} max={1} step={0.01} onChange={irregularity => update({ irregularity })} />
@@ -99,10 +99,9 @@ export default function GifVoronoiInspector() {
             <input type="color" value={config.backgroundColor} onChange={event => update({ backgroundColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-ui-border bg-ui-canvas p-0.5" />
           </label>
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Waves}>Point Drift</SectionTitle>
+      <ControlSection sectionKey="Point Drift" title={<SectionTitle icon={Waves}>Point Drift</SectionTitle>}>
         <div className="grid grid-cols-2 gap-3">
           <Slider
             size="sm"
@@ -130,19 +129,17 @@ export default function GifVoronoiInspector() {
         <div className="rounded border border-ui-border bg-ui-surface px-2 py-1.5 text-[9px] leading-relaxed text-ui-text-subtle">
           Seeded site motion reshapes the mesh over time while each point stays in its home region.
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={ImageIcon}>Assignment</SectionTitle>
+      <ControlSection sectionKey="Assignment" title={<SectionTitle icon={ImageIcon}>Assignment</SectionTitle>}>
         <Select label="Cell Arrangement" value={config.arrangement} options={ARRANGEMENT_OPTIONS} onChange={arrangement => update({ arrangement })} />
         <Slider label="GIF Occupancy" display={`${Math.round(config.occupancy * 100)}%`} value={config.occupancy} min={0} max={1} step={0.01} onChange={occupancy => update({ occupancy })} />
         <div className="rounded border border-ui-border bg-ui-surface px-2 py-1.5 text-[9px] leading-relaxed text-ui-text-subtle">
           Library order is preserved, then cycled across occupied cells. Drag sources in the Stack to change the sequence.
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Play}>Playback & Cover</SectionTitle>
+      <ControlSection sectionKey="Playback & Cover" title={<SectionTitle icon={Play}>Playback & Cover</SectionTitle>}>
         <Slider label="GIF Speed" display={`${config.gifSpeed.toFixed(2)}×`} value={config.gifSpeed} min={0} max={3} step={0.01} scale="log" minPositive={0.05} onChange={gifSpeed => update({ gifSpeed })} />
         <Select label="Playback Phase" value={config.phaseMode} options={PHASE_OPTIONS} onChange={phaseMode => update({ phaseMode })} />
         {config.phaseMode !== 'sync' && (
@@ -155,10 +152,9 @@ export default function GifVoronoiInspector() {
           <Slider size="sm" label="Crop X" display={`${Math.round(config.coverOffsetX * 100)}%`} value={config.coverOffsetX} min={-1} max={1} step={0.01} onChange={coverOffsetX => update({ coverOffsetX })} />
           <Slider size="sm" label="Crop Y" display={`${Math.round(config.coverOffsetY * 100)}%`} value={config.coverOffsetY} min={-1} max={1} step={0.01} onChange={coverOffsetY => update({ coverOffsetY })} />
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Palette}>Blank Cells</SectionTitle>
+      <ControlSection sectionKey="Blank Cells" title={<SectionTitle icon={Palette}>Blank Cells</SectionTitle>}>
         <Select label="Blank Treatment" value={config.blankFill} options={BLANK_OPTIONS} onChange={blankFill => update({ blankFill })} />
         {config.blankFill !== 'transparent' && (
           <Slider label="Blank Opacity" display={`${Math.round(config.blankOpacity * 100)}%`} value={config.blankOpacity} min={0} max={1} step={0.01} onChange={blankOpacity => update({ blankOpacity })} />
@@ -198,7 +194,7 @@ export default function GifVoronoiInspector() {
             )}
           </>
         )}
-      </section>
+      </ControlSection>
 
       <div className="px-3 pt-3 text-[9px] uppercase tracking-[0.18em] text-ui-text-subtle">
         Cover crop · deterministic cells

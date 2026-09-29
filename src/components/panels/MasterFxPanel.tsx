@@ -1,6 +1,5 @@
-import { useState } from 'react';
-import { ChevronUp, ChevronDown, Wand2, RotateCcw } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import ControlSection from '../controls/ControlSection';
+import { RotateCcw } from 'lucide-react';
 import { useStore } from '../../store';
 import { FX_PRESETS } from '../../lib/fxPresets';
 import { formatRate } from '../../lib/sliderScale';
@@ -14,43 +13,12 @@ export default function MasterFxPanel() {
   const onApplyPreset = useStore(s => s.applyFxPreset);
   const onResetFx = useStore(s => s.resetMasterFx);
 
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [openSection, setOpenSection] = useState<'color' | 'rgb' | 'duotone' | 'scanlines' | 'noise' | 'bloom' | null>(null);
-
-  const toggleSection = (section: 'color' | 'rgb' | 'duotone' | 'scanlines' | 'noise' | 'bloom') => {
-    setOpenSection(openSection === section ? null : section);
-  };
-
   return (
-    <div className="border-b border-ui-border bg-ui-canvas/40">
-      {/* Header Bar */}
-      <div 
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-ui-surface transition-colors select-none"
-      >
-        <div className="flex items-center gap-2">
-          <Wand2 className={cn("w-4 h-4 transition-colors", masterFx.enabled ? "text-ui-creative-text" : "text-ui-text-subtle")} />
-          <span className="text-xs font-semibold text-ui-text uppercase tracking-wider">Master FX &amp; Shaders</span>
-        </div>
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          {/* Master Enable/Disable Toggle Switch */}
-          <Toggle
-            checked={masterFx.enabled}
-            onChange={(enabled) => onUpdateFx({ enabled })}
-            title={masterFx.enabled ? "Disable Master FX" : "Enable Master FX"}
-          />
-          <button 
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-ui-text-muted hover:text-ui-text p-0.5 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
-          >
-            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-        </div>
-      </div>
+    <ControlSection sectionKey="fx-master" title={<span className="text-ui-creative-text">Master FX &amp; Shaders</span>} defaultOpen={false} actions={<Toggle checked={masterFx.enabled} onChange={(enabled) => onUpdateFx({ enabled })} title={masterFx.enabled ? "Disable Master FX" : "Enable Master FX"} />} className="bg-ui-canvas/40">
 
       {/* Expanded Controls */}
-      {isExpanded && (
-        <div className="px-4 pb-4 pt-1 space-y-3">
+
+        <div className="space-y-2">
           {/* Presets */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -79,25 +47,14 @@ export default function MasterFxPanel() {
           </div>
 
           {/* Module 1: Color Grading */}
-          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
-            <div 
-              onClick={() => toggleSection('color')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
-            >
-              <div className="flex items-center gap-2">
-                <input
+          <ControlSection sectionKey="fx-color" title="Color Grading" defaultOpen={false} actions={<input aria-label="Enable Color Grading"
                   type="checkbox"
                   checked={masterFx.colorAdjustEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ colorAdjustEnabled: e.target.checked }); }}
                   className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
-                />
-                <span className="text-xs font-medium text-ui-text">Color Grading</span>
-              </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'color' && "rotate-180")} />
-            </div>
+                />} className="bg-ui-canvas/40">
 
-            {openSection === 'color' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
+              <div className="space-y-2">
                 <Slider
                   size="sm"
                   label="Contrast"
@@ -142,29 +99,18 @@ export default function MasterFxPanel() {
                   stepAmplitude={5}
                 />
               </div>
-            )}
-          </div>
+
+          </ControlSection>
 
           {/* Module 2: Chromatic Aberration / RGB Split */}
-          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
-            <div 
-              onClick={() => toggleSection('rgb')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
-            >
-              <div className="flex items-center gap-2">
-                <input
+          <ControlSection sectionKey="fx-rgb" title="Chromatic Aberration (RGB Split)" defaultOpen={false} actions={<input aria-label="Enable Chromatic Aberration (RGB Split)"
                   type="checkbox"
                   checked={masterFx.rgbSplitEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ rgbSplitEnabled: e.target.checked }); }}
                   className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
-                />
-                <span className="text-xs font-medium text-ui-text">Chromatic Aberration (RGB Split)</span>
-              </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'rgb' && "rotate-180")} />
-            </div>
+                />} className="bg-ui-canvas/40">
 
-            {openSection === 'rgb' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
+              <div className="space-y-2">
                 <Slider
                   size="sm"
                   label="Shift Distance"
@@ -191,29 +137,18 @@ export default function MasterFxPanel() {
                   stepAmplitude={1}
                 />
               </div>
-            )}
-          </div>
+
+          </ControlSection>
 
           {/* Module 3: Duotone / Gradient Map */}
-          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
-            <div 
-              onClick={() => toggleSection('duotone')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
-            >
-              <div className="flex items-center gap-2">
-                <input
+          <ControlSection sectionKey="fx-duotone" title="Duotone / Gradient Map" defaultOpen={false} actions={<input aria-label="Enable Duotone / Gradient Map"
                   type="checkbox"
                   checked={masterFx.duotoneEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ duotoneEnabled: e.target.checked }); }}
                   className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
-                />
-                <span className="text-xs font-medium text-ui-text">Duotone / Gradient Map</span>
-              </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'duotone' && "rotate-180")} />
-            </div>
+                />} className="bg-ui-canvas/40">
 
-            {openSection === 'duotone' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
+              <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] text-ui-text-muted block mb-1">Shadow Color</label>
@@ -250,29 +185,18 @@ export default function MasterFxPanel() {
                   onChange={(duotoneIntensity) => onUpdateFx({ duotoneIntensity })}
                 />
               </div>
-            )}
-          </div>
+
+          </ControlSection>
 
           {/* Module 4: CRT Scanlines */}
-          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
-            <div 
-              onClick={() => toggleSection('scanlines')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
-            >
-              <div className="flex items-center gap-2">
-                <input
+          <ControlSection sectionKey="fx-scanlines" title="CRT Scanlines" defaultOpen={false} actions={<input aria-label="Enable CRT Scanlines"
                   type="checkbox"
                   checked={masterFx.scanlinesEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ scanlinesEnabled: e.target.checked }); }}
                   className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
-                />
-                <span className="text-xs font-medium text-ui-text">CRT Scanlines</span>
-              </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'scanlines' && "rotate-180")} />
-            </div>
+                />} className="bg-ui-canvas/40">
 
-            {openSection === 'scanlines' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
+              <div className="space-y-2">
                 <Slider
                   size="sm"
                   label="Line Count"
@@ -300,29 +224,18 @@ export default function MasterFxPanel() {
                   onChange={(scanlinesSpeed) => onUpdateFx({ scanlinesSpeed })}
                 />
               </div>
-            )}
-          </div>
+
+          </ControlSection>
 
           {/* Module 5: Film Grain & Noise */}
-          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
-            <div 
-              onClick={() => toggleSection('noise')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
-            >
-              <div className="flex items-center gap-2">
-                <input
+          <ControlSection sectionKey="fx-noise" title="Film Grain & Noise" defaultOpen={false} actions={<input aria-label="Enable Film Grain & Noise"
                   type="checkbox"
                   checked={masterFx.noiseEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ noiseEnabled: e.target.checked }); }}
                   className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
-                />
-                <span className="text-xs font-medium text-ui-text">Film Grain & Noise</span>
-              </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'noise' && "rotate-180")} />
-            </div>
+                />} className="bg-ui-canvas/40">
 
-            {openSection === 'noise' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
+              <div className="space-y-2">
                 <Slider
                   size="sm"
                   label="Noise Intensity"
@@ -342,29 +255,18 @@ export default function MasterFxPanel() {
                   onChange={(noiseSpeed) => onUpdateFx({ noiseSpeed })}
                 />
               </div>
-            )}
-          </div>
+
+          </ControlSection>
 
           {/* Module 6: Bloom & Soft Glow */}
-          <div className="border border-ui-border rounded-md overflow-hidden bg-ui-surface">
-            <div 
-              onClick={() => toggleSection('bloom')}
-              className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-ui-surface-raised select-none"
-            >
-              <div className="flex items-center gap-2">
-                <input
+          <ControlSection sectionKey="fx-bloom" title="Bloom & Soft Glow" defaultOpen={false} actions={<input aria-label="Enable Bloom & Soft Glow"
                   type="checkbox"
                   checked={masterFx.bloomEnabled}
                   onChange={(e) => { e.stopPropagation(); onUpdateFx({ bloomEnabled: e.target.checked }); }}
                   className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
-                />
-                <span className="text-xs font-medium text-ui-text">Bloom & Soft Glow</span>
-              </div>
-              <ChevronDown className={cn("w-3.5 h-3.5 text-ui-text-muted transition-transform", openSection === 'bloom' && "rotate-180")} />
-            </div>
+                />} className="bg-ui-canvas/40">
 
-            {openSection === 'bloom' && (
-              <div className="p-3 pt-1 space-y-2 border-t border-ui-border bg-ui-canvas/40">
+              <div className="space-y-2">
                 <Slider
                   size="sm"
                   label="Glow Radius"
@@ -374,10 +276,10 @@ export default function MasterFxPanel() {
                   onChange={(bloomStrength) => onUpdateFx({ bloomStrength })}
                 />
               </div>
-            )}
-          </div>
+
+          </ControlSection>
         </div>
-      )}
-    </div>
+
+    </ControlSection>
   );
 }

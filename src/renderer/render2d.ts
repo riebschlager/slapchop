@@ -1,3 +1,4 @@
+import { resolveGrid, GridAsset, GridConfig } from '../modes/grid/model';
 import { resolveRings, RingsAsset, RingsConfig } from '../modes/rings/model';
 import { mirroredTextureSource, rotateTextureUv } from '../lib/textureMapping';
 import { drawImageTriangle } from './texture2d';
@@ -49,6 +50,8 @@ export interface RenderState {
   camera3d: Camera3dConfig;
   flythroughAssets: FlythroughAsset[];
   flythrough: FlythroughConfig;
+  gridAssets: GridAsset[];
+  grid: GridConfig;
   ringsAssets: RingsAsset[];
   rings: RingsConfig;
   tunnelAssets: TunnelAsset[];
@@ -413,7 +416,7 @@ export function renderFrame(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = state.appMode === 'rings' ? state.rings.backgroundColor : state.appMode === 'tunnel'
+  ctx.fillStyle = state.appMode === 'gif-grid' ? state.grid.backgroundColor : state.appMode === 'rings' ? state.rings.backgroundColor : state.appMode === 'tunnel'
     ? state.tunnel.voidColor
     : state.appMode === 'gif-voronoi'
       ? state.gifVoronoi.backgroundColor
@@ -481,6 +484,15 @@ export function renderFrame(
     renderMesh3dScene(ctx, t, state.mesh3dLayers, state.camera3d, width, height);
   } else if (state.appMode === 'flythrough') {
     renderFlythroughScene(ctx, t, state.flythroughAssets, state.flythrough, width, height);
+  } else if (state.appMode === 'gif-grid') {
+    ctx.save();
+    ctx.scale(width / CANVAS_WIDTH, height / CANVAS_HEIGHT);
+    ctx.translate(540, 960);
+    for (const cell of resolveGrid(state.gridAssets, state.grid, t)) {
+      const frame = getGifFrameAtTime(cell.asset.gifData, cell.sourceTime, 1);
+      if (frame && cell.width > 0 && cell.height > 0) ctx.drawImage(frame, cell.x - cell.width / 2, cell.y - cell.height / 2, cell.width, cell.height);
+    }
+    ctx.restore();
   } else if (state.appMode === 'rings') {
     for (const item of resolveRings(state.ringsAssets, state.rings, t)) {
       const source = item.asset.gifData

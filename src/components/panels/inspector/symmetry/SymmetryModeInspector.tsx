@@ -1,3 +1,4 @@
+import ControlSection from '../../../controls/ControlSection';
 import { useState } from 'react';
 import { useStore } from '../../../../store';
 import Segmented, { SegmentedOption } from '../../../controls/Segmented';
@@ -49,12 +50,12 @@ export default function SymmetryModeInspector() {
         onChange={setTab}
         options={TAB_OPTIONS}
       />
-      <div>
+      <ControlSection sectionKey={`layer-${tab}`} title={tab}>
         {tab === 'transform' && <TransformTab layer={selectedLayer} onChange={onChange} />}
         {tab === 'style' && <LayerStyleTab layer={selectedLayer} onChange={onChange} />}
         {tab === 'symmetry' && <LayerSymmetryTab layer={selectedLayer} onChange={onChange} />}
         {tab === 'motion' && <LayerMotionTab layer={selectedLayer} onChange={onChange} />}
-      </div>
+      </ControlSection>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import ControlSection from '../../controls/ControlSection';
 import TextureTilingControl from '../../controls/TextureTilingControl';
 import { Camera, Circle, CloudFog, Dices, Image as ImageIcon, Palette, Plus, Route, Shuffle, X } from 'lucide-react';
 import { useStore } from '../../../store';
@@ -23,10 +24,10 @@ const PALETTE_PRESETS = [
 
 function SectionTitle({ icon: Icon, children }: { icon: typeof Circle; children: string }) {
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
+    <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ui-text-muted">
       <Icon className="size-3" />
       {children}
-    </div>
+    </span>
   );
 }
 
@@ -65,8 +66,7 @@ export default function TunnelInspector() {
         </div>
       </div>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Circle}>Tunnel Geometry</SectionTitle>
+      <ControlSection sectionKey="Tunnel Geometry" title={<SectionTitle icon={Circle}>Tunnel Geometry</SectionTitle>}>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Sides" display={Math.round(config.sides)} value={config.sides} min={3} max={24} step={1} onChange={sides => update({
             sides,
@@ -78,10 +78,9 @@ export default function TunnelInspector() {
           <Slider size="sm" label="Ring Length" display={Math.round(config.ringLength)} value={config.ringLength} min={120} max={1400} step={20} onChange={ringLength => update({ ringLength })} />
         </div>
         <Slider label="Pane Gap" display={`${Math.round(config.paneGap * 100)}%`} value={config.paneGap} min={0} max={0.35} step={0.01} onChange={paneGap => update({ paneGap })} />
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Route}>Path & Travel</SectionTitle>
+      <ControlSection sectionKey="Path & Travel" title={<SectionTitle icon={Route}>Path & Travel</SectionTitle>}>
         <Slider label="Travel Speed" display={`${Math.round(config.speed)} u/s`} value={config.speed} min={-2400} max={2400} step={20} onChange={speed => update({ speed })} />
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Horizontal Bend" display={Math.round(config.bendX)} value={config.bendX} min={0} max={2600} step={20} onChange={bendX => update({ bendX })} />
@@ -95,10 +94,9 @@ export default function TunnelInspector() {
           <MotionControl label="Vertical Writhe" config={config.motionBendY} onChange={motionBendY => update({ motionBendY })} maxAmplitude={1200} stepAmplitude={20} />
           <MotionControl label="Twist Pulse" config={config.motionTwist} onChange={motionTwist => update({ motionTwist })} maxAmplitude={30} stepAmplitude={0.5} />
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Camera}>Camera</SectionTitle>
+      <ControlSection sectionKey="Camera" title={<SectionTitle icon={Camera}>Camera</SectionTitle>}>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="Field of View" display={`${Math.round(config.fov)}°`} value={config.fov} min={30} max={120} step={1} onChange={fov => update({ fov })} />
           <Slider size="sm" label="Look Ahead" display={Math.round(config.lookAhead)} value={config.lookAhead} min={200} max={4000} step={50} onChange={lookAhead => update({ lookAhead })} />
@@ -107,10 +105,9 @@ export default function TunnelInspector() {
         </div>
         <Slider label="Camera Roll" display={`${Math.round(config.cameraRoll)}°`} value={config.cameraRoll} min={-180} max={180} step={1} onChange={cameraRoll => update({ cameraRoll })} />
         <MotionControl label="Roll Drift" config={config.motionCameraRoll} onChange={motionCameraRoll => update({ motionCameraRoll })} maxAmplitude={180} stepAmplitude={1} />
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={ImageIcon}>Wallpaper Pattern</SectionTitle>
+      <ControlSection sectionKey="Wallpaper Pattern" title={<SectionTitle icon={ImageIcon}>Wallpaper Pattern</SectionTitle>}>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="GIF Every" display={`${Math.round(config.gifEvery)} pane${Math.round(config.gifEvery) === 1 ? '' : 's'}`} value={config.gifEvery} min={1} max={Math.max(1, config.sides)} step={1} onChange={gifEvery => update({ gifEvery })} />
           <Slider size="sm" label="Ring Offset" display={Math.round(config.ringPatternOffset)} value={config.ringPatternOffset} min={0} max={Math.max(0, config.sides - 1)} step={1} onChange={ringPatternOffset => update({ ringPatternOffset })} />
@@ -134,10 +131,9 @@ export default function TunnelInspector() {
           </div>
           <Toggle checked={config.shuffle} onChange={shuffle => update({ shuffle })} title="Toggle seeded asset shuffle" />
         </div>
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <SectionTitle icon={Palette}>Pane Palette</SectionTitle>
+      <ControlSection sectionKey="Pane Palette" title={<SectionTitle icon={Palette}>Pane Palette</SectionTitle>}>
         <div className="flex flex-wrap gap-1.5">
           {PALETTE_PRESETS.map(preset => (
             <button
@@ -168,13 +164,9 @@ export default function TunnelInspector() {
             <Plus className="size-3" /> Add color
           </button>
         )}
-      </section>
+      </ControlSection>
 
-      <section className="space-y-3 border-b border-ui-border p-3">
-        <div className="flex items-center justify-between">
-          <SectionTitle icon={CloudFog}>Void & Fog</SectionTitle>
-          <Toggle checked={config.fogEnabled} onChange={fogEnabled => update({ fogEnabled })} title="Toggle depth fog" />
-        </div>
+      <ControlSection sectionKey="Void & Fog" title={<SectionTitle icon={CloudFog}>Void & Fog</SectionTitle>} actions={<Toggle checked={config.fogEnabled} onChange={fogEnabled => update({ fogEnabled })} title="Toggle depth fog" />}>
         <div className="grid grid-cols-2 gap-3">
           <label className="text-[10px] text-ui-text-muted">
             <span className="mb-1 block">Void Color</span>
@@ -188,7 +180,7 @@ export default function TunnelInspector() {
         {config.fogEnabled && (
           <Slider label="Fog Density" display={config.fogDensity.toFixed(5)} value={config.fogDensity} min={0} max={0.0006} step={0.00001} onChange={fogDensity => update({ fogDensity })} />
         )}
-      </section>
+      </ControlSection>
 
       <div className="px-3 pt-3 text-[9px] uppercase tracking-[0.18em] text-ui-text-subtle">
         Infinite surface · deterministic time

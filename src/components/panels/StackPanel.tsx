@@ -1,3 +1,5 @@
+import ControlSection, { ControlSections, SectionActions } from '../controls/ControlSection';
+import GridLibrary from '../../modes/grid/GridLibrary';
 import React, { useRef } from 'react';
 import { Image as ImageIcon, Shapes, PenTool, Brush, Sparkles, Undo2, Redo2, Save, FolderOpen, Layers, PanelLeftOpen, Box, Rocket, FolderInput, Trash2, Circle, Grid2X2, Mountain, Sun } from 'lucide-react';
 import { redo, undo, useStore } from '../../store';
@@ -29,6 +31,7 @@ const MODE_OPTIONS: ModeOption<AppMode>[] = [
   { value: 'flythrough', label: 'GIF Flythrough', description: 'Folder-fed planes rushing through space', icon: Rocket },
   { value: 'rings', label: 'GIF Rings', description: 'Fly through endless rings of repeated GIFs', icon: Circle },
   { value: 'tunnel', label: 'GIF Tunnel', description: 'Procedural wallpapered infinite tunnel', icon: Circle },
+  { value: 'gif-grid', label: 'GIF Grid', description: 'Elastic rows and columns of animated GIFs', icon: Grid2X2 },
   { value: 'gif-voronoi', label: 'GIF Voronoi', description: 'Folder-fed animated cell mosaic', icon: Grid2X2 },
   { value: 'landscape', label: 'GIF Landscape', description: 'Noise terrain beneath a concentric GIF sky', icon: Mountain }
 ];
@@ -61,6 +64,11 @@ const SOURCE_CARD_HINT = 'mt-0.5 text-[10px] text-ui-text-subtle';
 const SOURCE_CARD_ALT = 'mt-2 w-full rounded py-1 text-[10px] text-ui-text-subtle transition-colors hover:text-ui-text focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent';
 
 export default function StackPanel() {
+  const appMode = useStore(s => s.appMode);
+  return <ControlSections scope={appMode}><StackPanelContent /></ControlSections>;
+}
+
+function StackPanelContent() {
   const appMode = useStore(s => s.appMode);
   const onModeChange = useStore(s => s.setAppMode);
   const layers = useStore(s => s.layers);
@@ -443,16 +451,18 @@ export default function StackPanel() {
          />
       </div>
 
+      <SectionActions label="Tools" />
+
       {/* MODE 1: SYMMETRY LAYERS */}
       {appMode === 'symmetry' && (
         <>
-          <div className="p-4 border-b border-ui-border shrink-0">
+          <ControlSection sectionKey="add-images" title="Add images" className="shrink-0">
             <label className="flex items-center justify-center gap-2 w-full py-2 bg-ui-surface hover:bg-ui-surface-raised rounded-md cursor-pointer transition-colors text-xs font-medium border border-ui-border focus-within:outline-none focus-within:ring-2 focus-within:ring-ui-accent">
               <ImageIcon className="w-4 h-4 text-ui-text-muted" />
               Upload Media / GIF
               <input type="file" multiple accept="image/*" className="hidden" onChange={handleSymmetryFileChange} />
             </label>
-          </div>
+          </ControlSection>
 
           <div className="flex-1 overflow-y-auto min-h-0 relative">
             <div className="sticky top-0 bg-ui-panel/95 backdrop-blur-sm px-4 py-2 border-b border-ui-border z-10 flex items-center justify-between">
@@ -491,7 +501,7 @@ export default function StackPanel() {
       {appMode === 'polygon' && (
         <>
           {/* Polygon Creation Controls */}
-          <div className="p-3 border-b border-ui-border space-y-3 shrink-0">
+          <ControlSection sectionKey="stack-Create shapes" title="Create shapes" className="shrink-0 max-h-[55vh] overflow-y-auto">
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 onClick={onToggleDrawPolygon}
@@ -541,8 +551,7 @@ export default function StackPanel() {
               </div>
             )}
 
-            <div>
-              <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block mb-1.5">Add Shape Presets</label>
+            <ControlSection sectionKey="Add Shape Presets" title="Add Shape Presets">
               <div className="grid grid-cols-4 gap-1">
                 <button
                   onClick={() => onAddPresetPolygon('triangle')}
@@ -577,7 +586,7 @@ export default function StackPanel() {
                   Star
                 </button>
               </div>
-            </div>
+            </ControlSection>
 
             <div>
               <label className="flex items-center justify-center gap-2 w-full py-1.5 bg-ui-surface hover:bg-ui-surface-raised rounded-md cursor-pointer transition-colors text-xs text-ui-text border border-ui-border focus-within:outline-none focus-within:ring-2 focus-within:ring-ui-accent">
@@ -588,9 +597,7 @@ export default function StackPanel() {
             </div>
 
             {/* New shapes each take a random texture from this folder. */}
-            <div className="pt-2 border-t border-ui-border space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider">Texture Folder</label>
+            <ControlSection sectionKey="Texture Folder" title="Texture Folder" actions={<>
                 {polygonTextureFolder && (
                   <button
                     type="button"
@@ -602,7 +609,7 @@ export default function StackPanel() {
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 )}
-              </div>
+              </>}>
               <button
                 type="button"
                 onClick={() => void handleChoosePolygonTextureFolder()}
@@ -619,12 +626,10 @@ export default function StackPanel() {
               {polygonTextureFolder && (
                 <p className="text-[10px] leading-snug text-ui-text-subtle">New shapes get a random texture from this folder.</p>
               )}
-            </div>
+            </ControlSection>
 
             {/* Tracing reference: editor-only, never rendered into exports. */}
-            <div className="pt-2 border-t border-ui-border space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider">Underpainting</label>
+            <ControlSection sectionKey="Underpainting" title="Underpainting" actions={<>
                 {polygonUnderpainting && (
                   <div className="flex items-center gap-1.5">
                     <Toggle
@@ -643,7 +648,7 @@ export default function StackPanel() {
                     </button>
                   </div>
                 )}
-              </div>
+              </>}>
               <label
                 className="flex items-center justify-center gap-2 w-full py-1.5 bg-ui-surface hover:bg-ui-surface-raised rounded-md cursor-pointer transition-colors text-xs text-ui-text border border-ui-border focus-within:outline-none focus-within:ring-2 focus-within:ring-ui-accent"
                 title={polygonUnderpainting ? `Replace ${polygonUnderpainting.name}` : 'Load a reference image to trace polygons over'}
@@ -662,8 +667,8 @@ export default function StackPanel() {
                   onChange={(opacity) => onUpdatePolygonUnderpainting({ opacity })}
                 />
               )}
-            </div>
-          </div>
+            </ControlSection>
+          </ControlSection>
 
           {/* Polygon Layers List */}
           <div className="flex-1 overflow-y-auto min-h-0 relative">
@@ -704,7 +709,7 @@ export default function StackPanel() {
       {/* MODE 3: 3D MESH SPACE */}
       {appMode === '3d' && (
         <>
-          <div className="p-3 border-b border-ui-border space-y-3 shrink-0">
+          <ControlSection sectionKey="stack-Add mesh" title="Add mesh" className="shrink-0 max-h-[55vh] overflow-y-auto">
             <div>
               <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block mb-1.5">Add Mesh</label>
               <div className="grid grid-cols-4 gap-1">
@@ -721,7 +726,7 @@ export default function StackPanel() {
                 ))}
               </div>
             </div>
-          </div>
+          </ControlSection>
 
           <div className="flex-1 overflow-y-auto min-h-0 relative">
             <div className="sticky top-0 bg-ui-panel/95 backdrop-blur-sm px-4 py-2 border-b border-ui-border z-10 flex items-center justify-between">
@@ -760,7 +765,7 @@ export default function StackPanel() {
       {/* MODE 4: GIF FLYTHROUGH */}
       {appMode === 'flythrough' && (
         <>
-          <div className="p-3 border-b border-ui-border shrink-0">
+          <ControlSection sectionKey="stack-Sources" title="Sources" className="shrink-0 max-h-[55vh] overflow-y-auto">
             <button
               type="button"
               onClick={() => void handleChooseFlythroughFolder()}
@@ -786,7 +791,7 @@ export default function StackPanel() {
               Or choose individual GIF files
             </button>
             <input ref={flythroughFilesInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleFlythroughFolderChange} />
-          </div>
+          </ControlSection>
 
           <div className="flex-1 overflow-y-auto min-h-0 relative">
             <div className="sticky top-0 bg-ui-panel/95 backdrop-blur-sm px-4 py-2 border-b border-ui-border z-10 flex items-center justify-between">
@@ -827,7 +832,7 @@ export default function StackPanel() {
       {/* Tunnel and Rings share ordered image-library interactions. */}
       {(appMode === 'tunnel' || appMode === 'rings') && (
         <>
-          <div className="shrink-0 border-b border-ui-border p-3">
+          <ControlSection sectionKey="stack-Sources" title="Sources" className="shrink-0 max-h-[55vh] overflow-y-auto">
             <button
               type="button"
               onClick={() => void handleChooseTunnelFolder()}
@@ -849,7 +854,7 @@ export default function StackPanel() {
               Add individual images
             </button>
             <input ref={tunnelFilesInputRef} type="file" multiple accept="image/gif,image/png,image/jpeg,image/webp,.gif,.png,.jpg,.jpeg,.webp" className="hidden" onChange={handleTunnelFilesChange} />
-          </div>
+          </ControlSection>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-ui-border bg-ui-panel/95 px-4 py-2 backdrop-blur-sm">
@@ -876,9 +881,10 @@ export default function StackPanel() {
       )}
 
       {/* MODE 6: GIF VORONOI */}
+      {appMode === 'gif-grid' && <GridLibrary />}
       {appMode === 'gif-voronoi' && (
         <>
-          <div className="shrink-0 border-b border-ui-border p-3">
+          <ControlSection sectionKey="stack-Sources" title="Sources" className="shrink-0 max-h-[55vh] overflow-y-auto">
             <button
               type="button"
               onClick={() => void handleChooseGifVoronoiFolder()}
@@ -900,7 +906,7 @@ export default function StackPanel() {
               Add individual GIFs
             </button>
             <input ref={gifVoronoiFilesInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleGifVoronoiFilesChange} />
-          </div>
+          </ControlSection>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-ui-border bg-ui-panel/95 px-4 py-2 backdrop-blur-sm">
@@ -929,7 +935,7 @@ export default function StackPanel() {
       {/* MODE 7: GIF LANDSCAPE */}
       {appMode === 'landscape' && (
         <>
-          <div className="shrink-0 space-y-2 border-b border-ui-border p-3">
+          <ControlSection sectionKey="stack-Sources" title="Sources" className="shrink-0 max-h-[55vh] overflow-y-auto">
             <button type="button" onClick={() => void handleChooseLandscapeTerrainFolder()} className={SOURCE_CARD}>
               <div className={SOURCE_CARD_RAIL} />
               <div className="flex items-center gap-2.5">
@@ -952,7 +958,7 @@ export default function StackPanel() {
               </div>
             </button>
             <input ref={landscapeSkyFolderInputRef} type="file" multiple accept="image/gif,.gif" className="hidden" onChange={handleLandscapeSkyFolderChange} />
-          </div>
+          </ControlSection>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-ui-border bg-ui-panel/95 px-4 py-2 backdrop-blur-sm">

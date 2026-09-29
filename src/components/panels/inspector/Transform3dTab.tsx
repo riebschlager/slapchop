@@ -1,3 +1,4 @@
+import ControlSection from '../../controls/ControlSection';
 import { Mesh3dLayer } from '../../../types';
 import Slider from '../../controls/Slider';
 import MotionControl from '../../controls/MotionControl';
@@ -37,8 +38,7 @@ export default function Transform3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; 
         onChange={([pivotX, pivotY, pivotZ]) => onChange({ pivotX, pivotY, pivotZ })}
       />
 
-      <div className="pt-2 border-t border-ui-border space-y-2">
-        <label className="text-[10px] font-semibold text-ui-text-muted uppercase tracking-wider block">Motion Modulators</label>
+      <ControlSection sectionKey="Motion Modulators" title={<span>Motion Modulators</span>}>
         <MotionControl label="Position X" config={mesh.motionX} onChange={c => onChange({ motionX: c })} maxAmplitude={500} stepAmplitude={5} />
         <MotionControl label="Position Y" config={mesh.motionY} onChange={c => onChange({ motionY: c })} maxAmplitude={500} stepAmplitude={5} />
         <MotionControl label="Position Z" config={mesh.motionZ} onChange={c => onChange({ motionZ: c })} maxAmplitude={500} stepAmplitude={5} />
@@ -48,7 +48,7 @@ export default function Transform3dTab({ mesh, onChange }: { mesh: Mesh3dLayer; 
         <MotionControl label="Scale X" config={mesh.motionScaleX} onChange={c => onChange({ motionScaleX: c })} maxAmplitude={3} stepAmplitude={0.05} />
         <MotionControl label="Scale Y" config={mesh.motionScaleY} onChange={c => onChange({ motionScaleY: c })} maxAmplitude={3} stepAmplitude={0.05} />
         <MotionControl label="Scale Z" config={mesh.motionScaleZ} onChange={c => onChange({ motionScaleZ: c })} maxAmplitude={3} stepAmplitude={0.05} />
-      </div>
+      </ControlSection>
     </div>
   );
 }
@@ -66,13 +66,12 @@ function AxisRow({ label, values, min, max, step, display, onChange }: {
 }) {
   const [x, y, z] = values;
   return (
-    <div>
-      <label className="text-[11px] text-ui-text-muted mb-1 block">{label}</label>
+    <ControlSection sectionKey={`transform-${label}`} title={<span>{label}</span>}>
       <div className="grid grid-cols-3 gap-2">
         <Slider size="sm" label="X" display={display ? display(x) : undefined} value={x} min={min} max={max} step={step} onChange={(v) => onChange([v, y, z])} />
         <Slider size="sm" label="Y" display={display ? display(y) : undefined} value={y} min={min} max={max} step={step} onChange={(v) => onChange([x, v, z])} />
         <Slider size="sm" label="Z" display={display ? display(z) : undefined} value={z} min={min} max={max} step={step} onChange={(v) => onChange([x, y, v])} />
       </div>
-    </div>
+    </ControlSection>
   );
 }
