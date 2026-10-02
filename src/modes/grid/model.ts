@@ -15,7 +15,15 @@ export interface GridAxis {
   reverse: boolean;
   weights: number[];
 }
+export interface GridDrift {
+  amount: number;
+  speed: number;
+  scale: number;
+  seed: number;
+}
 export interface GridConfig {
+  motionPattern: 'waves' | 'organic';
+  drift: GridDrift;
   rows: number;
   columns: number;
   gutter: number;
@@ -32,6 +40,7 @@ const axis = (phase: number): GridAxis => ({
   amount: 0.7, speed: 0.12, frequency: 1, phase, harmonic: 0, reverse: false, weights: []
 });
 export const DEFAULT_GRID: GridConfig = {
+  motionPattern: 'waves', drift: { amount: 1.2, speed: 0.12, scale: 2, seed: 1 },
   rows: 6, columns: 4, gutter: 0, margin: 0, x: axis(0), y: axis(0.25),
   gifSpeed: 1, cellPhase: 0, shuffle: false, seed: 1, backgroundColor: '#09090b'
 };
@@ -49,6 +58,13 @@ function normalizeAxis(input: Partial<GridAxis> | undefined, fallback: GridAxis)
 export function normalizeGrid(input: Partial<GridConfig> | null = {}): GridConfig {
   input = input ?? {};
   return {
+    motionPattern: input.motionPattern === 'organic' ? 'organic' : 'waves',
+    drift: {
+      amount: clamp(input.drift?.amount, DEFAULT_GRID.drift.amount, 0, 2.5),
+      speed: clamp(input.drift?.speed, DEFAULT_GRID.drift.speed, 0, 2),
+      scale: clamp(input.drift?.scale, DEFAULT_GRID.drift.scale, 0.25, 8),
+      seed: Math.round(clamp(input.drift?.seed, DEFAULT_GRID.drift.seed, 0, 100000))
+    },
     rows: Math.round(clamp(input.rows, 6, 1, 24)), columns: Math.round(clamp(input.columns, 4, 1, 24)),
     gutter: clamp(input.gutter, 0, 0, 40), margin: clamp(input.margin, 0, 0, 200),
     x: normalizeAxis(input.x, DEFAULT_GRID.x), y: normalizeAxis(input.y, DEFAULT_GRID.y),
@@ -72,11 +88,50 @@ export function resolveAxis(count: number, span: number, a: GridAxis, t: number)
   edges[count] = span;
   return edges;
 }
+// Quintic interpolation keeps velocity and acceleration continuous at noise boundaries.
+function driftNoise(x: number, y: number, seed: number): number {
+  const hash = (ix: number, iy: number) => {
+    let h = Math.imul(ix, 374761393) ^ Math.imul(iy, 668265263) ^ Math.imul(seed, 1442695041);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967295 * 2 - 1;
+  };
+  const smooth = (v: number) => v * v * v * (v * (v * 6 - 15) + 10);
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const u = smooth(x - ix);
+  const v = smooth(y - iy);
+  const a = hash(ix, iy);
+  const b = hash(ix + 1, iy);
+  const c = hash(ix, iy + 1);
+  const d = hash(ix + 1, iy + 1);
+  return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+}
+
+export function resolveDriftAxis(count: number, span: number, base: GridAxis, drift: GridDrift, t: number, axis: 'x' | 'y'): number[] {
+  const weights = Array.from({ length: count }, (_, i) => {
+    const position = (i + 0.5) / count * drift.scale;
+    const time = t * drift.speed;
+    const seed = drift.seed + (axis === 'y' ? 7919 : 0);
+    const broad = driftNoise(position + 0.37, time + 0.61, seed);
+    const detail = driftNoise(position * 2 + 7.13, time * 1.7 + 11.29, seed + 101);
+    return (base.weights[i] ?? 1) * Math.exp(drift.amount * (broad + 0.25 * detail) / 1.25);
+  });
+  const sum = weights.reduce((total, weight) => total + weight, 0);
+  const edges = [0];
+  weights.forEach(weight => edges.push(edges[edges.length - 1] + span * weight / sum));
+  edges[count] = span;
+  return edges;
+}
+
 export function resolveGrid(assets: GridAsset[], input: GridConfig, t: number) {
   if (!assets.length) return [];
   const c = normalizeGrid(input);
-  const xs = resolveAxis(c.columns, 1080 - c.margin * 2, c.x, t);
-  const ys = resolveAxis(c.rows, 1920 - c.margin * 2, c.y, t);
+  const xs = c.motionPattern === 'organic'
+    ? resolveDriftAxis(c.columns, 1080 - c.margin * 2, c.x, c.drift, t, 'x')
+    : resolveAxis(c.columns, 1080 - c.margin * 2, c.x, t);
+  const ys = c.motionPattern === 'organic'
+    ? resolveDriftAxis(c.rows, 1920 - c.margin * 2, c.y, c.drift, t, 'y')
+    : resolveAxis(c.rows, 1920 - c.margin * 2, c.y, t);
   return Array.from({ length: c.rows * c.columns }, (_, i) => {
     const col = i % c.columns;
     const row = Math.floor(i / c.columns);

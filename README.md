@@ -124,7 +124,8 @@ for the product decision and incremental architecture direction.
 - **GIF Grid** — stretch a folder of animated GIFs across an elastic grid. Set
   rows, columns, gutters, and margins; animate row heights and column widths
   independently with wave strength, speed, frequency, phase, direction, and a
-  secondary harmonic. Adjust individual row/column base sizes, GIF playback,
+  secondary harmonic, or choose Organic Drift for smooth seeded breathing with
+  strength, speed, and spatial scale controls. Zero drift speed freezes the layout. Adjust individual row/column base sizes, GIF playback,
   per-cell playback phase, library order, and seeded shuffle. Images stretch
   to fill cells without cropping. Folder selection replaces the library;
   Add GIF files appends to it. Animated GIFs are required. All assets are
@@ -179,9 +180,9 @@ Scale and Voronoi Cover Zoom can go below 1 to reveal multiple tiles.
 Texture settings are saved in `.slapchop` projects; older projects keep their
 existing mapping defaults.
 
-Projects now save as format version 9, which adds the GIF Grid library and
-distortion settings. Versions 1–8 still open; older builds refuse version 9
-files rather than silently discard the new mode.
+Projects now save as format version 10, which adds Organic Drift for GIF Grid.
+Versions 1–9 still open; existing grids retain their Axis Waves motion. Older
+builds refuse version 10 files rather than silently render different motion.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

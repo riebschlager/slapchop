@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GRID, GridAsset, normalizeGrid, resolveAxis, resolveGrid } from './model';
+import { DEFAULT_GRID, GridAsset, normalizeGrid, resolveAxis, resolveDriftAxis, resolveGrid } from './model';
 
 const assets: GridAsset[] = ['a', 'b', 'c'].map(id => ({ id, name: `${id}.gif`, src: id,
   gifData: { width: 80, height: 40, totalDurationMs: 1000, frames: [] } }));
@@ -48,5 +48,51 @@ describe('elastic grid geometry', () => {
     expect(c.x.speed).toBe(DEFAULT_GRID.x.speed);
     expect(c.backgroundColor).toBe(DEFAULT_GRID.backgroundColor);
     expect(resolveGrid([], c, 0)).toEqual([]);
+  });
+});
+
+
+describe('organic grid drift', () => {
+  const config = normalizeGrid({ motionPattern: 'organic' });
+  const geometry = (t: number, c = config) => resolveGrid(assets, c, t).map(({ x, y, width, height }) => ({ x, y, width, height }));
+  it('is seekable, seeded, and evolves on both axes', () => {
+    const later = geometry(7);
+    geometry(50);
+    expect(geometry(7)).toEqual(later);
+    expect(later.map(c => c.width)).not.toEqual(geometry(0).map(c => c.width));
+    expect(later.map(c => c.height)).not.toEqual(geometry(0).map(c => c.height));
+    expect(geometry(7, normalizeGrid({ ...config, drift: { ...config.drift, seed: 93 } }))).not.toEqual(later);
+    expect(geometry(7, normalizeGrid({ ...config, drift: { ...config.drift, scale: 7 } }))).not.toEqual(later);
+  });
+  it('freezes only layout at zero drift speed and keeps GIF playback independent', () => {
+    const frozen = normalizeGrid({ ...config, drift: { ...config.drift, speed: 0 } });
+    expect(geometry(100, frozen)).toEqual(geometry(0, frozen));
+    expect(resolveGrid(assets, frozen, 100)[0].sourceTime).toBe(100);
+  });
+  it('honors base sizes at zero strength and ignores inactive wave settings', () => {
+    const c = normalizeGrid({ ...config, rows: 1, columns: 2, margin: 40, gutter: 10,
+      drift: { ...config.drift, amount: 0 }, x: { ...DEFAULT_GRID.x, weights: [1, 3] } });
+    expect(resolveGrid(assets, c, 200)[0]).toMatchObject({ width: 240, height: 1830 });
+    expect(geometry(7, normalizeGrid({ ...config, x: { ...config.x, amount: 0, speed: 2 } }))).toEqual(geometry(7));
+  });
+  it('keeps extreme layouts positive and tiled for negative and long export times', () => {
+    for (const count of [1, 2, 24]) for (const t of [-100, 0, 0.5, 30, 21600]) {
+      const edges = resolveDriftAxis(count, 1080, { ...DEFAULT_GRID.x, weights: [0.2, 5] },
+        { amount: 2.5, speed: 2, scale: 8, seed: 100000 }, t, 'x');
+      expect(edges[0]).toBe(0);
+      expect(edges[count]).toBe(1080);
+      expect(edges.slice(1).every((edge, i) => edge > edges[i])).toBe(true);
+    }
+  });
+  it('changes continuously across temporal noise boundaries', () => {
+    const drift = { ...config.drift, speed: 1 };
+    const before = resolveDriftAxis(8, 1080, DEFAULT_GRID.x, drift, 0.39 - 0.00001, 'x');
+    const after = resolveDriftAxis(8, 1080, DEFAULT_GRID.x, drift, 0.39 + 0.00001, 'x');
+    expect(after.every((edge, i) => Math.abs(edge - before[i]) < 0.05)).toBe(true);
+  });
+  it('normalizes malformed persisted drift controls and preserves legacy waves', () => {
+    expect(normalizeGrid({}).motionPattern).toBe('waves');
+    expect(normalizeGrid({ drift: { amount: NaN, speed: -2, scale: 999, seed: Infinity } }).drift)
+      .toEqual({ amount: 1.2, speed: 0, scale: 8, seed: 1 });
   });
 });

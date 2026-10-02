@@ -189,10 +189,16 @@ interface ProjectFileV8 extends Omit<ProjectFileV7, 'version'> {
 interface ProjectFileV9 extends Omit<ProjectFileV8, 'version'> {
   version: 9;
   gridAssets: (Omit<GridAsset, 'src' | 'gifData'> & { assetId: string })[];
+  grid: Omit<GridConfig, 'motionPattern' | 'drift'>;
+}
+
+// V10 adds Organic Drift; older builds must not silently render it as axis waves.
+interface ProjectFileV10 extends Omit<ProjectFileV9, 'version' | 'grid'> {
+  version: 10;
   grid: GridConfig;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8 | ProjectFileV9;
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8 | ProjectFileV9 | ProjectFileV10;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -321,9 +327,9 @@ export async function saveProject(): Promise<void> {
   const gridAssets = await Promise.all(doc.gridAssets.map(async source => ({
     id: source.id, name: source.name, assetId: await assetIdFor(source.src, source.name)
   })));
-  const payload: ProjectFileV9 = {
+  const payload: ProjectFileV10 = {
     app: 'slapchop',
-    version: 9,
+    version: 10,
     gridAssets,
     grid: doc.grid,
     savedAt: new Date().toISOString(),
@@ -355,7 +361,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(payload.version)) {
+  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(payload.version)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -477,18 +483,18 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_LANDSCAPE, ...payload.landscape }
     : { ...DEFAULT_LANDSCAPE };
 
-  const ringsAssets: RingsAsset[] = (payload.version === 7 || payload.version === 8 || payload.version === 9) ? payload.ringsAssets.map(source => {
+  const ringsAssets: RingsAsset[] = (payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10) ? payload.ringsAssets.map(source => {
     const { assetId, ...rest } = source;
     const asset = materialized.get(assetId);
     if (!asset) throw new Error(`GIF Rings source “${source.name}” is missing.`);
     return { ...rest, src: asset.src, gifData: asset.gifData };
   }) : [];
 
-  if (payload.version === 9 && !Array.isArray(payload.gridAssets)) {
+  if ((payload.version === 9 || payload.version === 10) && !Array.isArray(payload.gridAssets)) {
     throw new Error('GIF Grid library must be an array of sources.');
   }
   const gridIds = new Set<string>();
-  const gridAssets: GridAsset[] = payload.version === 9 ? payload.gridAssets.map(source => {
+  const gridAssets: GridAsset[] = (payload.version === 9 || payload.version === 10) ? payload.gridAssets.map(source => {
     if (!source || typeof source.id !== 'string' || !source.id || typeof source.name !== 'string'
       || typeof source.assetId !== 'string' || gridIds.has(source.id)) {
       throw new Error('GIF Grid contains an invalid or duplicate source.');
@@ -501,9 +507,9 @@ export function restoreProjectDocument(
 
   return {
     gridAssets,
-    grid: normalizeGrid(payload.version === 9 ? payload.grid : undefined),
+    grid: normalizeGrid((payload.version === 9 || payload.version === 10) ? payload.grid : undefined),
     ringsAssets,
-    rings: normalizeRings(payload.version === 7 || payload.version === 8 || payload.version === 9 ? payload.rings : undefined),
+    rings: normalizeRings(payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 ? payload.rings : undefined),
     layers,
     polygonLayers,
     mesh3dLayers,
@@ -526,7 +532,7 @@ export function restorePolygonUnderpainting(
   payload: ProjectFile,
   materialized: ReadonlyMap<string, MaterializedAsset> = new Map()
 ): PolygonUnderpainting | null {
-  if ((payload.version !== 7 && payload.version !== 8 && payload.version !== 9) || !payload.polygonUnderpainting) return null;
+  if ((payload.version !== 7 && payload.version !== 8 && payload.version !== 9 && payload.version !== 10) || !payload.polygonUnderpainting) return null;
   const { assetId, ...rest } = payload.polygonUnderpainting;
   const asset = materialized.get(assetId);
   if (!asset) throw new Error(`Tiled GIF underpainting “${rest.name}” is missing from the project file.`);
@@ -542,7 +548,7 @@ export function restorePolygonTextureFolder(
   payload: ProjectFile,
   materialized: ReadonlyMap<string, MaterializedAsset> = new Map()
 ): PolygonTextureFolder | null {
-  if ((payload.version !== 8 && payload.version !== 9) || !payload.polygonTextureFolder) return null;
+  if ((payload.version !== 8 && payload.version !== 9 && payload.version !== 10) || !payload.polygonTextureFolder) return null;
   const { name, assets } = payload.polygonTextureFolder;
   const restored = assets.map(({ id, name: assetName, assetId }) => {
     const asset = materialized.get(assetId);
