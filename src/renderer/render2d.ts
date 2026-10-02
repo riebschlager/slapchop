@@ -423,7 +423,10 @@ export function renderFrame(
       : state.appMode === 'landscape'
         ? state.landscape.skyBackgroundColor
       : state.canvasBg;
-  ctx.fillRect(0, 0, width, height);
+  const deformableGrid = state.appMode === 'gif-grid'
+    && (state.grid.motionPattern === 'directional' || state.grid.motionPattern === 'ripple');
+  if (deformableGrid) ctx.clearRect(0, 0, width, height);
+  else ctx.fillRect(0, 0, width, height);
 
   if (state.appMode === 'symmetry') {
     const scaleX = width / CANVAS_WIDTH;
@@ -486,13 +489,31 @@ export function renderFrame(
     renderFlythroughScene(ctx, t, state.flythroughAssets, state.flythrough, width, height);
   } else if (state.appMode === 'gif-grid') {
     ctx.save();
+    // Cells do not overlap: add their fractional edge coverage on a transparent
+    // stage, then put the background behind them to avoid dark triangle seams.
+    if (deformableGrid) ctx.globalCompositeOperation = 'lighter';
     ctx.scale(width / CANVAS_WIDTH, height / CANVAS_HEIGHT);
     ctx.translate(540, 960);
     for (const cell of resolveGrid(state.gridAssets, state.grid, t)) {
       const frame = getGifFrameAtTime(cell.asset.gifData, cell.sourceTime, 1);
-      if (frame && cell.width > 0 && cell.height > 0) ctx.drawImage(frame, cell.x - cell.width / 2, cell.y - cell.height / 2, cell.width, cell.height);
+      if (!frame) continue;
+      if (cell.corners) {
+        const [a, b, c, d] = cell.corners;
+        if (a.x === c.x && a.y === c.y) continue;
+        const { width: w, height: h } = cell.asset.gifData;
+        drawImageTriangle(ctx, frame, [[0, 0], [w, 0], [w, h]], [[a.x, a.y], [b.x, b.y], [c.x, c.y]], undefined, [[a.x, a.y], [c.x, c.y], [b.x, b.y]]);
+        drawImageTriangle(ctx, frame, [[0, 0], [w, h], [0, h]], [[a.x, a.y], [c.x, c.y], [d.x, d.y]], undefined, [[a.x, a.y], [c.x, c.y], [d.x, d.y]]);
+      } else if (cell.width > 0 && cell.height > 0) {
+        ctx.drawImage(frame, cell.x - cell.width / 2, cell.y - cell.height / 2, cell.width, cell.height);
+      }
     }
     ctx.restore();
+    if (deformableGrid) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
   } else if (state.appMode === 'rings') {
     for (const item of resolveRings(state.ringsAssets, state.rings, t)) {
       const source = item.asset.gifData

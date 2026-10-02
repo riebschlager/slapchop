@@ -5,17 +5,17 @@ import Slider from '../../components/controls/Slider';
 import Select from '../../components/controls/Select';
 import Toggle from '../../components/controls/Toggle';
 import MasterFxPanel from '../../components/panels/MasterFxPanel';
-import type { GridAxis, GridDrift } from './model';
+import type { GridAxis, GridDrift, GridDirectional, GridRipple } from './model';
 
 function AxisEditor({ axis, title, count }: { axis: 'x' | 'y'; title: string; count: number }) {
   const config = useStore(s => s.grid[axis]);
-  const organic = useStore(s => s.grid.motionPattern === 'organic');
+  const baseOnly = useStore(s => s.grid.motionPattern !== 'waves');
   const update = useStore(s => s.updateGrid);
   const [selected, setSelected] = useState('0');
   const index = Math.min(Number(selected), count - 1);
   const change = (patch: Partial<GridAxis>) => update({ [axis]: { ...config, ...patch } });
-  return <ControlSection sectionKey={`${title} distortion`} title={<span>{title} {organic ? 'base sizes' : 'distortion'}</span>}>
-    {!organic && <>
+  return <ControlSection sectionKey={`${title} distortion`} title={<span>{title} {baseOnly ? 'base sizes' : 'distortion'}</span>}>
+    {!baseOnly && <>
       <Slider size="sm" label="Stretch strength" value={config.amount} min={0} max={2.5} step={0.01} onChange={amount => change({ amount })} />
       <Slider size="sm" label="Wave speed · cycles/s" value={config.speed} min={0} max={2} step={0.001} scale="log" onChange={speed => change({ speed })} />
       <Slider size="sm" label="Waves across grid" value={config.frequency} min={0} max={4} step={0.01} onChange={frequency => change({ frequency })} />
@@ -38,10 +38,14 @@ export default function GridInspector() {
   const c = useStore(s => s.grid);
   const update = useStore(s => s.updateGrid);
   const changeDrift = (patch: Partial<GridDrift>) => update({ drift: { ...c.drift, ...patch } });
+  const field = c.motionPattern === 'ripple' ? c.ripple : c.directional;
+  const changeField = (patch: Partial<GridDirectional & GridRipple>) => c.motionPattern === 'ripple'
+    ? update({ ripple: { ...c.ripple, ...patch } })
+    : update({ directional: { ...c.directional, ...patch } });
   return <div>
     <div className="border-b border-ui-border bg-ui-surface p-3">
       <h2 className="text-xs font-bold uppercase tracking-[0.16em] text-ui-text">Elastic Grid</h2>
-      <p className="mt-1 text-[10px] leading-relaxed text-ui-text-subtle">Stretch every frame. Rows and columns breathe independently inside a fixed stage.</p>
+      <p className="mt-1 text-[10px] leading-relaxed text-ui-text-subtle">Stretch every frame. Breathe, bend, and ripple inside a fixed stage.</p>
     </div>
     <ControlSection sectionKey="Grid layout" title={<span>Grid layout</span>}>
       <Slider size="sm" label="Columns" value={c.columns} min={1} max={24} step={1} onChange={columns => update({ columns })} />
@@ -51,13 +55,30 @@ export default function GridInspector() {
     </ControlSection>
     <ControlSection sectionKey="Grid motion" title={<span>Grid motion</span>}>
       <Select label="Motion pattern" value={c.motionPattern} onChange={motionPattern => update({ motionPattern })}
-        options={[{ value: 'waves', label: 'Axis Waves' }, { value: 'organic', label: 'Organic Drift' }]} />
+        options={[{ value: 'waves', label: 'Axis Waves' }, { value: 'organic', label: 'Organic Drift' }, { value: 'directional', label: 'Directional Wave' }, { value: 'ripple', label: 'Ripple' }]} />
       {c.motionPattern === 'organic' && <>
         <Slider size="sm" label="Drift strength" value={c.drift.amount} min={0} max={2.5} step={0.01} onChange={amount => changeDrift({ amount })} />
         <Slider size="sm" label="Drift speed" value={c.drift.speed} min={0} max={2} step={0.001} scale="log" onChange={speed => changeDrift({ speed })} />
         <Slider size="sm" label="Drift scale · detail across grid" value={c.drift.scale} min={0.25} max={8} step={0.01} onChange={scale => changeDrift({ scale })} />
         <Slider size="sm" label="Drift seed" value={c.drift.seed} min={0} max={100000} step={1} onChange={seed => changeDrift({ seed })} />
         <p className="text-[10px] leading-relaxed text-ui-text-subtle">Smooth, seeded movement. Lower scale creates broad swells; higher scale adds local variation. Zero speed freezes the layout.</p>
+      </>}
+      {(c.motionPattern === 'directional' || c.motionPattern === 'ripple') && <>
+        <Slider size="sm" label="Deformation strength" value={field.amount} min={0} max={5} step={0.01} onChange={amount => changeField({ amount })} />
+        <Slider size="sm" label="Travel speed · cycles/s" value={field.speed} min={0} max={2} step={0.001} scale="log" onChange={speed => changeField({ speed })} />
+        <Slider size="sm" label="Wavelength · px" value={field.wavelength} min={100} max={3000} step={1} onChange={wavelength => changeField({ wavelength })} />
+        <Slider size="sm" label="Field phase" value={field.phase} min={0} max={1} step={0.001} onChange={phase => changeField({ phase })} />
+        {c.motionPattern === 'directional' ? <>
+          <Slider size="sm" label="Wave angle · °" value={c.directional.angle} min={-180} max={180} step={1} onChange={angle => changeField({ angle })} />
+          <Slider size="sm" label="Direction rotation · °/s" value={c.directional.rotationSpeed} min={-90} max={90} step={0.1} onChange={rotationSpeed => changeField({ rotationSpeed })} />
+        </> : <>
+          <Slider size="sm" label="Ripple center X" value={c.ripple.centerX} min={0} max={1} step={0.01} onChange={centerX => changeField({ centerX })} />
+          <Slider size="sm" label="Ripple center Y" value={c.ripple.centerY} min={0} max={1} step={0.01} onChange={centerY => changeField({ centerY })} />
+        </>}
+        <div className="flex items-center justify-between text-[11px] text-ui-text-muted">{c.motionPattern === 'ripple' ? 'Travel inward' : 'Reverse travel'}
+          <Toggle checked={field.reverse} onChange={reverse => changeField({ reverse })} title="Reverse field travel" />
+        </div>
+        <p className="text-[10px] leading-relaxed text-ui-text-subtle">Shared corners bend the GIFs together; perimeter corners stay pinned. Use at least two rows and columns. Zero travel speed freezes propagation{c.motionPattern === 'directional' ? '; set direction rotation to zero to freeze the whole layout' : ''}.</p>
       </>}
     </ControlSection>
     <AxisEditor axis="x" title="Column" count={c.columns} />

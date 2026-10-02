@@ -6,7 +6,8 @@ export function drawImageTriangle(
   source: CanvasImageSource,
   src: [[number, number], [number, number], [number, number]],
   dst: [[number, number], [number, number], [number, number]],
-  tiling?: TextureTiling
+  tiling?: TextureTiling,
+  clipDiagonal?: [[number, number], [number, number], [number, number]]
 ) {
   const [s0, s1, s2] = src;
   const [d0, d1, d2] = dst;
@@ -21,9 +22,29 @@ export function drawImageTriangle(
 
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(d0[0], d0[1]);
-  ctx.lineTo(d1[0], d1[1]);
-  ctx.lineTo(d2[0], d2[1]);
+  if (clipDiagonal) {
+    // Grid image bounds already clip the two exterior edges. Clip only the
+    // shared diagonal so exterior edge coverage is not multiplied twice.
+    const [start, end, side] = clipDiagonal;
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const sign = dx * (side[1] - start[1]) - dy * (side[0] - start[0]) > 0 ? 1 : -1;
+    const length = Math.hypot(dx, dy);
+    // Strong deformation can shorten the diagonal relative to the image edges.
+    const extent = 4 * Math.max(length, Math.hypot(side[0] - start[0], side[1] - start[1]), Math.hypot(side[0] - end[0], side[1] - end[1]));
+    const tx = dx / length * extent;
+    const ty = dy / length * extent;
+    const nx = -ty * sign;
+    const ny = tx * sign;
+    ctx.moveTo(start[0] - tx, start[1] - ty);
+    ctx.lineTo(end[0] + tx, end[1] + ty);
+    ctx.lineTo(end[0] + tx + nx, end[1] + ty + ny);
+    ctx.lineTo(start[0] - tx + nx, start[1] - ty + ny);
+  } else {
+    ctx.moveTo(d0[0], d0[1]);
+    ctx.lineTo(d1[0], d1[1]);
+    ctx.lineTo(d2[0], d2[1]);
+  }
   ctx.closePath();
   ctx.clip();
   ctx.transform(a, b, c, d, e, f);

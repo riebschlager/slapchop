@@ -1,4 +1,4 @@
-import { DEFAULT_GRID } from '../modes/grid/model';
+import { DEFAULT_GRID, normalizeGrid } from '../modes/grid/model';
 import { DEFAULT_RINGS } from '../modes/rings/model';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAMERA3D, DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, Layer, PolygonLayer } from '../types';
@@ -227,4 +227,21 @@ it('stretches entire GIF frames into deterministic grid cells in Canvas 2D', () 
   expect(trace).toEqual(renderTrace(renderState, 0.25));
   expect(trace.filter(line => line.startsWith('drawImage:'))).toHaveLength(4);
   expect(trace).not.toEqual(renderTrace(renderState, 1.25));
+});
+
+it.each(['directional', 'ripple'] as const)('maps GIFs to shared triangles deterministically in %s mode', motionPattern => {
+  const renderState = state('gif-grid');
+  renderState.grid = normalizeGrid({ motionPattern, rows: 3, columns: 3 });
+  renderState.gridAssets = [{ id: 'grid', name: 'grid.gif', src: '', gifData: {
+    width: 80, height: 40, totalDurationMs: 1000,
+    frames: [{ image: {} as CanvasImageSource, delayMs: 1000, startTimeMs: 0, endTimeMs: 1000 }]
+  } }];
+  const first = renderTrace(renderState, 0);
+  expect(first).toContain('globalCompositeOperation=lighter');
+  expect(first).toContain('globalCompositeOperation=destination-over');
+  expect(first).toContain('clearRect:[0,0,540,960]');
+  expect(first.filter(entry => entry.startsWith('drawImage:'))).toHaveLength(18);
+  expect(first.filter(entry => entry.startsWith('transform:'))).toHaveLength(18);
+  expect(renderTrace(renderState, 0)).toEqual(first);
+  expect(renderTrace(renderState, 2)).not.toEqual(first);
 });

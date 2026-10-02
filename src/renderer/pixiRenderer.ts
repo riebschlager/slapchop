@@ -12,6 +12,7 @@ import {
   Graphics,
   ImageSource,
   NoiseFilter,
+  MeshSimple,
   RenderTexture,
   Renderer,
   Sprite,
@@ -163,6 +164,7 @@ export class PixiSceneRenderer {
   private flythroughSprite = new Sprite();
   private gridContainer = new Container();
   private gridSprites: Sprite[] = [];
+  private gridMeshes: MeshSimple[] = [];
   private ringsContainer = new Container();
   private ringsSprites: Sprite[] = [];
   private tunnelSprite = new Sprite();
@@ -313,6 +315,7 @@ export class PixiSceneRenderer {
 
   destroy() {
     this.destroyed = true;
+    this.clearGridMeshes();
     for (const modes of this.mirroredTextures.values()) for (const texture of modes.values()) texture.destroy(true);
     this.mirroredTextures.clear();
     for (const arr of this.gifTextures.values()) arr.forEach((tx) => tx.destroy(true));
@@ -367,6 +370,7 @@ export class PixiSceneRenderer {
     const landscapeVisible = state.appMode === 'landscape';
     this.gridContainer.visible = state.appMode === 'gif-grid';
     if (state.appMode !== 'gif-grid') {
+      this.clearGridMeshes();
       this.gridSprites.forEach(sprite => sprite.destroy());
       this.gridSprites = [];
     }
@@ -430,10 +434,53 @@ export class PixiSceneRenderer {
     this.sweepTextures(state);
   }
 
+  private destroyGridMesh(mesh: MeshSimple) {
+    // Geometry belongs to the cell; GIF textures remain shared by the renderer cache.
+    mesh.geometry.destroy(true);
+    mesh.destroy();
+  }
+
+  private clearGridMeshes() {
+    this.gridMeshes.forEach(mesh => this.destroyGridMesh(mesh));
+    this.gridMeshes = [];
+  }
+
   private syncGrid(t: number, state: RenderState) {
     const items = resolveGrid(state.gridAssets, state.grid, t);
+    const deformable = state.grid.motionPattern === 'directional' || state.grid.motionPattern === 'ripple';
+    if (deformable) {
+      this.gridSprites.forEach(sprite => sprite.destroy());
+      this.gridSprites = [];
+    } else {
+      this.clearGridMeshes();
+    }
     while (this.gridSprites.length > items.length) this.gridSprites.pop()!.destroy();
+    while (this.gridMeshes.length > items.length) this.destroyGridMesh(this.gridMeshes.pop()!);
     items.forEach((item, index) => {
+      const gif = item.asset.gifData;
+      const texture = this.getGifTextures(gif)[getGifFrameIndexAtTime(gif, item.sourceTime, 1)];
+      if (item.corners) {
+        let mesh = this.gridMeshes[index];
+        if (!mesh) {
+          mesh = new MeshSimple({
+            texture: texture ?? Texture.EMPTY,
+            vertices: new Float32Array(8),
+            uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+            indices: new Uint32Array([0, 1, 2, 0, 2, 3])
+          });
+          this.gridMeshes.push(mesh);
+          this.gridContainer.addChild(mesh);
+        }
+        const corners = item.corners;
+        mesh.visible = Boolean(texture) && (corners[0].x !== corners[2].x || corners[0].y !== corners[2].y);
+        if (!texture) return;
+        mesh.texture = texture;
+        corners.forEach((point, i) => {
+          mesh.vertices[i * 2] = point.x;
+          mesh.vertices[i * 2 + 1] = point.y;
+        });
+        return;
+      }
       let sprite = this.gridSprites[index];
       if (!sprite) {
         sprite = new Sprite();
@@ -441,10 +488,6 @@ export class PixiSceneRenderer {
         this.gridSprites.push(sprite);
         this.gridContainer.addChild(sprite);
       }
-      const gif = item.asset.gifData;
-      const texture = gif
-        ? this.getGifTextures(gif)[getGifFrameIndexAtTime(gif, item.sourceTime, 1)]
-        : this.getStaticTexture(item.asset.src);
       sprite.visible = Boolean(texture);
       if (!texture) return;
       sprite.texture = texture;

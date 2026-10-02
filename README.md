@@ -125,7 +125,14 @@ for the product decision and incremental architecture direction.
   rows, columns, gutters, and margins; animate row heights and column widths
   independently with wave strength, speed, frequency, phase, direction, and a
   secondary harmonic, or choose Organic Drift for smooth seeded breathing with
-  strength, speed, and spatial scale controls. Zero drift speed freezes the layout. Adjust individual row/column base sizes, GIF playback,
+  strength, speed, and spatial scale controls. Directional Wave bends shared cell
+  corners with angle and direction rotation controls; Ripple spreads waves from
+  a movable center, outward or inward. These patterns pin the perimeter, bound
+  deformation to keep cells convex, and need at least two rows and columns.
+  Deformation strength ranges from 0 to 5; high strengths are limited only as
+  needed to prevent cells folding.
+  Set travel and direction rotation speeds to zero to freeze deformation.
+  Adjust individual row/column base sizes, GIF playback,
   per-cell playback phase, library order, and seeded shuffle. Images stretch
   to fill cells without cropping. Folder selection replaces the library;
   Add GIF files appends to it. Animated GIFs are required. All assets are
@@ -180,9 +187,9 @@ Scale and Voronoi Cover Zoom can go below 1 to reveal multiple tiles.
 Texture settings are saved in `.slapchop` projects; older projects keep their
 existing mapping defaults.
 
-Projects now save as format version 10, which adds Organic Drift for GIF Grid.
-Versions 1–9 still open; existing grids retain their Axis Waves motion. Older
-builds refuse version 10 files rather than silently render different motion.
+Projects now save as format version 11, which adds Directional Wave and Ripple
+for GIF Grid. Versions 1–10 still open with their existing motion. Older builds
+refuse version 11 files rather than silently render different motion.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

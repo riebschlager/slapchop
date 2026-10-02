@@ -28,7 +28,7 @@ describe('ring document integration', () => {
     await saveProject();
     const blob = vi.mocked(saveBlob).mock.calls.at(-1)![0];
     const payload = JSON.parse(await blob.text());
-    expect(payload.version).toBe(10);
+    expect(payload.version).toBe(11);
     expect(payload.ringsAssets[0].src).toBeUndefined();
     const id = payload.ringsAssets[0].assetId;
     expect(payload.assets[id].dataUrl).toBe('data:image/png;base64,c291cmNl');

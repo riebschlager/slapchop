@@ -1,3 +1,4 @@
+import { insetGridQuad, resolveGridVertices, type GridQuad } from './deformation';
 import type { GifData } from '../../types';
 
 export interface GridAsset {
@@ -21,8 +22,25 @@ export interface GridDrift {
   scale: number;
   seed: number;
 }
+export interface GridFieldMotion {
+  amount: number;
+  speed: number;
+  wavelength: number;
+  phase: number;
+  reverse: boolean;
+}
+export interface GridDirectional extends GridFieldMotion {
+  angle: number;
+  rotationSpeed: number;
+}
+export interface GridRipple extends GridFieldMotion {
+  centerX: number;
+  centerY: number;
+}
 export interface GridConfig {
-  motionPattern: 'waves' | 'organic';
+  motionPattern: 'waves' | 'organic' | 'directional' | 'ripple';
+  directional: GridDirectional;
+  ripple: GridRipple;
   drift: GridDrift;
   rows: number;
   columns: number;
@@ -40,6 +58,8 @@ const axis = (phase: number): GridAxis => ({
   amount: 0.7, speed: 0.12, frequency: 1, phase, harmonic: 0, reverse: false, weights: []
 });
 export const DEFAULT_GRID: GridConfig = {
+  directional: { amount: 0.8, speed: 0.12, wavelength: 900, phase: 0, reverse: false, angle: 45, rotationSpeed: 0 },
+  ripple: { amount: 0.8, speed: 0.12, wavelength: 700, phase: 0, reverse: false, centerX: 0.5, centerY: 0.5 },
   motionPattern: 'waves', drift: { amount: 1.2, speed: 0.12, scale: 2, seed: 1 },
   rows: 6, columns: 4, gutter: 0, margin: 0, x: axis(0), y: axis(0.25),
   gifSpeed: 1, cellPhase: 0, shuffle: false, seed: 1, backgroundColor: '#09090b'
@@ -55,10 +75,29 @@ function normalizeAxis(input: Partial<GridAxis> | undefined, fallback: GridAxis)
     weights: Array.isArray(a.weights) ? a.weights.slice(0, 24).map(w => clamp(w, 1, 0.2, 5)) : []
   };
 }
+function normalizeField(input: Partial<GridFieldMotion> | undefined, fallback: GridFieldMotion): GridFieldMotion {
+  return {
+    amount: clamp(input?.amount, fallback.amount, 0, 5),
+    speed: clamp(input?.speed, fallback.speed, 0, 2),
+    wavelength: clamp(input?.wavelength, fallback.wavelength, 100, 3000),
+    phase: clamp(input?.phase, fallback.phase, 0, 1),
+    reverse: typeof input?.reverse === 'boolean' ? input.reverse : false
+  };
+}
 export function normalizeGrid(input: Partial<GridConfig> | null = {}): GridConfig {
   input = input ?? {};
   return {
-    motionPattern: input.motionPattern === 'organic' ? 'organic' : 'waves',
+    motionPattern: input.motionPattern === 'organic' || input.motionPattern === 'directional' || input.motionPattern === 'ripple' ? input.motionPattern : 'waves',
+    directional: {
+      ...normalizeField(input.directional, DEFAULT_GRID.directional),
+      angle: clamp(input.directional?.angle, DEFAULT_GRID.directional.angle, -180, 180),
+      rotationSpeed: clamp(input.directional?.rotationSpeed, 0, -90, 90)
+    },
+    ripple: {
+      ...normalizeField(input.ripple, DEFAULT_GRID.ripple),
+      centerX: clamp(input.ripple?.centerX, 0.5, 0, 1),
+      centerY: clamp(input.ripple?.centerY, 0.5, 0, 1)
+    },
     drift: {
       amount: clamp(input.drift?.amount, DEFAULT_GRID.drift.amount, 0, 2.5),
       speed: clamp(input.drift?.speed, DEFAULT_GRID.drift.speed, 0, 2),
@@ -126,12 +165,16 @@ export function resolveDriftAxis(count: number, span: number, base: GridAxis, dr
 export function resolveGrid(assets: GridAsset[], input: GridConfig, t: number) {
   if (!assets.length) return [];
   const c = normalizeGrid(input);
+  const deformable = c.motionPattern === 'directional' || c.motionPattern === 'ripple';
+  const baseX = deformable ? { ...c.x, amount: 0 } : c.x;
+  const baseY = deformable ? { ...c.y, amount: 0 } : c.y;
   const xs = c.motionPattern === 'organic'
     ? resolveDriftAxis(c.columns, 1080 - c.margin * 2, c.x, c.drift, t, 'x')
-    : resolveAxis(c.columns, 1080 - c.margin * 2, c.x, t);
+    : resolveAxis(c.columns, 1080 - c.margin * 2, baseX, t);
   const ys = c.motionPattern === 'organic'
     ? resolveDriftAxis(c.rows, 1920 - c.margin * 2, c.y, c.drift, t, 'y')
-    : resolveAxis(c.rows, 1920 - c.margin * 2, c.y, t);
+    : resolveAxis(c.rows, 1920 - c.margin * 2, baseY, t);
+  const vertices = deformable ? resolveGridVertices(xs, ys, c, t) : undefined;
   return Array.from({ length: c.rows * c.columns }, (_, i) => {
     const col = i % c.columns;
     const row = Math.floor(i / c.columns);
@@ -139,7 +182,16 @@ export function resolveGrid(assets: GridAsset[], input: GridConfig, t: number) {
     const asset = assets[c.shuffle ? Math.floor((random - Math.floor(random)) * assets.length) : i % assets.length];
     const w = xs[col + 1] - xs[col];
     const h = ys[row + 1] - ys[row];
+    let corners: GridQuad | undefined;
+    if (vertices) {
+      const top = row * (c.columns + 1) + col;
+      const bottom = top + c.columns + 1;
+      const inset = insetGridQuad([vertices[top], vertices[top + 1], vertices[bottom + 1], vertices[bottom]], c.gutter);
+      const centered = (p: { x: number; y: number }) => ({ x: p.x - 540 + c.margin, y: p.y - 960 + c.margin });
+      corners = [centered(inset[0]), centered(inset[1]), centered(inset[2]), centered(inset[3])];
+    }
     return {
+      corners,
       asset, x: -540 + c.margin + xs[col] + w / 2, y: -960 + c.margin + ys[row] + h / 2,
       width: Math.max(0, w - c.gutter), height: Math.max(0, h - c.gutter),
       sourceTime: t * c.gifSpeed + (i * c.cellPhase % 1) * asset.gifData.totalDurationMs / 1000
