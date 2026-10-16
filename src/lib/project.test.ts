@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_TUNNEL } from '../types';
+import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_MASTER_FX, DEFAULT_TUNNEL } from '../types';
 import { restoreProjectDocument, restorePolygonTextureFolder, restorePolygonUnderpainting } from './project';
 
 describe('restoreProjectDocument', () => {
@@ -250,6 +250,26 @@ it('round-trips additive texture fields across every texture editor', async () =
   expect(restored.gifVoronoi).toMatchObject({ textureRotation: 51, textureTiling: 'mirror-x', coverZoom: 0.5 });
   expect(restored.landscape).toMatchObject({ terrainTextureRotation: 18, terrainTextureTiling: 'repeat' });
   expect(restored.landscapeSkySources[0]).toMatchObject({ textureRotation: 39, textureTiling: 'mirror-y' });
+});
+
+it('defaults smudge for older master FX and round-trips saved smudge fields', () => {
+  const base = {
+    app: 'slapchop' as const, version: 6 as const, savedAt: '', canvasBg: '#000000',
+    layers: [], polygonLayers: [], mesh3dLayers: [],
+    flythroughAssets: [], tunnelAssets: [], gifVoronoiAssets: [], landscapeTerrainAssets: [], landscapeSkySources: [],
+    tunnel: DEFAULT_TUNNEL, gifVoronoi: DEFAULT_GIF_VORONOI, landscape: DEFAULT_LANDSCAPE,
+    assets: {}
+  };
+  const legacyFx: Partial<typeof DEFAULT_MASTER_FX> = { ...DEFAULT_MASTER_FX };
+  delete legacyFx.smudgeEnabled;
+  delete legacyFx.smudgeAmount;
+  delete legacyFx.smudgeCellSize;
+  const legacy = restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, masterFx: { ...legacyFx, enabled: true } })));
+  expect(legacy.masterFx).toMatchObject({ enabled: true, smudgeEnabled: false, smudgeAmount: DEFAULT_MASTER_FX.smudgeAmount, smudgeCellSize: DEFAULT_MASTER_FX.smudgeCellSize });
+
+  const smudged = { ...DEFAULT_MASTER_FX, enabled: true, smudgeEnabled: true, smudgeBitDepth: 2, smudgeStutter: 0, motionSmudgeAmount: { type: 'sine' as const, speed: 1, amplitude: 40, phase: 0 } };
+  const restored = restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, masterFx: smudged })));
+  expect(restored.masterFx).toEqual(smudged);
 });
 
 describe('restorePolygonUnderpainting', () => {

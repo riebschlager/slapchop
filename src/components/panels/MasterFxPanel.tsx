@@ -140,6 +140,126 @@ export default function MasterFxPanel() {
 
           </ControlSection>
 
+          {/* Module: Smudge / Low-Res Displacement */}
+          <ControlSection sectionKey="fx-smudge" title="Smudge / Displacement" defaultOpen={false} actions={<input aria-label="Enable Smudge / Displacement"
+                  type="checkbox"
+                  checked={masterFx.smudgeEnabled}
+                  onChange={(e) => { e.stopPropagation(); onUpdateFx({ smudgeEnabled: e.target.checked }); }}
+                  className="rounded border-ui-border-strong bg-ui-canvas accent-ui-accent w-3.5 h-3.5 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent"
+                />} className="bg-ui-canvas/40">
+
+              <div className="space-y-2">
+                <Slider
+                  size="sm"
+                  label="Amount"
+                  display={`${masterFx.smudgeAmount.toFixed(0)} px`}
+                  value={masterFx.smudgeAmount}
+                  min={0} max={480} step={1}
+                  onChange={(smudgeAmount) => onUpdateFx({ smudgeAmount })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Map Resolution"
+                  display={`${masterFx.smudgeCellSize.toFixed(0)} px cells`}
+                  value={masterFx.smudgeCellSize}
+                  min={2} max={270} step={1}
+                  onChange={(smudgeCellSize) => onUpdateFx({ smudgeCellSize })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Bit Depth"
+                  display={`${masterFx.smudgeBitDepth}-bit`}
+                  value={masterFx.smudgeBitDepth}
+                  min={1} max={8} step={1}
+                  onChange={(smudgeBitDepth) => onUpdateFx({ smudgeBitDepth })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Softness"
+                  display={masterFx.smudgeSoftness === 0 ? 'Blocky' : `${Math.round(masterFx.smudgeSoftness * 100)}%`}
+                  value={masterFx.smudgeSoftness}
+                  min={0} max={1} step={0.01}
+                  onChange={(smudgeSoftness) => onUpdateFx({ smudgeSoftness })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Direction"
+                  display={`${masterFx.smudgeAngle.toFixed(0)}°`}
+                  value={masterFx.smudgeAngle}
+                  min={0} max={360} step={5}
+                  onChange={(smudgeAngle) => onUpdateFx({ smudgeAngle })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Flow"
+                  display={masterFx.smudgeFlow === 0 ? 'Chaotic' : `${Math.round(masterFx.smudgeFlow * 100)}%`}
+                  value={masterFx.smudgeFlow}
+                  min={0} max={1} step={0.01}
+                  onChange={(smudgeFlow) => onUpdateFx({ smudgeFlow })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Coverage"
+                  display={`${Math.round(masterFx.smudgeCoverage * 100)}%`}
+                  value={masterFx.smudgeCoverage}
+                  min={0} max={1} step={0.01}
+                  onChange={(smudgeCoverage) => onUpdateFx({ smudgeCoverage })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Smear"
+                  display={masterFx.smudgeSmear <= 1 ? 'Shift' : `${masterFx.smudgeSmear} taps`}
+                  value={masterFx.smudgeSmear}
+                  min={1} max={8} step={1}
+                  onChange={(smudgeSmear) => onUpdateFx({ smudgeSmear })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Speed"
+                  display={`${formatRate(masterFx.smudgeSpeed)}x`}
+                  value={masterFx.smudgeSpeed}
+                  min={0} max={5} step={0.001}
+                  scale="log"
+                  minPositive={0.001}
+                  onChange={(smudgeSpeed) => onUpdateFx({ smudgeSpeed })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Stutter"
+                  display={masterFx.smudgeStutter === 0 ? 'Smooth' : `${masterFx.smudgeStutter} fps`}
+                  value={masterFx.smudgeStutter}
+                  min={0} max={30} step={1}
+                  onChange={(smudgeStutter) => onUpdateFx({ smudgeStutter })}
+                />
+
+                <Slider
+                  size="sm"
+                  label="Seed"
+                  value={masterFx.smudgeSeed}
+                  min={1} max={999} step={1}
+                  onChange={(smudgeSeed) => onUpdateFx({ smudgeSeed })}
+                />
+
+                <MotionControl
+                  label="Amount Motion Modulation"
+                  config={masterFx.motionSmudgeAmount}
+                  onChange={(c) => onUpdateFx({ motionSmudgeAmount: c })}
+                  maxAmplitude={240}
+                  stepAmplitude={5}
+                />
+              </div>
+
+          </ControlSection>
+
           {/* Module 3: Duotone / Gradient Map */}
           <ControlSection sectionKey="fx-duotone" title="Duotone / Gradient Map" defaultOpen={false} actions={<input aria-label="Enable Duotone / Gradient Map"
                   type="checkbox"

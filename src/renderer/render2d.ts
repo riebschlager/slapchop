@@ -28,6 +28,7 @@ import { deformGeometry } from '../lib/deformation3d';
 import { buildMeshWorldMatrix, mat4TransformPoint, Vec3, vecCross, vecNormalize, vecSub } from '../lib/mat4';
 import { createScreen3dProjector, ScreenPoint } from '../lib/project3d';
 import { getVoronoiCells } from '../lib/voronoi';
+import { applySmudgePixels, isSmudgeActive, resolveSmudgeParams } from '../lib/smudge';
 import { getBrushPieces, getPiecesBounds, isPolygonShapeRenderable } from '../lib/brushStroke';
 import { resolveFlythroughParticles } from '../lib/flythrough';
 import { resolveTunnelScene, TunnelVec3 } from '../lib/tunnel';
@@ -995,15 +996,23 @@ function applyMasterFx2D(
     }
   }
 
-  // 2. Pixel passes (Duotone, RGB Split, Noise)
+  // 2. Pixel passes (Smudge, Duotone, RGB Split, Noise)
+  const smudge = fx.smudgeEnabled ? resolveSmudgeParams(fx, t, width) : null;
+  const hasSmudge = smudge !== null && isSmudgeActive(smudge);
   const hasDuotone = fx.duotoneEnabled && fx.duotoneIntensity > 0;
   const hasRgbSplit = fx.rgbSplitEnabled;
   const hasNoise = fx.noiseEnabled && fx.noiseAmount > 0;
 
-  if (hasDuotone || hasRgbSplit || hasNoise) {
+  if (hasSmudge || hasDuotone || hasRgbSplit || hasNoise) {
     const imgData = ctx.getImageData(0, 0, width, height);
     const data = imgData.data;
     const len = data.length;
+
+    // Smudge runs before duotone: duotone and color adjust are pointwise, so
+    // this matches the Pixi order (bloom → smudge → RGB split → noise).
+    if (hasSmudge) {
+      applySmudgePixels(data, width, height, smudge);
+    }
 
     // Duotone
     if (hasDuotone) {

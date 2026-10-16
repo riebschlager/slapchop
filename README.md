@@ -193,8 +193,9 @@ refuse version 11 files rather than silently render different motion.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,
-CRT scanlines, film grain, bloom/glow, and color grading with motion modulation
-and one-click aesthetic presets.
+CRT scanlines, film grain, bloom/glow, color grading, and a smudge displacement
+that drags the frame through a coarse, low-bit-depth, time-stuttered vector map,
+with motion modulation and one-click aesthetic presets.
 
 ## Rendering
 

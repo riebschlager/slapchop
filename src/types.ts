@@ -246,6 +246,21 @@ export interface MasterFxConfig {
   saturation: number; // -1 to 1 (0 = neutral)
   hueRotate: number;  // 0 to 360 deg
   motionHueRotate?: MotionConfig;
+
+  // 7. Smudge / low-res displacement
+  smudgeEnabled: boolean;
+  smudgeAmount: number;    // max displacement in design px
+  motionSmudgeAmount?: MotionConfig;
+  smudgeCellSize: number;  // displacement map cell size in design px
+  smudgeBitDepth: number;  // 1 to 8 bits per vector component
+  smudgeSoftness: number;  // 0 = blocky cells, 1 = interpolated field
+  smudgeAngle: number;     // 0 to 360 deg flow direction
+  smudgeFlow: number;      // 0 = chaotic, 1 = all cells follow smudgeAngle
+  smudgeCoverage: number;  // fraction of cells that displace
+  smudgeSmear: number;     // 1 to 8 taps along the displacement vector
+  smudgeSpeed: number;
+  smudgeStutter: number;   // field update rate in fps; 0 = continuous
+  smudgeSeed: number;
 }
 
 export const DEFAULT_MASTER_FX: MasterFxConfig = {
@@ -272,6 +287,18 @@ export const DEFAULT_MASTER_FX: MasterFxConfig = {
   contrast: 0,
   saturation: 0,
   hueRotate: 0,
+  smudgeEnabled: false,
+  smudgeAmount: 60,
+  smudgeCellSize: 48,
+  smudgeBitDepth: 3,
+  smudgeSoftness: 0.3,
+  smudgeAngle: 0,
+  smudgeFlow: 0,
+  smudgeCoverage: 1,
+  smudgeSmear: 1,
+  smudgeSpeed: 0.5,
+  smudgeStutter: 8,
+  smudgeSeed: 1,
 };
 
 // ------------------------------------------------------------- 3D mesh mode

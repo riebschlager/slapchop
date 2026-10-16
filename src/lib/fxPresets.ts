@@ -28,6 +28,7 @@ export const FX_PRESETS: FxPreset[] = [
       scanlinesOpacity: 0.25,
       scanlinesSpeed: 0.6,
       bloomEnabled: false,
+      smudgeEnabled: false,
       colorAdjustEnabled: true,
       contrast: 0.25,
       saturation: 0.3,
@@ -54,6 +55,7 @@ export const FX_PRESETS: FxPreset[] = [
       scanlinesOpacity: 0.32,
       scanlinesSpeed: 1.2,
       bloomEnabled: false,
+      smudgeEnabled: false,
       colorAdjustEnabled: true,
       contrast: 0.15,
       saturation: -0.1,
@@ -77,6 +79,7 @@ export const FX_PRESETS: FxPreset[] = [
       noiseSpeed: 0.2,
       scanlinesEnabled: false,
       bloomEnabled: false,
+      smudgeEnabled: false,
       colorAdjustEnabled: true,
       contrast: 0.4,
       saturation: 0.1,
@@ -98,6 +101,7 @@ export const FX_PRESETS: FxPreset[] = [
       noiseEnabled: false,
       scanlinesEnabled: false,
       bloomEnabled: false,
+      smudgeEnabled: false,
       colorAdjustEnabled: true,
       contrast: 0.5,
       saturation: 0.4,
@@ -118,6 +122,7 @@ export const FX_PRESETS: FxPreset[] = [
       bloomEnabled: true,
       bloomStrength: 5,
       bloomQuality: 3,
+      smudgeEnabled: false,
       colorAdjustEnabled: true,
       contrast: 0.1,
       saturation: 0.35,
@@ -144,6 +149,7 @@ export const FX_PRESETS: FxPreset[] = [
       noiseEnabled: false,
       scanlinesEnabled: false,
       bloomEnabled: false,
+      smudgeEnabled: false,
       colorAdjustEnabled: true,
       contrast: 0.2,
       saturation: 0.4,
@@ -155,6 +161,42 @@ export const FX_PRESETS: FxPreset[] = [
         amplitude: 180,
         phase: 0
       }
+    }
+  },
+  {
+    id: 'smudge',
+    name: 'Smudge Glitch',
+    description: 'Low-bit blocky displacement smeared sideways with a light chromatic slip',
+    config: {
+      enabled: true,
+      smudgeEnabled: true,
+      smudgeAmount: 120,
+      motionSmudgeAmount: {
+        type: 'noise',
+        speed: 0.8,
+        amplitude: 60,
+        phase: 0
+      },
+      smudgeCellSize: 64,
+      smudgeBitDepth: 2,
+      smudgeSoftness: 0.15,
+      smudgeAngle: 0,
+      smudgeFlow: 0.6,
+      smudgeCoverage: 0.55,
+      smudgeSmear: 4,
+      smudgeSpeed: 0.6,
+      smudgeStutter: 6,
+      rgbSplitEnabled: true,
+      rgbSplitOffset: 6,
+      rgbSplitAngle: 0,
+      motionRgbSplitOffset: undefined,
+      duotoneEnabled: false,
+      noiseEnabled: true,
+      noiseAmount: 0.08,
+      noiseSpeed: 1.5,
+      scanlinesEnabled: false,
+      bloomEnabled: false,
+      colorAdjustEnabled: false
     }
   }
 ];

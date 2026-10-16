@@ -25,6 +25,8 @@ import './hueBlend';
 import { RgbSplitFilter } from './filters/rgbSplitFilter';
 import { DuotoneFilter } from './filters/duotoneFilter';
 import { ScanlinesFilter } from './filters/scanlinesFilter';
+import { SmudgeFilter } from './filters/smudgeFilter';
+import { isSmudgeActive, resolveSmudgeParams } from '../lib/smudge';
 import { GifData, Layer, PolygonLayer, PolygonPoint } from '../types';
 import { getGifFrameIndexAtTime } from '../lib/gifUtils';
 import { getExportProfiler } from '../lib/exportProfiler';
@@ -214,6 +216,7 @@ export class PixiSceneRenderer {
   private rgbSplitFilter = new RgbSplitFilter();
   private duotoneFilter = new DuotoneFilter();
   private scanlinesFilter = new ScanlinesFilter();
+  private smudgeFilter = new SmudgeFilter();
   private noiseFilter = new NoiseFilter();
   private blurFilter = new BlurFilter();
   private colorMatrixFilter = new ColorMatrixFilter();
@@ -340,6 +343,7 @@ export class PixiSceneRenderer {
     this.rgbSplitFilter.destroy();
     this.duotoneFilter.destroy();
     this.scanlinesFilter.destroy();
+    this.smudgeFilter.destroy();
     this.noiseFilter.destroy();
     this.blurFilter.destroy();
     this.colorMatrixFilter.destroy();
@@ -864,6 +868,16 @@ export class PixiSceneRenderer {
       this.blurFilter.strength = fx.bloomStrength * (width / CANVAS_WIDTH);
       this.blurFilter.quality = fx.bloomQuality || 3;
       activeFilters.push(this.blurFilter);
+    }
+
+    // Smudge sits after bloom (the only non-pointwise pass before it) so the
+    // 2D path, which smudges first in its pixel pass, composes identically.
+    if (fx.smudgeEnabled) {
+      const smudge = resolveSmudgeParams(fx, t, width);
+      if (isSmudgeActive(smudge)) {
+        this.smudgeFilter.setParams(smudge);
+        activeFilters.push(this.smudgeFilter);
+      }
     }
 
     // 4. RGB Split / Chromatic Aberration
