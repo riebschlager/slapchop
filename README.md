@@ -26,7 +26,7 @@ nothing; the only network requests it makes are for its own code.
 
 | Capability | Browser edition | Desktop app |
 | --- | --- | --- |
-| All nine creative modes | Yes | Yes |
+| All ten creative modes | Yes | Yes |
 | Rendering | WebGPU, falling back to WebGL and Canvas 2D | WebGL (what WKWebView supports reliably) |
 | Image and GIF import | File picker and drag-and-drop | Native file dialogs |
 | Folder libraries | Directory picker; current desktop browsers only | Native folder dialogs |
@@ -104,6 +104,40 @@ is reserved for platform capabilities and concepts whose behavior is genuinely
 the same. See [Independent creative modes](docs/architecture/mode-independence.md)
 for the product decision and incremental architecture direction.
 
+- **GIF Paint** — load a GIF folder, choose a round, flat, bristle, stipple, or
+  striped brush, and drag with a mouse or trackpad. Each stamp freezes the GIF
+  frame captured at that point in the gesture, including stationary holds.
+  Stamp spacing sets the travel distance between stamp centers in brush widths,
+  independent of drawing speed; stationary holds capture frames at 30 fps.
+  Select a saved stroke in the Stack to edit its source, pattern, size, spacing,
+  opacity, rotation, scatter, and image mapping; choose **New stroke** to paint
+  again. New gestures always save as static paths, including while other brushes
+  are active. Strokes can be hidden, deleted, reordered, and undone. **Clear all**
+  removes all saved strokes while keeping the current GIF sources; undo restores
+  the cleared strokes in one step. Select a saved
+  path and enable **Continuously repaint this path** to activate a brush with fresh
+  GIF frames: preserve drawing speed or use
+  constant travel, forward/reverse/ping-pong direction, independent GIF speed,
+  phase, and a delay between passes. Deactivating a brush restores its original hand-painted stamps. The first
+  activation starts the shared replay timeline at zero; additional brushes join
+  that timeline, reconstructing their paint up to the current time.
+  Paint lifetime 0 accumulates indefinitely;
+  a positive lifetime fades stamps over that many seconds. **Restart all paint
+  replay** resets the preview; animation exports reconstruct from replay time 0
+  with original strokes already present. Replacing a folder keeps sources used
+  by saved strokes. Esc cancels an unfinished gesture. A gesture supports up to
+  two minutes, 10,000 recorded points, or 50,000 design pixels of travel; start a
+  new stroke to continue. Each painting supports 256 strokes and 256 sources.
+  Consecutive static paths flatten into cached backgrounds in stack order. Active
+  brushes retain cropped accumulation surfaces and deposit only new stamps;
+  short-lived trails redraw only their live window. Matching pre-masked GIF stamp
+  images share a separate 4-million-pixel cache. Its eviction
+  regenerates small stamp images without rebuilding accumulated paint. Paths
+  remain editable and undoable. Unchanged paintings skip raster work and GPU
+  texture uploads. GPU and Canvas 2D use the same compositor, with shared Master
+  FX and export support. Active brushes have no additional count limit; many
+  full-stage paths can still use substantial memory. See the
+  [GIF Paint benchmark](docs/architecture/paint-performance.md).
 - **Symmetry canvas** — drop images/GIFs as layers; each layer has position/rotation/scale, mirror/quad/radial symmetry, blend mode, opacity, and sine/noise motion modulators.
 - **Polygon tiler** — preset or hand-drawn polygons filled with a repeating image/GIF texture, mode-owned repeat patterns and Voronoi partitioning, and animatable scale, rotation, and offset. A Brush tool paints tapered, pressure-sensitive stroke shapes (pen pressure, or speed-simulated for a mouse) with editable size, taper, roughness, flat-nib angle, size breathing, and draw-on animation. An optional underpainting image (toggle and opacity in the Stack) helps trace polygons; it is saved with the project but never appears in exports or live output. Choosing a texture folder (GIF, PNG, JPEG, or WebP) gives every new shape — preset, pen, or brush — a random texture from it; the Inspector's Texture tab can shuffle or pick another from the folder, and the folder is saved with the project.
 - **3D space** — textured meshes, camera depth, 3D deformation, spatial symmetry, and animated transforms.
@@ -187,9 +221,13 @@ Scale and Voronoi Cover Zoom can go below 1 to reveal multiple tiles.
 Texture settings are saved in `.slapchop` projects; older projects keep their
 existing mapping defaults.
 
-Projects now save as format version 11, which adds Directional Wave and Ripple
-for GIF Grid. Versions 1–10 still open with their existing motion. Older builds
-refuse version 11 files rather than silently render different motion.
+Projects now save as format version 12, which embeds GIF Paint sources, frozen
+painting paths, and replay controls. Versions 1–11 still open with their existing
+motion. Existing V12 replay flags, source timing, accumulation, and linear fading
+remain unchanged; no format migration is required. Moving paths now honor saved
+spacing, so existing V12 strokes may render with fewer overlapping stamps. Pre-masked stamp caching refines
+brush-edge antialiasing, so edge pixels may differ slightly from the initial V12
+renderer. Older builds refuse version 12 files rather than discard paint content.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

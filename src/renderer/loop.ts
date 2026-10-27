@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, renderFrame } from './render2d';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, renderFrame, releasePaintRenderer } from './render2d';
 import { PixiSceneRenderer } from './pixiRenderer';
 import {
   isLivePreviewRenderingSuspended,
@@ -102,6 +102,7 @@ export function createRawFrameSource(width: number, height: number): RawFrameSou
       // Drop the backing store rather than waiting on GC; a full-resolution
       // scratch canvas is ~8MB.
       if (scratch) {
+        releasePaintRenderer(scratch);
         scratch.width = 0;
         scratch.height = 0;
         scratch = null;
@@ -285,6 +286,7 @@ export function startRenderLoop(
 
   return () => {
     disposed = true;
+    releasePaintRenderer(canvas);
     stopTicking?.();
     stopTicking = null;
     if (gpu) {

@@ -1,3 +1,4 @@
+import { restorePaint, type SerializedPaint } from '../modes/paint/project';
 import { normalizeGrid, GridAsset, GridConfig } from '../modes/grid/model';
 import { normalizeRings, RingsAsset, RingsConfig } from '../modes/rings/model';
 import { DocumentState, clearHistory, getDocumentSnapshot, useStore } from '../store';
@@ -204,7 +205,12 @@ interface ProjectFileV11 extends Omit<ProjectFileV10, 'version' | 'grid'> {
   grid: GridConfig;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8 | ProjectFileV9 | ProjectFileV10 | ProjectFileV11;
+interface ProjectFileV12 extends Omit<ProjectFileV11, 'version'> {
+  version: 12;
+  paint: SerializedPaint;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8 | ProjectFileV9 | ProjectFileV10 | ProjectFileV11 | ProjectFileV12;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -333,9 +339,17 @@ export async function saveProject(): Promise<void> {
   const gridAssets = await Promise.all(doc.gridAssets.map(async source => ({
     id: source.id, name: source.name, assetId: await assetIdFor(source.src, source.name)
   })));
-  const payload: ProjectFileV11 = {
+  const paint: SerializedPaint = {
+    version: 1,
+    assets: await Promise.all((doc.paint?.assets ?? []).map(async source => ({
+      id: source.id, name: source.name, retired: source.retired, assetId: await assetIdFor(source.src, source.name)
+    }))),
+    strokes: doc.paint?.strokes ?? []
+  };
+  const payload: ProjectFileV12 = {
     app: 'slapchop',
-    version: 11,
+    version: 12,
+    paint,
     gridAssets,
     grid: doc.grid,
     savedAt: new Date().toISOString(),
@@ -367,7 +381,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(payload.version)) {
+  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(payload.version)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -381,7 +395,16 @@ export async function openProject(file: File): Promise<void> {
     materialized.set(id, { src, gifData: gifData || undefined });
   }
 
-  const doc = restoreProjectDocument(payload, materialized);
+  let doc: DocumentState;
+  try {
+    doc = restoreProjectDocument(payload, materialized);
+  } catch (error) {
+    for (const asset of materialized.values()) {
+      URL.revokeObjectURL(asset.src);
+      for (const frame of asset.gifData?.frames ?? []) if ('close' in frame.image) frame.image.close();
+    }
+    throw error;
+  }
   const underpainting = restorePolygonUnderpainting(payload, materialized);
   const textureFolder = restorePolygonTextureFolder(payload, materialized);
   useStore.getState().loadDocument(doc);
@@ -489,18 +512,18 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_LANDSCAPE, ...payload.landscape }
     : { ...DEFAULT_LANDSCAPE };
 
-  const ringsAssets: RingsAsset[] = (payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 || payload.version === 11) ? payload.ringsAssets.map(source => {
+  const ringsAssets: RingsAsset[] = (payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12) ? payload.ringsAssets.map(source => {
     const { assetId, ...rest } = source;
     const asset = materialized.get(assetId);
     if (!asset) throw new Error(`GIF Rings source “${source.name}” is missing.`);
     return { ...rest, src: asset.src, gifData: asset.gifData };
   }) : [];
 
-  if ((payload.version === 9 || payload.version === 10 || payload.version === 11) && !Array.isArray(payload.gridAssets)) {
+  if ((payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12) && !Array.isArray(payload.gridAssets)) {
     throw new Error('GIF Grid library must be an array of sources.');
   }
   const gridIds = new Set<string>();
-  const gridAssets: GridAsset[] = (payload.version === 9 || payload.version === 10 || payload.version === 11) ? payload.gridAssets.map(source => {
+  const gridAssets: GridAsset[] = (payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12) ? payload.gridAssets.map(source => {
     if (!source || typeof source.id !== 'string' || !source.id || typeof source.name !== 'string'
       || typeof source.assetId !== 'string' || gridIds.has(source.id)) {
       throw new Error('GIF Grid contains an invalid or duplicate source.');
@@ -511,11 +534,14 @@ export function restoreProjectDocument(
     return { id: source.id, name: source.name, src: asset.src, gifData: asset.gifData };
   }) : [];
 
+  if (payload.version === 12 && !payload.paint) throw new Error('GIF Paint document is missing from this V12 project.');
+
   return {
+    paint: restorePaint(payload.version === 12 ? payload.paint : undefined, materialized),
     gridAssets,
-    grid: normalizeGrid((payload.version === 9 || payload.version === 10 || payload.version === 11) ? payload.grid : undefined),
+    grid: normalizeGrid((payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12) ? payload.grid : undefined),
     ringsAssets,
-    rings: normalizeRings(payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 || payload.version === 11 ? payload.rings : undefined),
+    rings: normalizeRings(payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 ? payload.rings : undefined),
     layers,
     polygonLayers,
     mesh3dLayers,

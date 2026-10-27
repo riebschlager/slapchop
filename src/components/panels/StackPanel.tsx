@@ -1,3 +1,4 @@
+import PaintLibrary from '../../modes/paint/PaintLibrary';
 import ControlSection, { ControlSections, SectionActions } from '../controls/ControlSection';
 import GridLibrary from '../../modes/grid/GridLibrary';
 import React, { useRef } from 'react';
@@ -25,6 +26,7 @@ import { MESH3D_PRIMITIVE_EMOJI } from '../../lib/mesh3dUtils';
 const STACK_PANEL_DEFAULTS = { storageKey: 'slapchop:panel:stack', defaultWidth: 264, minWidth: 200, maxWidth: 420, side: 'left' as const };
 
 const MODE_OPTIONS: ModeOption<AppMode>[] = [
+  { value: 'gif-paint', label: 'GIF Paint', description: 'Frozen GIF brush stamps & looping painted paths', icon: Brush },
   { value: 'symmetry', label: 'Symmetry', description: 'Layered mirrors & radial repeats', icon: Sparkles },
   { value: 'polygon', label: 'Tiled GIF', description: 'Texture-filled polygon mosaics', icon: Shapes },
   { value: '3d', label: '3D Space', description: 'Textured meshes & camera depth', icon: Box },
@@ -881,6 +883,7 @@ function StackPanelContent() {
       )}
 
       {/* MODE 6: GIF VORONOI */}
+      {appMode === 'gif-paint' && <PaintLibrary />}
       {appMode === 'gif-grid' && <GridLibrary />}
       {appMode === 'gif-voronoi' && (
         <>

@@ -218,7 +218,7 @@ function StepIntro() {
       </div>
 
       <div className="grid grid-cols-3 gap-3 w-full max-w-xs text-xs text-ui-text-subtle">
-        {['9 creative modes', 'Motion on everything', 'Frame-exact export'].map((tag) => (
+        {['10 creative modes', 'Motion on everything', 'Frame-exact export'].map((tag) => (
           <div key={tag} className="bg-ui-surface border border-ui-border rounded-lg px-2 py-2 text-center leading-tight">
             {tag}
           </div>

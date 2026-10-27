@@ -1,0 +1,110 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>GIF Paint benchmark</title><style>body{background:#181818;color:#eee;font:14px monospace;padding:24px}button{padding:12px}canvas{max-width:180px;max-height:320px}</style></head>
+<body><h1>GIF Paint · 1080 × 1920</h1><p>60-second seek, then 12 frames at 60fps (synchronous raster readback included). Synthetic animated textures, scattered overlapping paths, five patterns. Run with Vite at /scripts/paint-benchmark.html.</p><button id="run">Run benchmark</button><button id="verify">Verify seek pixels</button><pre id="results"></pre>
+<script type="module">
+import { PaintRenderer } from '../src/modes/paint/renderer.ts';
+import { DEFAULT_PAINT_SETTINGS } from '../src/modes/paint/model.ts';
+const output = document.querySelector('#results');
+const frames = ['#ed4677', '#23cfa0', '#e6b53c'].map((color, i) => {
+  const image = document.createElement('canvas'); image.width = 128; image.height = 96;
+  const ctx = image.getContext('2d');
+  ctx.fillStyle = color; ctx.fillRect(0, 0, 128, 96);
+  ctx.clearRect(10 + i * 20, 10, 20, 50);
+  ctx.fillStyle = '#19263e'; ctx.fillRect(0, 30 + i * 10, 128, 9);
+  return { image, delayMs: 100, startTimeMs: i * 100, endTimeMs: (i + 1) * 100 };
+});
+const assets = [{ id: 'gif', name: 'animated texture', src: '', gifData: { width: 128, height: 96, totalDurationMs: 300, frames } }];
+function painting(count, active, fullStage = false) {
+  return { assets, strokes: Array.from({ length: count }, (_, i) => ({
+    ...DEFAULT_PAINT_SETTINGS, id: String(i), name: `Path ${i}`, assetId: 'gif', sourceOffset: i * 0.13,
+    seed: i, hidden: false, replay: i < active, size: 180, opacity: 0.7, scatter: 0.2,
+    pattern: ['round', 'flat', 'bristle', 'dots', 'stripes'][i % 5],
+    points: Array.from({ length: 31 }, (_, j) => ({
+      x: fullStage ? Math.sin(j / 5 + i) * 480 : -390 + i % 4 * 210 + Math.sin(j / 5) * 90,
+      y: fullStage ? Math.cos(j / 6 + i) * 890 : -700 + Math.floor(i / 4) * 190 + j * 4,
+      time: j / 30
+    }))
+  })) };
+}
+
+document.querySelector('#run').onclick = async () => {
+  output.textContent = 'Running…\n';
+  const rows = [];
+  // Optional baseline is an external local artifact from the original implementation.
+  const baseline = new URLSearchParams(location.search).get('baseline');
+  const constructors = [['current', PaintRenderer]];
+  if (baseline) constructors.unshift(['baseline', (await import(/* @vite-ignore */ baseline)).PaintRenderer]);
+  for (const [implementation, Renderer] of constructors) for (const count of [8, 9, 16, 32]) for (const variant of [{ active: 0, lifetime: 0 }, { active: 4, lifetime: 0 }, { active: count, lifetime: 0 }, { active: count, lifetime: 0.5 }]) {
+    const { active, lifetime } = variant;
+    const renderer = new Renderer(), doc = painting(count, active);
+    if (lifetime) doc.strokes = doc.strokes.map(stroke => ({ ...stroke, lifetime }));
+    const start = performance.now(); renderer.render(doc, 60, 1080, 1920);
+    renderer.canvas.getContext('2d').getImageData(0, 0, 1, 1);
+    const coldMs = performance.now() - start;
+    const before = { ...renderer.stats };
+    let sourceDraws = 0;
+    const drawImage = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function(source, ...args) {
+      if (frames.some(frame => frame.image === source)) sourceDraws++;
+      return drawImage.call(this, source, ...args);
+    };
+    const samples = [];
+    const steps = 12;
+    try {
+      for (let tick = 1; tick <= steps; tick++) {
+        const t = performance.now(); renderer.render(doc, 60 + tick / 60, 1080, 1920);
+        renderer.canvas.getContext('2d').getImageData(0, 0, 1, 1);
+        samples.push(performance.now() - t);
+      }
+    } finally { CanvasRenderingContext2D.prototype.drawImage = drawImage; }
+    samples.sort((a, b) => a - b);
+    const row = { implementation, strokes: count, active, lifetime, coldMs: +coldMs.toFixed(2),
+      medianMs: +samples[Math.floor(samples.length / 2)].toFixed(3), p95Ms: +samples[Math.floor(samples.length * .95)].toFixed(3),
+      stampDrawsPerFrame: +((renderer.stats ? renderer.stats.stampDraws - before.stampDraws : sourceDraws) / steps).toFixed(2),
+      maskDrawsPerFrame: +(sourceDraws / steps).toFixed(2), stampCacheMiB: renderer.stampCachePixels === undefined ? null : +(renderer.stampCachePixels * 4 / 1048576).toFixed(2), historyRebuilds: renderer.stats ? renderer.stats.historyRebuilds - before.historyRebuilds : null,
+      cacheMiB: renderer.cachedPixels === undefined ? null : +(renderer.cachedPixels * 4 / 1048576).toFixed(2) };
+    rows.push(row); output.textContent = JSON.stringify(rows, null, 2);
+    renderer.destroy();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  // A worst-case spread shows the remaining surface-memory cost without eviction.
+  const renderer = new PaintRenderer(), doc = painting(32, 32, true);
+  renderer.render(doc, 60, 1080, 1920);
+  renderer.canvas.getContext('2d').getImageData(0, 0, 1, 1);
+  const builds = renderer.stats.historyRebuilds, samples = [];
+  for (let tick = 1; tick <= 12; tick++) {
+    const start = performance.now(); renderer.render(doc, 60 + tick / 60, 1080, 1920);
+    renderer.canvas.getContext('2d').getImageData(0, 0, 1, 1);
+    samples.push(performance.now() - start);
+  }
+  samples.sort((a, b) => a - b);
+  output.textContent += `\nFull-stage: ${JSON.stringify({ strokes: 32, active: 32, medianMs: samples[6], p95Ms: samples[11],
+    cacheMiB: renderer.cachedPixels * 4 / 1048576, historyRebuilds: renderer.stats.historyRebuilds - builds })}\nComplete`;
+  renderer.destroy();
+};
+document.querySelector('#verify').onclick = () => {
+  const pixels = canvas => canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+  const rows = [];
+  for (const lifetime of [0, 0.5]) {
+    const doc = painting(5, 3);
+    doc.strokes = doc.strokes.map(stroke => ({ ...stroke, lifetime, rotation: 37, imageRotation: -23, imageZoom: 1.4 }));
+    const sequential = new PaintRenderer();
+    for (const time of [0, 0.2, 0.5, 1.7, 0.1, 2]) {
+      sequential.render(doc, time, 270, 480);
+      const direct = new PaintRenderer(); direct.render(doc, time, 270, 480);
+      const a = pixels(sequential.canvas), b = pixels(direct.canvas);
+      let maxDelta = 0, pixelsOverTolerance = 0;
+      for (let i = 0; i < a.length; i += 4) {
+        let delta = Math.abs(a[i + 3] - b[i + 3]);
+        for (let c = 0; c < 3; c++) delta = Math.max(delta, Math.abs(a[i + c] * a[i + 3] / 255 - b[i + c] * b[i + 3] / 255));
+        maxDelta = Math.max(maxDelta, delta);
+        if (delta > 2) pixelsOverTolerance++;
+      }
+      rows.push({ lifetime, time, maxPremultipliedDelta: +maxDelta.toFixed(3), pixelsOverTolerance });
+      direct.destroy();
+    }
+    sequential.destroy();
+  }
+  output.textContent = JSON.stringify(rows, null, 2) + '\n' + (rows.every(row => row.pixelsOverTolerance === 0) ? 'Pixel verification PASS' : 'Pixel verification FAIL');
+};
+</script></body></html>

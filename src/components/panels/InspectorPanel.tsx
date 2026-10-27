@@ -1,3 +1,4 @@
+import PaintInspector from '../../modes/paint/PaintInspector';
 import ControlSection, { ControlSections, SectionActions } from '../controls/ControlSection';
 import GridInspector from '../../modes/grid/GridInspector';
 import RingsInspector from '../../modes/rings/RingsInspector';
@@ -91,6 +92,8 @@ function InspectorPanelContent({ exportApi, liveOutputApi }: InspectorPanelProps
           <PolygonModeInspector />
         ) : appMode === 'flythrough' ? (
           <FlythroughInspector />
+        ) : appMode === 'gif-paint' ? (
+          <PaintInspector />
         ) : appMode === 'gif-grid' ? (
           <GridInspector />
         ) : appMode === 'rings' ? (

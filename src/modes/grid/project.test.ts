@@ -7,7 +7,7 @@ import { normalizeGrid } from './model';
 vi.mock('../../lib/native', () => ({ saveBlob: vi.fn() }));
 const initial = getDocumentSnapshot();
 afterEach(() => { useStore.getState().loadDocument(initial); clearHistory(); vi.unstubAllGlobals(); vi.useRealTimers(); });
-it.each(['organic', 'directional', 'ripple'] as const)('embeds and restores GIF Grid assets and all independent controls in V11 (%s)', async motionPattern => {
+it.each(['organic', 'directional', 'ripple'] as const)('embeds and restores GIF Grid assets and all independent controls in V12 (%s)', async motionPattern => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ blob: async () => new Blob(['gif'], { type: 'image/gif' }) }));
   vi.stubGlobal('FileReader', class {
     result = 'data:image/gif;base64,Z2lm';
@@ -22,7 +22,7 @@ it.each(['organic', 'directional', 'ripple'] as const)('embeds and restores GIF 
   await saveProject();
   const blob = vi.mocked(saveBlob).mock.calls.at(-1)![0];
   const payload = JSON.parse(await blob.text());
-  expect(payload.version).toBe(11);
+  expect(payload.version).toBe(12);
   expect(payload.gridAssets[0].src).toBeUndefined();
   const id = payload.gridAssets[0].assetId;
   expect(payload.assets[id].dataUrl).toBe('data:image/gif;base64,Z2lm');

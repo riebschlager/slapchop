@@ -1,3 +1,5 @@
+import { loadAnimatedGifAssets } from './lib/animatedGifAssets';
+import { DEFAULT_PAINT_SETTINGS, EMPTY_PAINT, normalizePaintSettings, type PaintAsset, type PaintDocument, type PaintSettings, type PaintStroke } from './modes/paint/model';
 import { loadGridAssets } from './modes/grid/assets';
 import { DEFAULT_GRID, normalizeGrid, GridAsset, GridConfig } from './modes/grid/model';
 import { createRingsResourceTracker } from './modes/rings/resources';
@@ -39,6 +41,7 @@ import type { RecordedBrushStroke } from './lib/brushStroke';
 import { createMesh3dLayer, createMesh3dPresetName } from './lib/mesh3dUtils';
 
 export interface DocumentState {
+  paint?: PaintDocument;
   layers: Layer[];
   polygonLayers: PolygonLayer[];
   mesh3dLayers: Mesh3dLayer[];
@@ -61,6 +64,24 @@ export interface DocumentState {
 }
 
 export interface AppState extends DocumentState {
+  paint: PaintDocument;
+  paintTool: PaintSettings;
+  paintAssetId: string | null;
+  selectedPaintStrokeId: string | null;
+  paintEpoch: number;
+  paintDraft: PaintStroke | null;
+  loadPaintAssets: (files: File[], replace: boolean) => Promise<void>;
+  removePaintAsset: (id: string) => void;
+  selectPaintAsset: (id: string) => void;
+  selectPaintStroke: (id: string | null) => void;
+  updatePaintTool: (settings: Partial<PaintSettings>) => void;
+  updatePaintStroke: (id: string, updates: Partial<PaintStroke>) => void;
+  commitPaintStroke: (stroke: PaintStroke) => void;
+  deletePaintStroke: (id: string) => void;
+  clearPaintStrokes: () => void;
+  reorderPaintStroke: (id: string, overId: string) => void;
+  restartPaint: (epoch: number) => void;
+  setPaintDraft: (draft: PaintStroke | null) => void;
   appMode: AppMode;
   selectedLayerId: string | null;
   selectedPolygonId: string | null;
@@ -319,6 +340,51 @@ const INITIAL_POLYGON = createNewPolygonLayer(
 export const useStore = create<AppState>()(
   temporal(
     (set, get) => ({
+      paint: { assets: [], strokes: [] },
+      paintTool: { ...DEFAULT_PAINT_SETTINGS },
+      paintAssetId: null,
+      selectedPaintStrokeId: null,
+      paintEpoch: 0,
+      paintDraft: null,
+      loadPaintAssets: async (files, replace) => {
+        const loaded: PaintAsset[] = await loadAnimatedGifAssets(files);
+        const current = get().paint;
+        const used = new Set(current.strokes.map(stroke => stroke.assetId));
+        const retained = replace ? current.assets.filter(a => used.has(a.id)).map(a => ({ ...a, retired: true })) : current.assets;
+        if (retained.length + loaded.length > 256) {
+          // Newly decoded assets have not entered document/history ownership yet.
+          for (const asset of loaded) {
+            URL.revokeObjectURL(asset.src);
+            for (const frame of asset.gifData.frames) if ('close' in frame.image) frame.image.close();
+          }
+          throw new Error('GIF Paint supports up to 256 sources. Remove unused sources before adding more.');
+        }
+        set({ paint: { ...current, assets: [...retained, ...loaded] }, paintAssetId: loaded[0].id });
+      },
+      removePaintAsset: id => set(s => ({
+        paint: { ...s.paint, assets: s.paint.assets.flatMap(a => a.id !== id ? [a]
+          : s.paint.strokes.some(stroke => stroke.assetId === id) ? [{ ...a, retired: true }] : []) },
+        paintAssetId: s.paintAssetId === id ? null : s.paintAssetId
+      })),
+      selectPaintAsset: id => set({ paintAssetId: id }),
+      selectPaintStroke: id => set({ selectedPaintStrokeId: id }),
+      updatePaintTool: settings => set(s => ({ paintTool: normalizePaintSettings({ ...s.paintTool, ...settings }) })),
+      updatePaintStroke: (id, updates) => set(s => ({ paint: { ...s.paint,
+        strokes: s.paint.strokes.map(stroke => stroke.id === id ? { ...stroke, ...updates, ...normalizePaintSettings({ ...stroke, ...updates }) } : stroke)
+      } })),
+      commitPaintStroke: stroke => set(s => ({ paint: { ...s.paint, strokes: [...s.paint.strokes, { ...stroke, replay: false }] }, paintDraft: null })),
+      deletePaintStroke: id => set(s => {
+        const strokes = s.paint.strokes.filter(stroke => stroke.id !== id);
+        return { paint: { strokes, assets: s.paint.assets.filter(a => !a.retired || strokes.some(stroke => stroke.assetId === a.id)) },
+          selectedPaintStrokeId: s.selectedPaintStrokeId === id ? null : s.selectedPaintStrokeId };
+      }),
+      clearPaintStrokes: () => set(s => s.paint.strokes.length ? {
+        paint: { strokes: [], assets: s.paint.assets.filter(a => !a.retired) },
+        selectedPaintStrokeId: null
+      } : s),
+      reorderPaintStroke: (id, overId) => set(s => ({ paint: { ...s.paint, strokes: reorder(s.paint.strokes, id, overId) } })),
+      restartPaint: epoch => set({ paintEpoch: epoch }),
+      setPaintDraft: draft => set({ paintDraft: draft }),
       layers: [],
       polygonLayers: [INITIAL_POLYGON],
       mesh3dLayers: [],
@@ -349,9 +415,14 @@ export const useStore = create<AppState>()(
       polygonUnderpainting: null,
       polygonTextureFolder: null,
 
-      setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false, isBrushingPolygon: false }),
+      setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false, isBrushingPolygon: false, paintDraft: null }),
       setCanvasBg: (color) => set({ canvasBg: color }),
       loadDocument: (doc) => set({
+        paint: doc.paint ?? { ...EMPTY_PAINT, assets: [], strokes: [] },
+        paintAssetId: doc.paint?.assets.find(a => !a.retired)?.id ?? null,
+        selectedPaintStrokeId: null,
+        paintDraft: null,
+        paintEpoch: 0,
         layers: doc.layers,
         polygonLayers: doc.polygonLayers,
         mesh3dLayers: doc.mesh3dLayers ?? [],
@@ -796,6 +867,7 @@ export const useStore = create<AppState>()(
       // Undo history tracks the document only — selection, mode, and drawing
       // state stay outside so undo never "jumps" the UI around.
       partialize: (s) => ({
+        paint: s.paint,
         layers: s.layers,
         polygonLayers: s.polygonLayers,
         mesh3dLayers: s.mesh3dLayers,
@@ -817,7 +889,7 @@ export const useStore = create<AppState>()(
         masterFx: s.masterFx
       }),
       equality: (a, b) =>
-        a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.mesh3dLayers === b.mesh3dLayers
+        a.paint === b.paint && a.layers === b.layers && a.polygonLayers === b.polygonLayers && a.mesh3dLayers === b.mesh3dLayers
         && a.camera3d === b.camera3d && a.flythroughAssets === b.flythroughAssets
         && a.flythrough === b.flythrough && a.tunnelAssets === b.tunnelAssets
         && a.grid === b.grid && a.gridAssets === b.gridAssets
@@ -830,11 +902,21 @@ export const useStore = create<AppState>()(
       // Coalesce rapid bursts (slider scrubs) into few history entries.
       handleSet: (handleSet) => {
         let lastTime = 0;
-        return (state) => {
+        return (state, replace, currentState) => {
           const now = Date.now();
-          if (now - lastTime >= 350) {
+          // Completed gestures and stack/library operations remain separate undo steps.
+          const previousPaint = typeof state === 'function' ? undefined : state.paint;
+          const paintStructureChanged = previousPaint?.strokes.map(stroke => stroke.id).join(',') !== currentState.paint?.strokes.map(stroke => stroke.id).join(',')
+            || previousPaint?.assets !== currentState.paint?.assets;
+          const paintDiscreteChanged = previousPaint?.strokes.some((stroke, index) => {
+            const current = currentState.paint?.strokes[index];
+            return current && (stroke.hidden !== current.hidden || stroke.assetId !== current.assetId
+              || stroke.replay !== current.replay || stroke.constantSpeed !== current.constantSpeed
+              || stroke.pattern !== current.pattern || stroke.direction !== current.direction);
+          });
+          if (paintStructureChanged || paintDiscreteChanged || now - lastTime >= 350) {
             lastTime = now;
-            handleSet(state);
+            handleSet(state, replace);
           }
         };
       }
@@ -843,8 +925,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx } = useStore.getState();
-  return { layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx };
+  const { paint, layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx } = useStore.getState();
+  return { paint, layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();
@@ -872,7 +954,9 @@ function scheduleRingsResourceSweep() {
   });
 }
 const stopRingsTracking = useStore.subscribe((state, previous) => {
-  if (state.ringsAssets === previous.ringsAssets && state.gridAssets === previous.gridAssets) return;
+  if (state.ringsAssets === previous.ringsAssets && state.gridAssets === previous.gridAssets && state.paint.assets === previous.paint.assets) return;
+  ringsResources.remember(previous.paint.assets);
+  ringsResources.remember(state.paint.assets);
   ringsResources.remember(previous.gridAssets);
   ringsResources.remember(state.gridAssets);
   ringsResources.remember(previous.ringsAssets);

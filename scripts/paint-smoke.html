@@ -1,0 +1,76 @@
+<!doctype html><html><head><meta charset="utf-8"><title>GIF Paint smoke test</title></head>
+<body><div id="root"></div>
+<div style="position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#263330;color:white;padding:8px;font:12px monospace">
+<button id="fixture">Load animated fixture</button> <button id="large">32 active paths</button> <button id="restore">Open captured project</button> <button id="encode">Encode 0.5s GIF</button>
+<span id="status">Use the normal app controls. Save downloads are captured in memory by this test page.</span>
+</div>
+<script type="module">
+// Capture the browser download boundary, exercising production save/open without
+// requiring automation access to the host OS file dialogs. Never loaded by App.
+let captured;
+window.saveAs = (blob, filename) => {
+  captured = blob;
+  document.querySelector('#status').textContent = `Captured ${filename}: ${blob.size} bytes`;
+};
+const [{ createElement }, { createRoot }, { default: App }, store, project, loop, { exportGif }, { parseGifFile }, { GIFEncoder }] = await Promise.all([
+  import('react'), import('react-dom/client'), import('../src/App.tsx'), import('../src/store.ts'), import('../src/lib/project.ts'),
+  import('../src/renderer/loop.ts'), import('../src/lib/gifExport.ts'), import('../src/lib/gifUtils.ts'), import('gifenc'), import('../src/index.css')
+]);
+createRoot(document.querySelector('#root')).render(createElement(App));
+const canonical = strokes => JSON.stringify(strokes.map(stroke => Object.fromEntries(Object.entries(stroke).sort(([a], [b]) => a.localeCompare(b)))));
+const status = text => { document.querySelector('#status').textContent = text; };
+document.querySelector('#fixture').onclick = async () => {
+  try {
+    const encoder = GIFEncoder();
+    for (let frame = 0; frame < 4; frame++) {
+      const pixels = Uint8Array.from({ length: 64 * 64 }, (_, p) => ((p % 64 + frame * 8) % 32 < 16) ? 0 : 1);
+      encoder.writeFrame(pixels, 64, 64, { palette: [[240, 70 + frame * 30, 120], [30, 210, 150]], delay: 100 });
+    }
+    encoder.finish();
+    await store.useStore.getState().loadPaintAssets([new File([encoder.bytes()], 'smoke.gif', { type: 'image/gif' })], true);
+    store.useStore.getState().setAppMode('gif-paint');
+    status('Animated GIF decoded. Paint using the normal stage.');
+  } catch (error) { status(`FAIL: ${error.message}`); }
+};
+document.querySelector('#large').onclick = async () => {
+  try {
+    const snapshot = store.getDocumentSnapshot(), asset = snapshot.paint.assets[0];
+    if (!asset) throw new Error('Load animated fixture first.');
+    const { DEFAULT_PAINT_SETTINGS } = await import('../src/modes/paint/model.ts');
+    const strokes = Array.from({ length: 32 }, (_, i) => ({
+      ...DEFAULT_PAINT_SETTINGS, id: `large-${i}`, name: `Path ${i + 1}`, assetId: asset.id,
+      replay: true, opacity: 0.7, scatter: 0.2, sourceOffset: i * 0.13, seed: i, hidden: false,
+      pattern: ['round', 'flat', 'bristle', 'dots', 'stripes'][i % 5],
+      points: Array.from({ length: 31 }, (_, j) => ({ x: -390 + i % 4 * 210 + Math.sin(j / 5) * 90,
+        y: -700 + Math.floor(i / 4) * 190 + j * 4, time: j / 30 }))
+    }));
+    store.useStore.getState().loadDocument({ ...snapshot, paint: { ...snapshot.paint, strokes } });
+    store.useStore.getState().restartPaint(loop.getPlaybackTime() - 60);
+    status(`32 active paths at replay time 60s · ${loop.getActiveRendererName()}`);
+  } catch (error) { status(`FAIL: ${error.message}`); }
+};
+document.querySelector('#restore').onclick = async () => {
+  try {
+    if (!captured) throw new Error('Use Save Project first.');
+    const before = canonical(store.useStore.getState().paint.strokes);
+    const saved = JSON.parse(await captured.text());
+    await project.openProject(new File([captured], 'smoke.slapchop', { type: 'application/json' }));
+    const after = canonical(store.useStore.getState().paint.strokes);
+    status(`V${saved.version} round trip: ${before === after ? 'PASS' : 'FAIL'} · ${saved.paint.strokes.length} editable paths · ${loop.getActiveRendererName()}`);
+  } catch (error) { status(`FAIL: ${error.message}`); }
+};
+document.querySelector('#encode').onclick = async () => {
+  try {
+    const state = { ...store.getDocumentSnapshot(), appMode: 'gif-paint' };
+    const blob = await exportGif({ width: 270, height: 480, fps: 10, duration: 0.5,
+      renderFrame: (canvas, time) => loop.renderExportFrame(canvas, time, state, 270, 480) });
+    if (!blob) throw new Error('Export cancelled.');
+    const decoded = await parseGifFile(new File([blob], 'smoke-export.gif', { type: 'image/gif' }));
+    if (decoded?.frames.length !== 5) throw new Error(`Expected 5 encoded frames; got ${decoded?.frames.length}`);
+    const image = document.createElement('img'); image.src = URL.createObjectURL(blob); image.alt = 'Encoded five-frame GIF';
+    image.style = 'position:fixed;right:320px;bottom:80px;width:100px;z-index:9999'; document.body.append(image);
+    status(`GIF export PASS: ${blob.size} bytes · ${decoded.frames.length} decoded frames · ${loop.getActiveRendererName()}`);
+    for (const frame of decoded.frames) if ('close' in frame.image) frame.image.close();
+  } catch (error) { status(`FAIL: ${error.message}`); }
+};
+</script></body></html>

@@ -1,3 +1,5 @@
+import { PaintRenderer } from '../modes/paint/renderer';
+import type { PaintDocument, PaintStroke } from '../modes/paint/model';
 import { resolveGrid, GridAsset, GridConfig } from '../modes/grid/model';
 import { resolveRings, RingsAsset, RingsConfig } from '../modes/rings/model';
 import { mirroredTextureSource, rotateTextureUv } from '../lib/textureMapping';
@@ -44,6 +46,9 @@ export const CANVAS_WIDTH = 1080;
 export const CANVAS_HEIGHT = 1920;
 
 export interface RenderState {
+  paint?: PaintDocument;
+  paintEpoch?: number;
+  paintDraft?: PaintStroke | null;
   appMode: AppMode;
   layers: Layer[];
   polygonLayers: PolygonLayer[];
@@ -64,6 +69,12 @@ export interface RenderState {
   landscape: LandscapeConfig;
   canvasBg: string;
   masterFx?: MasterFxConfig;
+}
+
+const paintRenderers = new WeakMap<HTMLCanvasElement, PaintRenderer>();
+export function releasePaintRenderer(canvas: HTMLCanvasElement) {
+  paintRenderers.get(canvas)?.destroy();
+  paintRenderers.delete(canvas);
 }
 
 const BLEND_MAP: Record<string, GlobalCompositeOperation> = {
@@ -429,7 +440,12 @@ export function renderFrame(
   if (deformableGrid) ctx.clearRect(0, 0, width, height);
   else ctx.fillRect(0, 0, width, height);
 
-  if (state.appMode === 'symmetry') {
+  if (state.appMode !== 'gif-paint') releasePaintRenderer(canvas);
+  if (state.appMode === 'gif-paint' && state.paint) {
+    let painter = paintRenderers.get(canvas);
+    if (!painter) { painter = new PaintRenderer(); paintRenderers.set(canvas, painter); }
+    ctx.drawImage(painter.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft), 0, 0);
+  } else if (state.appMode === 'symmetry') {
     const scaleX = width / CANVAS_WIDTH;
     const scaleY = height / CANVAS_HEIGHT;
 

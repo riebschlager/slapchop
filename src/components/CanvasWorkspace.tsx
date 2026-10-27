@@ -1,3 +1,4 @@
+import PaintStage from '../modes/paint/PaintStage';
 import React, { RefObject, useEffect, useRef, useState } from 'react';
 import { DEFAULT_SYMMETRY_PARAMS, PolygonPoint } from '../types';
 import { cn } from '../lib/utils';
@@ -224,6 +225,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           if (files.length === 0) return;
           if (useStore.getState().appMode === 'flythrough') {
             await useStore.getState().replaceFlythroughAssets(files);
+            return;
+          }
+          if (useStore.getState().appMode === 'gif-paint') {
+            await useStore.getState().loadPaintAssets(files, false);
             return;
           }
           if (useStore.getState().appMode === 'gif-grid') {
@@ -966,6 +971,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
       if (gifs.length > 0) void onReplaceFlythroughAssets(gifs);
       return;
     }
+    if (appMode === 'gif-paint') {
+      if (files.length > 0) void useStore.getState().loadPaintAssets(files, false).catch(error => window.alert(error instanceof Error ? error.message : 'Could not load paint GIFs.'));
+      return;
+    }
     if (appMode === 'gif-grid') {
       if (files.length > 0) void useStore.getState().addGridAssets(files).catch(error => window.alert(error instanceof Error ? error.message : 'Could not load GIFs.'));
       return;
@@ -1027,7 +1036,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                   ? '3D Space'
                   : appMode === 'flythrough'
                     ? 'GIF Flythrough'
-                    : appMode === 'gif-grid' ? 'GIF Grid' : appMode === 'rings'
+                    : appMode === 'gif-paint' ? 'GIF Paint' : appMode === 'gif-grid' ? 'GIF Grid' : appMode === 'rings'
                       ? 'GIF Rings'
                     : appMode === 'tunnel'
                       ? 'GIF Tunnel'
@@ -1124,6 +1133,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           height={CANVAS_HEIGHT}
           className="w-full h-full block"
         />
+
+        {appMode === 'gif-paint' && <PaintStage />}
 
         {appMode === 'flythrough' && flythroughAssets.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

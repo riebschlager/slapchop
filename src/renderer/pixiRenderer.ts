@@ -1,3 +1,4 @@
+import { PaintRenderer } from '../modes/paint/renderer';
 import { resolveGrid } from '../modes/grid/model';
 import { resolveRings } from '../modes/rings/model';
 import { mirroredTextureSource } from '../lib/textureMapping';
@@ -164,6 +165,9 @@ export class PixiSceneRenderer {
   private gifVoronoiContainer = new Container();
   private mesh3dSprite = new Sprite();
   private flythroughSprite = new Sprite();
+  private paintRenderer: PaintRenderer | null = null;
+  private paintSprite = new Sprite();
+  private paintTexture: Texture | null = null;
   private gridContainer = new Container();
   private gridSprites: Sprite[] = [];
   private gridMeshes: MeshSimple[] = [];
@@ -231,7 +235,7 @@ export class PixiSceneRenderer {
   private constructor(renderer: Renderer) {
     this.renderer = renderer;
     this.stage.addChild(this.bg, this.root, this.mesh3dSprite, this.flythroughSprite, this.tunnelSprite, this.landscapeSprite);
-    this.root.addChild(this.gridContainer, this.ringsContainer, this.symContainer, this.polyContainer, this.gifVoronoiContainer);
+    this.root.addChild(this.paintSprite, this.gridContainer, this.ringsContainer, this.symContainer, this.polyContainer, this.gifVoronoiContainer);
     this.gifVoronoiContainer.addChild(this.gifVoronoiGutterG);
     this.mesh3dSprite.visible = false;
     this.flythroughSprite.visible = false;
@@ -318,6 +322,7 @@ export class PixiSceneRenderer {
 
   destroy() {
     this.destroyed = true;
+    this.releasePaint();
     this.clearGridMeshes();
     for (const modes of this.mirroredTextures.values()) for (const texture of modes.values()) texture.destroy(true);
     this.mirroredTextures.clear();
@@ -372,6 +377,8 @@ export class PixiSceneRenderer {
     const tunnelVisible = state.appMode === 'tunnel';
     const gifVoronoiVisible = state.appMode === 'gif-voronoi';
     const landscapeVisible = state.appMode === 'landscape';
+    this.paintSprite.visible = state.appMode === 'gif-paint';
+    if (state.appMode !== 'gif-paint') this.releasePaint();
     this.gridContainer.visible = state.appMode === 'gif-grid';
     if (state.appMode !== 'gif-grid') {
       this.clearGridMeshes();
@@ -414,7 +421,24 @@ export class PixiSceneRenderer {
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (state.appMode === 'gif-grid') {
+    if (state.appMode === 'gif-paint' && state.paint) {
+      if (!this.paintRenderer) this.paintRenderer = new PaintRenderer();
+      const previousRevision = this.paintRenderer.revision;
+      const canvas = this.paintRenderer.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft);
+      if (this.paintTexture && (this.paintTexture.source.width !== width || this.paintTexture.source.height !== height)) {
+        this.paintSprite.texture = Texture.EMPTY;
+        this.paintTexture.destroy(true);
+        this.paintTexture = null;
+      }
+      if (!this.paintTexture) {
+        this.paintTexture = new Texture({ source: new ImageSource({ resource: canvas, autoGarbageCollect: false }) });
+        this.paintSprite.texture = this.paintTexture;
+      }
+      if (previousRevision !== this.paintRenderer.revision) this.paintTexture.source.update();
+      this.paintSprite.position.set(-540, -960);
+      this.paintSprite.width = 1080;
+      this.paintSprite.height = 1920;
+    } else if (state.appMode === 'gif-grid') {
       this.syncGrid(t, state);
     } else if (state.appMode === 'rings') {
       this.syncRings(t, state);
@@ -436,6 +460,14 @@ export class PixiSceneRenderer {
 
     this.syncMasterFx(t, state, width, height);
     this.sweepTextures(state);
+  }
+
+  private releasePaint() {
+    this.paintSprite.texture = Texture.EMPTY;
+    this.paintTexture?.destroy(true);
+    this.paintTexture = null;
+    this.paintRenderer?.destroy();
+    this.paintRenderer = null;
   }
 
   private destroyGridMesh(mesh: MeshSimple) {

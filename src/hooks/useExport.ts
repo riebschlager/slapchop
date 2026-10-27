@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getDocumentSnapshot, useStore } from '../store';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState } from '../renderer/render2d';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, releasePaintRenderer } from '../renderer/render2d';
 import {
   createRawFrameSource,
   getActiveRendererName,
@@ -129,13 +129,18 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
   });
 
   const handleExportHighRes = async () => {
+    const canvas = document.createElement('canvas');
     try {
-      const canvas = document.createElement('canvas');
-      renderExportFrame(canvas, getPlaybackTime(), snapshotRenderState(), CANVAS_WIDTH, CANVAS_HEIGHT);
+      const state = { ...snapshotRenderState(), paintEpoch: useStore.getState().paintEpoch };
+      renderExportFrame(canvas, getPlaybackTime(), state, CANVAS_WIDTH, CANVAS_HEIGHT);
       const blob = await (await fetch(canvas.toDataURL('image/png'))).blob();
       await saveBlob(blob, `slapchop-art-${getExportTimestamp()}.png`);
     } catch (e) {
       console.error('High-Res export failed', e);
+    } finally {
+      releasePaintRenderer(canvas);
+      canvas.width = 0;
+      canvas.height = 0;
     }
   };
 
