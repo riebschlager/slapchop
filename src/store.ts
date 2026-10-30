@@ -1,3 +1,4 @@
+import { normalizeAutopaint, type AutopaintSettings } from './modes/paint/autopaint';
 import { loadAnimatedGifAssets } from './lib/animatedGifAssets';
 import { DEFAULT_PAINT_SETTINGS, EMPTY_PAINT, normalizePaintSettings, type PaintAsset, type PaintDocument, type PaintSettings, type PaintStroke } from './modes/paint/model';
 import { loadGridAssets } from './modes/grid/assets';
@@ -74,6 +75,7 @@ export interface AppState extends DocumentState {
   removePaintAsset: (id: string) => void;
   selectPaintAsset: (id: string) => void;
   selectPaintStroke: (id: string | null) => void;
+  updateAutopaint: (settings: Partial<AutopaintSettings>) => void;
   updatePaintTool: (settings: Partial<PaintSettings>) => void;
   updatePaintStroke: (id: string, updates: Partial<PaintStroke>) => void;
   commitPaintStroke: (stroke: PaintStroke) => void;
@@ -368,6 +370,7 @@ export const useStore = create<AppState>()(
       })),
       selectPaintAsset: id => set({ paintAssetId: id }),
       selectPaintStroke: id => set({ selectedPaintStrokeId: id }),
+      updateAutopaint: settings => set(s => ({ paint: { ...s.paint, autopaint: normalizeAutopaint({ ...s.paint.autopaint, ...settings }) } })),
       updatePaintTool: settings => set(s => ({ paintTool: normalizePaintSettings({ ...s.paintTool, ...settings }) })),
       updatePaintStroke: (id, updates) => set(s => ({ paint: { ...s.paint,
         strokes: s.paint.strokes.map(stroke => stroke.id === id ? { ...stroke, ...updates, ...normalizePaintSettings({ ...stroke, ...updates }) } : stroke)
@@ -375,11 +378,11 @@ export const useStore = create<AppState>()(
       commitPaintStroke: stroke => set(s => ({ paint: { ...s.paint, strokes: [...s.paint.strokes, { ...stroke, replay: false }] }, paintDraft: null })),
       deletePaintStroke: id => set(s => {
         const strokes = s.paint.strokes.filter(stroke => stroke.id !== id);
-        return { paint: { strokes, assets: s.paint.assets.filter(a => !a.retired || strokes.some(stroke => stroke.assetId === a.id)) },
+        return { paint: { ...s.paint, strokes, assets: s.paint.assets.filter(a => !a.retired || strokes.some(stroke => stroke.assetId === a.id)) },
           selectedPaintStrokeId: s.selectedPaintStrokeId === id ? null : s.selectedPaintStrokeId };
       }),
       clearPaintStrokes: () => set(s => s.paint.strokes.length ? {
-        paint: { strokes: [], assets: s.paint.assets.filter(a => !a.retired) },
+        paint: { ...s.paint, strokes: [], assets: s.paint.assets.filter(a => !a.retired) },
         selectedPaintStrokeId: null
       } : s),
       reorderPaintStroke: (id, overId) => set(s => ({ paint: { ...s.paint, strokes: reorder(s.paint.strokes, id, overId) } })),
@@ -914,7 +917,11 @@ export const useStore = create<AppState>()(
               || stroke.replay !== current.replay || stroke.constantSpeed !== current.constantSpeed
               || stroke.pattern !== current.pattern || stroke.direction !== current.direction);
           });
-          if (paintStructureChanged || paintDiscreteChanged || now - lastTime >= 350) {
+          const autoDiscreteChanged = previousPaint?.autopaint?.enabled !== currentState.paint?.autopaint?.enabled
+            || previousPaint?.autopaint?.gesture !== currentState.paint?.autopaint?.gesture
+            || previousPaint?.autopaint?.seed !== currentState.paint?.autopaint?.seed
+            || previousPaint?.autopaint?.brush.pattern !== currentState.paint?.autopaint?.brush.pattern;
+          if (autoDiscreteChanged || paintStructureChanged || paintDiscreteChanged || now - lastTime >= 350) {
             lastTime = now;
             handleSet(state, replace);
           }

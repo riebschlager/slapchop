@@ -212,7 +212,7 @@ export function startRenderLoop(
           if (activeGpu === gpu) activeGpu = null;
           discardRenderer(canvas, gpu);
           gpu = null;
-          draw = (t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT);
+          draw = (t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT, true);
           consecutiveErrors = 0;
         }
       }
@@ -264,7 +264,7 @@ export function startRenderLoop(
       );
       return;
     }
-    stopTicking = startTicking((t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT));
+    stopTicking = startTicking((t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT, true));
   };
 
   if (is2dRendererForced()) {

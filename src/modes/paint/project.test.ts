@@ -137,3 +137,35 @@ it('preserves explicit V12 replay and fading settings without a timing migration
   payload.strokes[0] = { ...payload.strokes[0], replay: true, lifetime: 0.5, phase: 0.3 };
   expect(restorePaint(payload, materialized).strokes[0]).toEqual(payload.strokes[0]);
 });
+
+it('round-trips autopaint settings and sources using paint payload V2', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ blob: async () => new Blob(['gif'], { type: 'image/gif' }) }));
+  vi.stubGlobal('FileReader', class {
+    result = 'data:image/gif;base64,Z2lm'; onload?: () => void;
+    readAsDataURL() { this.onload?.(); }
+  });
+  const { DEFAULT_AUTOPAINT } = await import('./autopaint');
+  const autopaint = { ...DEFAULT_AUTOPAINT, enabled: true, seed: 809, gesture: 'flicks' as const, pause: 2.5,
+    brush: { ...DEFAULT_AUTOPAINT.brush, pattern: 'stripes' as const, lifetime: 3, imageRotation: 20 } };
+  useStore.getState().loadDocument({ ...initial, paint: { assets: [source], strokes: [stroke], autopaint } });
+  await saveProject();
+  const payload = JSON.parse(await vi.mocked(saveBlob).mock.calls.at(-1)![0].text());
+  expect(payload.paint.version).toBe(2);
+  const restored = restoreProjectDocument(payload, new Map([[payload.paint.assets[0].assetId, { src: 'blob:restored', gifData }]]));
+  expect(restored.paint.autopaint).toEqual(autopaint);
+  expect(restored.paint.strokes).toEqual([stroke]);
+  expect(() => restorePaint({ ...payload.paint, autopaint: { brush: null } }, materialized)).toThrow('GIF Paint');
+});
+it('undoes autopaint configuration and preserves it when clearing or deleting manual strokes', () => {
+  useStore.getState().loadDocument({ ...initial, paint: { assets: [source], strokes: [stroke] } });
+  clearHistory();
+  useStore.getState().updateAutopaint({ enabled: true });
+  undo(); expect(useStore.getState().paint.autopaint).toBeUndefined();
+  redo(); expect(useStore.getState().paint.autopaint?.enabled).toBe(true);
+  const settings = useStore.getState().paint.autopaint;
+  useStore.getState().deletePaintStroke(stroke.id);
+  expect(useStore.getState().paint.autopaint).toBe(settings);
+  undo();
+  useStore.getState().clearPaintStrokes();
+  expect(useStore.getState().paint.autopaint).toBe(settings);
+});

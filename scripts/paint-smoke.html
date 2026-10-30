@@ -2,6 +2,7 @@
 <body><div id="root"></div>
 <div style="position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#263330;color:white;padding:8px;font:12px monospace">
 <button id="fixture">Load animated fixture</button> <button id="large">32 active paths</button> <button id="restore">Open captured project</button> <button id="encode">Encode 0.5s GIF</button>
+<button id="autocheck">Check autopaint pixels</button>
 <span id="status">Use the normal app controls. Save downloads are captured in memory by this test page.</span>
 </div>
 <script type="module">
@@ -21,13 +22,17 @@ const canonical = strokes => JSON.stringify(strokes.map(stroke => Object.fromEnt
 const status = text => { document.querySelector('#status').textContent = text; };
 document.querySelector('#fixture').onclick = async () => {
   try {
+    const files = [];
+    for (let source = 0; source < 3; source++) {
     const encoder = GIFEncoder();
     for (let frame = 0; frame < 4; frame++) {
       const pixels = Uint8Array.from({ length: 64 * 64 }, (_, p) => ((p % 64 + frame * 8) % 32 < 16) ? 0 : 1);
-      encoder.writeFrame(pixels, 64, 64, { palette: [[240, 70 + frame * 30, 120], [30, 210, 150]], delay: 100 });
+      encoder.writeFrame(pixels, 64, 64, { palette: [[240 - source * 60, 70 + frame * 30, 120 + source * 50], [30 + source * 70, 210, 150]], delay: 100 });
     }
     encoder.finish();
-    await store.useStore.getState().loadPaintAssets([new File([encoder.bytes()], 'smoke.gif', { type: 'image/gif' })], true);
+    files.push(new File([encoder.bytes()], `smoke-${source}.gif`, { type: 'image/gif' }));
+    }
+    await store.useStore.getState().loadPaintAssets(files, true);
     store.useStore.getState().setAppMode('gif-paint');
     status('Animated GIF decoded. Paint using the normal stage.');
   } catch (error) { status(`FAIL: ${error.message}`); }
@@ -53,10 +58,11 @@ document.querySelector('#restore').onclick = async () => {
   try {
     if (!captured) throw new Error('Use Save Project first.');
     const before = canonical(store.useStore.getState().paint.strokes);
+    const autoBefore = JSON.stringify(store.useStore.getState().paint.autopaint);
     const saved = JSON.parse(await captured.text());
     await project.openProject(new File([captured], 'smoke.slapchop', { type: 'application/json' }));
     const after = canonical(store.useStore.getState().paint.strokes);
-    status(`V${saved.version} round trip: ${before === after ? 'PASS' : 'FAIL'} · ${saved.paint.strokes.length} editable paths · ${loop.getActiveRendererName()}`);
+    status(`V${saved.version} round trip: ${before === after && autoBefore === JSON.stringify(store.useStore.getState().paint.autopaint) ? 'PASS' : 'FAIL'} · ${saved.paint.strokes.length} editable paths · ${loop.getActiveRendererName()}`);
   } catch (error) { status(`FAIL: ${error.message}`); }
 };
 document.querySelector('#encode').onclick = async () => {
@@ -71,6 +77,29 @@ document.querySelector('#encode').onclick = async () => {
     image.style = 'position:fixed;right:320px;bottom:80px;width:100px;z-index:9999'; document.body.append(image);
     status(`GIF export PASS: ${blob.size} bytes · ${decoded.frames.length} decoded frames · ${loop.getActiveRendererName()}`);
     for (const frame of decoded.frames) if ('close' in frame.image) frame.image.close();
+  } catch (error) { status(`FAIL: ${error.message}`); }
+};
+document.querySelector('#autocheck').onclick = async () => {
+  try {
+    const { PaintRenderer } = await import('../src/modes/paint/renderer.ts');
+    const { DEFAULT_AUTOPAINT } = await import('../src/modes/paint/autopaint.ts');
+    const assets = store.useStore.getState().paint.assets;
+    if (!assets.length) throw new Error('Load animated fixture first.');
+    let comparisons = 0;
+    for (const gesture of ['mixed', 'arcs', 'flicks', 'lines', 'angles']) for (const lifetime of [0, 1.5]) {
+      const doc = { assets, strokes: [], autopaint: { ...DEFAULT_AUTOPAINT, enabled: true, gesture,
+        brush: { ...DEFAULT_AUTOPAINT.brush, lifetime } } };
+      const sequential = new PaintRenderer(), direct = new PaintRenderer();
+      try {
+        for (const time of [0, 0.1, 0.7, 1.6, 2.3, 5]) sequential.render(doc, time, 270, 480);
+        direct.render(doc, 5, 270, 480);
+        const a = sequential.canvas.getContext('2d').getImageData(0, 0, 270, 480).data;
+        const b = direct.canvas.getContext('2d').getImageData(0, 0, 270, 480).data;
+        if (!a.some(v => v > 0) || a.some((v, i) => v !== b[i])) throw new Error(`Pixel mismatch: ${gesture}, lifetime ${lifetime}`);
+        comparisons++;
+      } finally { sequential.destroy(); direct.destroy(); }
+    }
+    status(`Autopaint pixels PASS: ${comparisons} exact comparisons · 3-source fixture · ${loop.getActiveRendererName()}`);
   } catch (error) { status(`FAIL: ${error.message}`); }
 };
 </script></body></html>

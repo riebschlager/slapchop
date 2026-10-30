@@ -1,3 +1,5 @@
+import { GpuPaintRenderer } from '../modes/paint/gpuPaint';
+import { PaintPreviewRenderer } from '../modes/paint/preview';
 import { PaintRenderer } from '../modes/paint/renderer';
 import { resolveGrid } from '../modes/grid/model';
 import { resolveRings } from '../modes/rings/model';
@@ -165,8 +167,14 @@ export class PixiSceneRenderer {
   private gifVoronoiContainer = new Container();
   private mesh3dSprite = new Sprite();
   private flythroughSprite = new Sprite();
+  private lastPaintSession: PaintRenderer | PaintPreviewRenderer | null = null;
+  private paintPreviewRenderer: PaintPreviewRenderer | null = null;
   private paintRenderer: PaintRenderer | null = null;
   private paintSprite = new Sprite();
+  private gpuPaintPreview: GpuPaintRenderer | null = null;
+  private gpuPaintExport: GpuPaintRenderer | null = null;
+  private gpuPaintEnabled = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('paint') === 'gpu';
   private paintTexture: Texture | null = null;
   private gridContainer = new Container();
   private gridSprites: Sprite[] = [];
@@ -265,7 +273,7 @@ export class PixiSceneRenderer {
 
   /** Render the scene at time t to the live canvas. */
   render(t: number, state: RenderState) {
-    this.sync(t, state, CANVAS_WIDTH, CANVAS_HEIGHT);
+    this.sync(t, state, CANVAS_WIDTH, CANVAS_HEIGHT, true);
     this.renderer.render(this.stage);
   }
 
@@ -358,7 +366,7 @@ export class PixiSceneRenderer {
 
   // ---------------------------------------------------------------- scene sync
 
-  private sync(t: number, state: RenderState, width: number, height: number) {
+  private sync(t: number, state: RenderState, width: number, height: number, preview = false) {
     this.layout(
       width,
       height,
@@ -377,7 +385,9 @@ export class PixiSceneRenderer {
     const tunnelVisible = state.appMode === 'tunnel';
     const gifVoronoiVisible = state.appMode === 'gif-voronoi';
     const landscapeVisible = state.appMode === 'landscape';
-    this.paintSprite.visible = state.appMode === 'gif-paint';
+    this.paintSprite.visible = state.appMode === 'gif-paint' && !this.gpuPaintEnabled;
+    if (this.gpuPaintPreview) this.gpuPaintPreview.container.visible = state.appMode === 'gif-paint' && preview;
+    if (this.gpuPaintExport) this.gpuPaintExport.container.visible = state.appMode === 'gif-paint' && !preview;
     if (state.appMode !== 'gif-paint') this.releasePaint();
     this.gridContainer.visible = state.appMode === 'gif-grid';
     if (state.appMode !== 'gif-grid') {
@@ -421,11 +431,24 @@ export class PixiSceneRenderer {
     this.reconcileSymNodes(state.layers);
     this.reconcilePolyNodes(state.polygonLayers);
 
-    if (state.appMode === 'gif-paint' && state.paint) {
-      if (!this.paintRenderer) this.paintRenderer = new PaintRenderer();
-      const previousRevision = this.paintRenderer.revision;
-      const canvas = this.paintRenderer.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft);
-      if (this.paintTexture && (this.paintTexture.source.width !== width || this.paintTexture.source.height !== height)) {
+    if (state.appMode === 'gif-paint' && state.paint && this.gpuPaintEnabled) {
+      if (preview && !this.gpuPaintPreview) {
+        this.gpuPaintPreview = new GpuPaintRenderer(this.renderer, true);
+        this.root.addChild(this.gpuPaintPreview.container);
+      }
+      if (!preview && !this.gpuPaintExport) {
+        this.gpuPaintExport = new GpuPaintRenderer(this.renderer, false);
+        this.root.addChild(this.gpuPaintExport.container);
+      }
+      const painter = preview ? this.gpuPaintPreview! : this.gpuPaintExport!;
+      painter.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft);
+    } else if (state.appMode === 'gif-paint' && state.paint) {
+      if (preview && !this.paintPreviewRenderer) this.paintPreviewRenderer = new PaintPreviewRenderer();
+      if (!preview && !this.paintRenderer) this.paintRenderer = new PaintRenderer();
+      const painter = preview ? this.paintPreviewRenderer! : this.paintRenderer!;
+      const previousRevision = painter.revision;
+      const canvas = painter.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft);
+      if (this.paintTexture && (this.paintTexture.source.width !== width || this.paintTexture.source.height !== height || this.lastPaintSession !== painter)) {
         this.paintSprite.texture = Texture.EMPTY;
         this.paintTexture.destroy(true);
         this.paintTexture = null;
@@ -434,7 +457,8 @@ export class PixiSceneRenderer {
         this.paintTexture = new Texture({ source: new ImageSource({ resource: canvas, autoGarbageCollect: false }) });
         this.paintSprite.texture = this.paintTexture;
       }
-      if (previousRevision !== this.paintRenderer.revision) this.paintTexture.source.update();
+      if (!preview || this.lastPaintSession !== painter || previousRevision !== painter.revision) this.paintTexture.source.update();
+      this.lastPaintSession = painter;
       this.paintSprite.position.set(-540, -960);
       this.paintSprite.width = 1080;
       this.paintSprite.height = 1920;
@@ -463,9 +487,14 @@ export class PixiSceneRenderer {
   }
 
   private releasePaint() {
+    this.gpuPaintPreview?.destroy(); this.gpuPaintPreview = null;
+    this.gpuPaintExport?.destroy(); this.gpuPaintExport = null;
     this.paintSprite.texture = Texture.EMPTY;
     this.paintTexture?.destroy(true);
     this.paintTexture = null;
+    this.paintPreviewRenderer?.destroy();
+    this.paintPreviewRenderer = null;
+    this.lastPaintSession = null;
     this.paintRenderer?.destroy();
     this.paintRenderer = null;
   }

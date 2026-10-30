@@ -1,3 +1,4 @@
+import type { AutopaintSettings } from './autopaint';
 import type { GifData } from '../../types';
 
 export type BrushPattern = 'round' | 'flat' | 'bristle' | 'dots' | 'stripes';
@@ -30,7 +31,7 @@ export interface PaintStroke extends PaintSettings {
   seed: number;
   hidden: boolean;
 }
-export interface PaintDocument { assets: PaintAsset[]; strokes: PaintStroke[] }
+export interface PaintDocument { assets: PaintAsset[]; strokes: PaintStroke[]; autopaint?: AutopaintSettings }
 export const EMPTY_PAINT: PaintDocument = { assets: [], strokes: [] };
 export const DEFAULT_PAINT_SETTINGS: PaintSettings = {
   pattern: 'round', size: 180, spacing: 0.2, opacity: 1, rotation: 0, scatter: 0,
@@ -62,44 +63,58 @@ export function pathDistance(points: PaintPoint[]): number {
 }
 
 export interface PaintDab extends PaintPoint { index: number }
+/** Append-only sampler. Sample count is the draft revision; no display-time
+ * deposits are invented between recorded pointer/hold samples. */
+export class PaintDabCursor {
+  processedPoints = 0;
+  private travelled = 0;
+  private nextDistance: number;
+  private holdStart: number | null = null;
+  private holdFrame = 1;
+  private index = 0;
+  constructor(private spacing: number) { this.nextDistance = spacing; }
+
+  append(points: PaintPoint[], timing?: { total: number; duration: number }, end = points.length): PaintDab[] {
+    const result: PaintDab[] = [];
+    if (!points.length) return result;
+    if (this.processedPoints === 0) {
+      result.push({ ...points[0], time: 0, index: this.index++ });
+      this.processedPoints = 1;
+    }
+    for (let i = this.processedPoints; i < end; i++) {
+      const a = points[i - 1], b = points[i];
+      const distance = Math.hypot(b.x - a.x, b.y - a.y);
+      if (timing && distance === 0) continue;
+      if (distance === 0) {
+        if (this.holdStart === null) { this.holdStart = a.time; this.holdFrame = 1; }
+        while (this.holdStart + this.holdFrame / 30 <= b.time + 1e-9) {
+          result.push({ x: b.x, y: b.y, time: Math.min(b.time, this.holdStart + this.holdFrame / 30), index: this.index++ });
+          this.holdFrame++;
+        }
+        continue;
+      }
+      this.holdStart = null;
+      const ta = timing ? this.travelled / timing.total * timing.duration : a.time;
+      const endDistance = this.travelled + distance;
+      const tb = timing ? endDistance / timing.total * timing.duration : b.time;
+      while (this.nextDistance <= endDistance + 1e-9) {
+        const k = Math.min(1, (this.nextDistance - this.travelled) / distance);
+        result.push({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, time: ta + (tb - ta) * k, index: this.index++ });
+        this.nextDistance += this.spacing;
+      }
+      this.travelled = endDistance;
+    }
+    this.processedPoints = end;
+    return result;
+  }
+}
 /** Carry spacing across pointer samples; only stationary holds deposit on a time cadence. */
 export function buildPaintDabs(stroke: PaintStroke): PaintDab[] {
-  const points = stroke.points;
-  if (!points.length) return [];
-  const duration = Math.max(1 / 30, points.at(-1)!.time);
-  const total = pathDistance(points);
-  let travelled = 0;
-  const spacing = stroke.size * stroke.spacing;
-  let nextDistance = spacing;
-  let holdStart: number | null = null;
-  let holdFrame = 1;
-  const result: PaintDab[] = [{ ...points[0], time: 0, index: 0 }];
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1], b = points[i];
-    const distance = Math.hypot(b.x - a.x, b.y - a.y);
-    if (stroke.constantSpeed && total > 0 && distance === 0) continue;
-    if (distance === 0) {
-      if (holdStart === null) { holdStart = a.time; holdFrame = 1; }
-      while (holdStart + holdFrame / 30 <= b.time + 1e-9) {
-        result.push({ x: b.x, y: b.y, time: Math.min(b.time, holdStart + holdFrame / 30), index: result.length });
-        holdFrame++;
-      }
-      continue;
-    }
-    holdStart = null;
-    const ta = stroke.constantSpeed && total > 0 ? travelled / total * duration : a.time;
-    const endDistance = travelled + distance;
-    const tb = stroke.constantSpeed && total > 0 ? endDistance / total * duration : b.time;
-    while (nextDistance <= endDistance + 1e-9) {
-      const k = Math.min(1, (nextDistance - travelled) / distance);
-      result.push({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, time: ta + (tb - ta) * k, index: result.length });
-      nextDistance += spacing;
-    }
-    travelled = endDistance;
-  }
-  return result;
+  const total = stroke.constantSpeed ? pathDistance(stroke.points) : 0;
+  return new PaintDabCursor(stroke.size * stroke.spacing).append(stroke.points,
+    total > 0 ? { total, duration: Math.max(1 / 30, stroke.points.at(-1)!.time) } : undefined);
 }
-export interface PaintStamp { stroke: PaintStroke; dab: PaintDab; birth: number; sourceTime: number }
+export interface PaintStamp { stroke: PaintStroke; dab: PaintDab; birth: number; sourceTime: number; pressure?: number }
 /** Yield a bounded time interval; replay never allocates a history of prior loops. */
 export function* replayStamps(stroke: PaintStroke, dabs: PaintDab[], from: number, to: number): Generator<PaintStamp> {
   if (!stroke.replay || !dabs.length || to < 0) return;
@@ -134,7 +149,7 @@ export function originalStamps(stroke: PaintStroke, dabs: PaintDab[]): PaintStam
   return dabs.map(dab => ({ stroke, dab, birth: dab.time - duration, sourceTime: stroke.sourceOffset + dab.time * stroke.gifSpeed }));
 }
 export function stampAlpha(stamp: PaintStamp, time: number): number {
-  return stamp.stroke.opacity * (stamp.stroke.lifetime > 0 ? Math.max(0, 1 - Math.max(0, time - stamp.birth) / stamp.stroke.lifetime) : 1);
+  return stamp.stroke.opacity * (stamp.pressure ?? 1) * (stamp.stroke.lifetime > 0 ? Math.max(0, 1 - Math.max(0, time - stamp.birth) / stamp.stroke.lifetime) : 1);
 }
 export function stampPosition(stamp: PaintStamp): { x: number; y: number } {
   const random = (salt: number) => {

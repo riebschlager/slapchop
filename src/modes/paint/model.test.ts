@@ -94,3 +94,43 @@ it('visits only newly deposited dabs on a long active path', () => {
   expect([...replayStamps(stroke, dabs, 99, 99.01)]).toHaveLength(1);
   expect(reads).toBeLessThan(40);
 });
+
+it('samples appended points once with stable indices, spacing carry and hold timing', async () => {
+  const { PaintDabCursor } = await import('./model');
+  const stroke = strokeFixture({ size: 24, spacing: 0.1, points: [] });
+  const cursor = new PaintDabCursor(stroke.size * stroke.spacing);
+  const actual = [];
+  const points = [{ x: 0, y: 0, time: 0 }, { x: 11, y: 7, time: 0.17 },
+    { x: 11, y: 7, time: 0.18 }, { x: 11, y: 7, time: 0.6 },
+    { x: -19, y: 23, time: 0.9 }, { x: -19, y: 23, time: 1.2 }];
+  for (const point of points) {
+    stroke.points.push(point);
+    actual.push(...cursor.append(stroke.points));
+    expect(actual).toEqual(buildPaintDabs(stroke));
+    expect(cursor.append(stroke.points)).toEqual([]);
+  }
+  let reads = 0;
+  for (const point of stroke.points.slice(0, -1)) {
+    const x = point.x;
+    Object.defineProperty(point, 'x', { get: () => { reads++; return x; } });
+  }
+  stroke.points.push({ x: 20, y: 10, time: 1.5 });
+  cursor.append(stroke.points);
+  expect(reads).toBe(0);
+  expect(cursor.processedPoints).toBe(points.length + 1);
+});
+
+it('samples bounded prefixes without copying or retiming the saved path', async () => {
+  const { PaintDabCursor, pathDistance } = await import('./model');
+  for (const constantSpeed of [false, true]) {
+    const stroke = strokeFixture({ constantSpeed, spacing: 0.1, points: [
+      { x: 0, y: 0, time: 0 }, { x: 100, y: 0, time: 0.1 },
+      { x: 100, y: 0, time: 1.1 }, { x: -50, y: 50, time: 1.7 }
+    ] });
+    const total = pathDistance(stroke.points);
+    const timing = constantSpeed ? { total, duration: 1.7 } : undefined;
+    const cursor = new PaintDabCursor(stroke.size * stroke.spacing);
+    const dabs = stroke.points.flatMap((_, i) => cursor.append(stroke.points, timing, i + 1));
+    expect(dabs).toEqual(buildPaintDabs(stroke));
+  }
+});

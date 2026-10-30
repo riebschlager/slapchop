@@ -11,7 +11,11 @@ class RecordingCanvas {
   context = {
     setTransform: vi.fn(), clearRect: vi.fn(() => { this.draws = []; }), save: vi.fn(), restore: vi.fn(),
     translate: vi.fn(), rotate: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), rect: vi.fn(), moveTo: vi.fn(), clip: vi.fn(),
-    drawImage: (...args: unknown[]) => { this.draws.push(args); }, globalAlpha: 1
+    drawImage: (...args: unknown[]) => {
+      const image = args[0];
+      if (image instanceof RecordingCanvas && !image.context.clip.mock.calls.length && args.length === 5 && args[1] === 0 && args[2] === 0) this.draws.push(...image.draws.map(draw => [...draw]));
+      else this.draws.push(args);
+    }, globalAlpha: 1
   };
   getContext() { return this.context; }
 }
@@ -54,7 +58,7 @@ it('direct seek and sequential replay deposit the same frames and geometry', () 
   expect(deposits(layerOf(fresh.canvas as unknown as RecordingCanvas))).toEqual(incremental);
   renderer.render(doc, 0.5, 1080, 1920);
   fresh.render(doc, 0.5, 1080, 1920);
-  expect(deposits(canvases[1])).toEqual(deposits(layerOf(fresh.canvas as unknown as RecordingCanvas)));
+  expect(deposits(layerOf(renderer.canvas as unknown as RecordingCanvas))).toEqual(deposits(layerOf(fresh.canvas as unknown as RecordingCanvas)));
 });
 it('rebuilds fading strokes and removes expired stamps', () => {
   const { renderer, doc, canvases } = setup({ lifetime: 1 });
@@ -63,11 +67,11 @@ it('rebuilds fading strokes and removes expired stamps', () => {
   renderer.render(doc, 2, 1080, 1920);
   expect(canvases[1].draws).toEqual([]);
 });
-it('invalidates edited strokes and releases their old canvas stores', () => {
+it('invalidates edited strokes and retains a bounded undo checkpoint', () => {
   const { renderer, doc, canvases, stroke } = setup();
   renderer.render(doc, 0, 1080, 1920);
   renderer.render({ ...doc, strokes: [{ ...stroke, pattern: 'stripes' }] }, 0, 1080, 1920);
-  expect(canvases[1].width).toBe(0);
+  expect(renderer.checkpointPixels).toBeGreaterThan(0);
   expect(canvases[2].context.clip).toHaveBeenCalled();
   renderer.destroy();
   expect(canvases.every(c => c.width === 0 && c.height === 0)).toBe(true);
@@ -110,7 +114,7 @@ it('keeps static runs between active brushes in stack order and invalidates on r
   expect(canvases[0].draws.map(d => d[0])).toEqual([...layers].reverse());
   renderer.render({ ...doc, strokes: [stroke, { ...active, hidden: true }, upper] }, 2, 1080, 1920);
   expect(canvases[0].draws).toHaveLength(1);
-  expect(layers.every(c => c.width === 0)).toBe(true);
+  expect(renderer.checkpointPixels).toBeGreaterThan(0);
   renderer.render(doc, 2, 1080, 1920);
   expect(canvases[0].draws).toHaveLength(3);
 });
@@ -128,7 +132,7 @@ it('reconstructs fading trails exactly while retaining only the live window', ()
 it('releases invalid caches for source replacement, resize, empty documents and destruction', () => {
   const { renderer, doc, canvases } = setup();
   renderer.render(doc, 0, 1080, 1920);
-  renderer.render({ ...doc, assets: [...doc.assets] }, 0, 1080, 1920);
+  renderer.render({ ...doc, assets: doc.assets.map(a => ({ ...a, gifData: { ...a.gifData } })) }, 0, 1080, 1920);
   expect(canvases[1].width).toBe(0);
   renderer.render(doc, 0, 540, 960);
   expect(canvases[2].width).toBe(0);
@@ -177,4 +181,230 @@ it('rebuilds a saved path with fewer deposits when stamp spacing increases', () 
   const before = renderer.stats.stampDraws;
   renderer.render({ ...doc, strokes: [{ ...stroke, spacing: 1 }] }, 0, 1080, 1920);
   expect(renderer.stats.stampDraws - before).toBe(1);
+});
+
+it.each([0, 1.5])('reconstructs autopaint identically across seeks with lifetime %s and retains one accumulation canvas', async lifetime => {
+  const { DEFAULT_AUTOPAINT } = await import('./autopaint');
+  const { renderer, doc, canvases } = setup();
+  doc.strokes = [];
+  doc.autopaint = { ...DEFAULT_AUTOPAINT, enabled: true, brush: { ...DEFAULT_PAINT_SETTINGS, lifetime } };
+  for (const time of [0, 0.1, 0.5, 1.3, 2.3, 5]) renderer.render(doc, time, 270, 480);
+  const builds = renderer.stats.historyRebuilds;
+  const direct = new PaintRenderer(); direct.render(doc, 5, 270, 480);
+  expect(deposits(layerOf(renderer.canvas as unknown as RecordingCanvas))).toEqual(deposits(layerOf(direct.canvas as unknown as RecordingCanvas)));
+  renderer.render(doc, 5.1, 270, 480);
+  expect(renderer.stats.historyRebuilds).toBe(builds);
+  expect(renderer.cachedPixels).toBe(270 * 480);
+  renderer.render(doc, 0.5, 270, 480);
+  direct.render(doc, 0.5, 270, 480);
+  expect(deposits(layerOf(renderer.canvas as unknown as RecordingCanvas))).toEqual(deposits(layerOf(direct.canvas as unknown as RecordingCanvas)));
+  renderer.render({ ...doc, autopaint: { ...doc.autopaint, enabled: false } }, 1, 270, 480);
+  expect((renderer.canvas as unknown as RecordingCanvas).draws).toEqual([]);
+  expect(renderer.cachedPixels).toBe(0);
+  expect(renderer.stampCachePixels).toBe(0);
+  renderer.destroy(); direct.destroy();
+  expect(canvases.every(c => c.width === 0 && c.height === 0)).toBe(true);
+});
+
+it.each([32, 128, 255])('appends to %i static strokes by drawing only the new dabs', count => {
+  const { renderer, doc, stroke } = setup({ opacity: 0.4, scatter: 0.7 });
+  doc.strokes = Array.from({ length: count }, (_, i) => ({ ...stroke, id: String(i) }));
+  renderer.render(doc, 2, 1080, 1920);
+  const layer = layerOf(renderer.canvas as unknown as RecordingCanvas);
+  const before = { ...renderer.stats };
+  const appended = { ...stroke, id: 'append' };
+  const next = { ...doc, strokes: [...doc.strokes, appended] };
+  renderer.render(next, 2, 1080, 1920);
+  expect(layerOf(renderer.canvas as unknown as RecordingCanvas)).toBe(layer);
+  expect(renderer.stats.historyRebuilds).toBe(before.historyRebuilds);
+  expect(renderer.stats.stampDraws - before.stampDraws).toBe(buildPaintDabs(appended).length);
+  const fresh = new PaintRenderer(); fresh.render(next, 2, 1080, 1920);
+  expect(deposits(layer)).toEqual(deposits(layerOf(fresh.canvas as unknown as RecordingCanvas)));
+  renderer.render(doc, 2, 1080, 1920);
+  expect(renderer.checkpointPixels).toBeGreaterThan(0);
+  expect(layerOf(renderer.canvas as unknown as RecordingCanvas).draws).toHaveLength(count * buildPaintDabs(stroke).length);
+});
+
+it('copies static pixels only when append expands the cropped bounds', () => {
+  const { renderer, doc, stroke } = setup();
+  renderer.render(doc, 0, 1080, 1920);
+  const old = layerOf(renderer.canvas as unknown as RecordingCanvas);
+  const before = { ...renderer.stats };
+  const added = { ...stroke, id: 'expanded', points: [{ x: -400, y: -800, time: 0 }] };
+  renderer.render({ ...doc, strokes: [...doc.strokes, added] }, 0, 1080, 1920);
+  const expanded = layerOf(renderer.canvas as unknown as RecordingCanvas);
+  expect(expanded).not.toBe(old);
+  expect(expanded.draws[0][0]).toBe(old);
+  expect(old.width).toBe(0);
+  expect(renderer.stats.stampDraws - before.stampDraws).toBe(1);
+  expect(renderer.stats.historyRebuilds).toBe(before.historyRebuilds);
+});
+
+it.each([0, 0.4])('retains a draft surface and matches original frames with lifetime %s', lifetime => {
+  const { renderer, doc, stroke, canvases } = setup({ lifetime, opacity: 0.4, scatter: 0.7, gifSpeed: 1.7, sourceOffset: 0.2 });
+  doc.strokes = [];
+  const points = [{ x: 0, y: 0, time: 0 }, { x: 77, y: 11, time: 0.2 },
+    { x: 77, y: 11, time: 0.7 }, { x: -50, y: 100, time: 1 }];
+  stroke.points = [];
+  for (const point of points) {
+    stroke.points.push(point);
+    const before = renderer.stats.stampDraws;
+    const oldCount = buildPaintDabs({ ...stroke, points: stroke.points.slice(0, -1) }).length;
+    renderer.render(doc, 10, 270, 480, stroke);
+    const draft = layerOf(renderer.canvas as unknown as RecordingCanvas);
+    if (lifetime === 0) expect(renderer.stats.stampDraws - before).toBe(buildPaintDabs(stroke).length - oldCount);
+    const reference = new PaintRenderer();
+    reference.render({ ...doc, strokes: [{ ...stroke, replay: false }] }, 0, 270, 480);
+    // Raster caches have different origins; compare source-frame order here.
+    expect(deposits(draft).map(d => d[0])).toEqual(deposits(layerOf(reference.canvas as unknown as RecordingCanvas)).map(d => d[0]));
+    reference.destroy();
+    const stats = { ...renderer.stats }, revision = renderer.revision;
+    renderer.render(doc, 20, 270, 480, stroke);
+    expect(renderer.stats).toEqual(stats);
+    expect(renderer.revision).toBe(revision);
+  }
+  const draft = layerOf(renderer.canvas as unknown as RecordingCanvas);
+  renderer.render(doc, 20, 270, 480);
+  expect(draft.width).toBe(0);
+  expect((renderer.canvas as unknown as RecordingCanvas).draws).toEqual([]);
+  renderer.destroy();
+  expect(canvases.every(c => c.width === 0)).toBe(true);
+});
+
+it('skips samples that add no dab and resets the draft for replacement, resize and source changes', () => {
+  const { renderer, doc, stroke } = setup({ points: [{ x: 0, y: 0, time: 0 }] });
+  doc.strokes = [];
+  renderer.render(doc, 0, 270, 480, stroke);
+  const before = { ...renderer.stats };
+  stroke.points.push({ x: 1, y: 0, time: 0.01 });
+  renderer.render(doc, 1, 270, 480, stroke);
+  expect(renderer.stats).toEqual(before);
+  const changes: [PaintStroke, number, PaintDocument['assets']][] = [[{ ...stroke }, 270, doc.assets], [stroke, 540, doc.assets], [stroke, 540, doc.assets.map(a => ({ ...a, gifData: { ...a.gifData } }))]];
+  for (const [draft, width, assets] of changes) {
+    const old = layerOf(renderer.canvas as unknown as RecordingCanvas);
+    renderer.render({ ...doc, assets }, 1, width, 480, draft);
+    expect(old.width).toBe(0);
+    expect(layerOf(renderer.canvas as unknown as RecordingCanvas).width).toBe(width);
+  }
+});
+
+it('extends the top static run above active paint without rebuilding other groups', () => {
+  const { renderer, doc, stroke } = setup();
+  const active = { ...stroke, id: 'active', replay: true };
+  const top = { ...stroke, id: 'top' };
+  doc.strokes = [stroke, active, top];
+  renderer.render(doc, 1, 270, 480);
+  const layers = (renderer.canvas as unknown as RecordingCanvas).draws.map(d => d[0]);
+  const before = { ...renderer.stats };
+  const appended = { ...stroke, id: 'appended', opacity: 0.4 };
+  renderer.render({ ...doc, strokes: [...doc.strokes, appended] }, 1, 270, 480);
+  expect((renderer.canvas as unknown as RecordingCanvas).draws.map(d => d[0])).toEqual(layers);
+  expect(renderer.stats.stampDraws - before.stampDraws).toBe(buildPaintDabs(appended).length);
+  expect(renderer.stats.historyRebuilds).toBe(before.historyRebuilds);
+});
+
+it('preserves constant-speed draft frame timing on each new sample and skips unchanged samples', () => {
+  const { renderer, doc, stroke } = setup({ constantSpeed: true });
+  doc.strokes = [];
+  stroke.points = [{ x: 0, y: 0, time: 0 }];
+  for (const point of [{ x: 100, y: 0, time: 0.1 }, { x: 100, y: 0, time: 0.7 }, { x: -50, y: 0, time: 1.9 }]) {
+    stroke.points.push(point);
+    renderer.render(doc, 0, 270, 480, stroke);
+    const fresh = new PaintRenderer(); fresh.render(doc, 0, 270, 480, { ...stroke });
+    expect(deposits(layerOf(renderer.canvas as unknown as RecordingCanvas))).toEqual(deposits(layerOf(fresh.canvas as unknown as RecordingCanvas)));
+    fresh.destroy();
+    const before = { ...renderer.stats };
+    renderer.render(doc, 10, 270, 480, stroke);
+    expect(renderer.stats).toEqual(before);
+  }
+});
+
+it('does work proportional to new deposits throughout a dense gesture', () => {
+  const { renderer, doc, stroke } = setup({ size: 24, spacing: 0.1 });
+  doc.strokes = [];
+  stroke.points = [];
+  for (let i = 0; i <= 1000; i++) {
+    stroke.points.push({ x: Math.sin(i / 10) * 400, y: Math.cos(i / 10) * 800, time: i / 30 });
+    renderer.render(doc, 0, 270, 480, stroke);
+  }
+  expect(renderer.stats.stampDraws).toBe(buildPaintDabs(stroke).length);
+  const before = { ...renderer.stats };
+  for (let i = 0; i < 30; i++) renderer.render(doc, i, 270, 480, stroke);
+  expect(renderer.stats).toEqual(before);
+});
+
+it('invalidates only groups using replaced/removed/previously missing sources', () => {
+  const { renderer, doc, stroke } = setup();
+  const other = { ...doc.assets[0], id: 'other' };
+  doc.assets = [...doc.assets, other];
+  doc.strokes = [stroke, { ...stroke, id: 'active', assetId: 'other', replay: true }];
+  renderer.render(doc, 1, 270, 480);
+  const before = { ...renderer.stats };
+  const layers = (renderer.canvas as unknown as RecordingCanvas).draws.map(d => d[0]);
+  renderer.render({ ...doc, assets: [...doc.assets, { ...other, id: 'unused' }] }, 1, 270, 480);
+  expect(renderer.stats).toEqual(before);
+  renderer.render({ ...doc, assets: [doc.assets[0], { ...other, gifData: { ...other.gifData } }] }, 1, 270, 480);
+  expect(renderer.stats.historyRebuilds - before.historyRebuilds).toBe(1);
+  expect((renderer.canvas as unknown as RecordingCanvas).draws[0][0]).toBe(layers[0]);
+  renderer.render({ ...doc, assets: [] }, 1, 270, 480);
+  const missing = renderer.stats.historyRebuilds;
+  renderer.render(doc, 1, 270, 480);
+  expect(renderer.stats.historyRebuilds - missing).toBe(2);
+});
+
+it('reuses sampled geometry across group splits, merges, opacity edits and undo', () => {
+  const { renderer, doc, stroke } = setup();
+  const top = { ...stroke, id: 'top' };
+  doc.strokes = [stroke, top];
+  renderer.render(doc, 0, 270, 480);
+  const before = renderer.stats.geometryBuilds;
+  renderer.render({ ...doc, strokes: [stroke, { ...top, replay: true }] }, 1, 270, 480);
+  renderer.render({ ...doc, strokes: [{ ...stroke, opacity: 0.1 }, top] }, 1, 270, 480);
+  renderer.render(doc, 1, 270, 480);
+  expect(renderer.stats.geometryBuilds).toBe(before);
+  expect(renderer.stats.checkpointHits).toBeGreaterThan(0);
+  const builds = renderer.stats.groupBuilds;
+  renderer.render(doc, 2, 270, 480);
+  expect(renderer.stats.groupBuilds).toBe(builds);
+});
+
+it('restores replay checkpoints without re-depositing history and bounds retained pixels', () => {
+  const { renderer, doc, stroke } = setup({ replay: true });
+  renderer.render(doc, 5, 270, 480);
+  renderer.render(doc, 12, 270, 480);
+  const before = renderer.stats.stampDraws;
+  renderer.render(doc, 5.1, 270, 480);
+  expect(renderer.stats.checkpointHits).toBeGreaterThan(0);
+  expect(renderer.stats.stampDraws - before).toBe([...replayStamps(stroke, buildPaintDabs(stroke), 5, 5.1)].length);
+  for (let i = 0; i < 40; i++) renderer.render({ ...doc, strokes: [{ ...stroke, opacity: i / 40 }] }, 1, 1080, 1920);
+  expect(renderer.checkpointPixels).toBeLessThanOrEqual(12 * 1024 * 1024);
+  renderer.destroy();
+  expect(renderer.checkpointPixels).toBe(0);
+});
+
+it('keeps drafts and published generations responsive while cancelling obsolete reconstruction', async () => {
+  const { PaintPreviewRenderer } = await import('./preview');
+  const { doc, stroke, canvases } = setup({ replay: true, size: 24, spacing: 0.1 });
+  const preview = new PaintPreviewRenderer();
+  const finish = (painting: PaintDocument, time: number) => {
+    preview.render(painting, time, 270, 480, null, 0);
+    let batches = 0;
+    while (preview.rebuilding && batches++ < 10000) preview.render(painting, time, 270, 480, null, 0);
+    expect(preview.rebuilding).toBe(false);
+  };
+  finish(doc, 0);
+  const published = preview.painter.revision;
+  preview.render(doc, 1800, 270, 480, null, 0);
+  expect(preview.rebuilding).toBe(true);
+  const draft = { ...stroke, replay: false, points: [{ x: 1, y: 1, time: 0 }] };
+  preview.render(doc, 1800, 270, 480, draft, 0);
+  expect(preview.painter.revision).toBe(published);
+  expect((preview.canvas as unknown as RecordingCanvas).draws.at(-1)?.[0]).toBeDefined();
+  const latest = { ...doc, strokes: [{ ...stroke, opacity: 0.2 }] };
+  finish(latest, 0.1);
+  const exact = new PaintRenderer(); exact.render(latest, 0.1, 270, 480);
+  expect(deposits(layerOf(preview.painter.canvas as unknown as RecordingCanvas))).toEqual(deposits(layerOf(exact.canvas as unknown as RecordingCanvas)));
+  preview.render(latest, 1800, 270, 480, null, 0);
+  preview.destroy(); exact.destroy();
+  expect(canvases.every(c => c.width === 0)).toBe(true);
 });

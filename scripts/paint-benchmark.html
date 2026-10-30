@@ -1,9 +1,9 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>GIF Paint benchmark</title><style>body{background:#181818;color:#eee;font:14px monospace;padding:24px}button{padding:12px}canvas{max-width:180px;max-height:320px}</style></head>
-<body><h1>GIF Paint · 1080 × 1920</h1><p>60-second seek, then 12 frames at 60fps (synchronous raster readback included). Synthetic animated textures, scattered overlapping paths, five patterns. Run with Vite at /scripts/paint-benchmark.html.</p><button id="run">Run benchmark</button><button id="verify">Verify seek pixels</button><pre id="results"></pre>
+<body><h1>GIF Paint · 1080 × 1920</h1><p>60-second seek, then 12 frames at 60fps (synchronous raster readback included). Synthetic animated textures, scattered overlapping paths, five patterns. Run with Vite at /scripts/paint-benchmark.html.</p><button id="run">Run benchmark</button><button id="verify">Verify seek pixels</button><button id="incremental">Verify incremental drawing</button><pre id="results"></pre>
 <script type="module">
 import { PaintRenderer } from '../src/modes/paint/renderer.ts';
-import { DEFAULT_PAINT_SETTINGS } from '../src/modes/paint/model.ts';
+import { DEFAULT_PAINT_SETTINGS, buildPaintDabs, originalStamps } from '../src/modes/paint/model.ts';
 const output = document.querySelector('#results');
 const frames = ['#ed4677', '#23cfa0', '#e6b53c'].map((color, i) => {
   const image = document.createElement('canvas'); image.width = 128; image.height = 96;
@@ -107,4 +107,138 @@ document.querySelector('#verify').onclick = () => {
   }
   output.textContent = JSON.stringify(rows, null, 2) + '\n' + (rows.every(row => row.pixelsOverTolerance === 0) ? 'Pixel verification PASS' : 'Pixel verification FAIL');
 };
+
+// Fresh reconstruction is deliberately separate from the retained draft/append
+// surfaces. Compare premultiplied pixels to allow Canvas rounding at flattening.
+document.querySelector('#incremental').onclick = () => {
+  const rows = [];
+  const compare = (a, b, label, tolerance = 2) => {
+    const pixels = canvas => canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    const x = pixels(a), y = pixels(b);
+    let maxDelta = 0, over = 0;
+    for (let i = 0; i < x.length; i += 4) {
+      let delta = Math.abs(x[i + 3] - y[i + 3]);
+      for (let c = 0; c < 3; c++) delta = Math.max(delta, Math.abs(x[i + c] * x[i + 3] / 255 - y[i + c] * y[i + 3] / 255));
+      maxDelta = Math.max(maxDelta, delta);
+      if (delta > tolerance) over++;
+    }
+    if (over) throw new Error(`${label}: ${over} pixels exceed tolerance, maximum ${maxDelta}`);
+    rows.push({ label, maxDelta: +maxDelta.toFixed(3) });
+  };
+  try {
+    for (const pattern of ['round', 'flat', 'bristle', 'dots', 'stripes']) for (const lifetime of [0, 0.7]) for (const constantSpeed of [false, true]) {
+      const renderer = new PaintRenderer(), reference = new PaintRenderer();
+      const doc = painting(5, 0);
+      const draft = { ...doc.strokes[0], id: 'draft', pattern, lifetime, constantSpeed, size: 47, spacing: 0.1,
+        opacity: 0.37, scatter: 0.6, rotation: 37, imageZoom: 1.4, imageRotation: -23, points: [] };
+      try {
+        for (const p of [{ x: -200.3, y: -700.1, time: 0 }, { x: 250.7, y: 99.3, time: 0.3 },
+          { x: 250.7, y: 99.3, time: 0.91 }, { x: -100.2, y: 605.7, time: 1.2 }]) {
+          draft.points.push(p);
+          renderer.render(doc, 0, 270, 480, draft);
+          reference.clear(); reference.render(doc, 0, 270, 480);
+          // Reproduce the original draft path: stamp directly onto the final
+          // composite. These TS-private helpers are accessible only in this dev fixture.
+          const ctx = reference.canvas.getContext('2d');
+          ctx.save(); ctx.setTransform(270 / 1080, 0, 0, 480 / 1920, 135, 240);
+          const work = reference.strokeData(draft);
+          let sampled;
+          do { sampled = work.next(); } while (!sampled.done);
+          const mask = sampled.value.mask;
+          for (const stamp of originalStamps(draft, buildPaintDabs(draft))) reference.draw(ctx, stamp, 0, mask);
+          ctx.restore();
+          compare(renderer.canvas, reference.canvas, `legacy draft/${pattern}/${lifetime}/${constantSpeed}/${draft.points.length}`, 4);
+          reference.clear(); reference.render(doc, 0, 270, 480, { ...draft });
+          compare(renderer.canvas, reference.canvas, `retained draft/${pattern}/${lifetime}/${constantSpeed}/${draft.points.length}`);
+          const before = JSON.stringify(renderer.stats);
+          renderer.render(doc, 1, 270, 480, draft);
+          if (before !== JSON.stringify(renderer.stats)) throw new Error('Unchanged draft performed raster work');
+        }
+        renderer.render(doc, 0, 270, 480);
+        reference.clear(); reference.render(doc, 0, 270, 480);
+        compare(renderer.canvas, reference.canvas, 'cancel');
+      } finally { renderer.destroy(); reference.destroy(); }
+    }
+    for (const count of [32, 128, 255]) {
+      const renderer = new PaintRenderer(), reference = new PaintRenderer();
+      let doc = painting(count, 0);
+      try {
+        renderer.render(doc, 0, 270, 480);
+        const before = { ...renderer.stats };
+        const added = { ...painting(1, 0).strokes[0], id: 'added', opacity: 0.37, rotation: 23,
+          points: [{ x: -530, y: -950, time: 0 }, { x: 530, y: 950, time: 0.3 }] };
+        doc = { ...doc, strokes: [...doc.strokes, added] };
+        renderer.render(doc, 0, 270, 480);
+        reference.render(doc, 0, 270, 480);
+        compare(renderer.canvas, reference.canvas, `append/${count}`);
+        if (renderer.stats.historyRebuilds !== before.historyRebuilds) throw new Error('Append rebuilt history');
+        rows.push({ count, newStampDraws: renderer.stats.stampDraws - before.stampDraws, cacheBytes: renderer.cachedPixels * 4 });
+        for (const strokes of [doc.strokes.slice(0, -1), doc.strokes, [...doc.strokes].reverse(), doc.strokes.map((s, i) => i === 0 ? { ...s, hidden: true } : s)]) {
+          const changed = { ...doc, strokes };
+          renderer.render(changed, 0, 270, 480);
+          reference.clear(); reference.render(changed, 0, 270, 480);
+          compare(renderer.canvas, reference.canvas, `stack/${count}`);
+        }
+      } finally { renderer.destroy(); reference.destroy(); }
+    }
+    output.textContent = JSON.stringify({ comparisons: rows.filter(r => 'maxDelta' in r).length, maxLegacyDelta: Math.max(...rows.filter(r => r.label?.startsWith('legacy')).map(r => r.maxDelta)), maxRetainedDelta: Math.max(...rows.filter(r => r.label?.startsWith('retained')).map(r => r.maxDelta)), maxAppendDelta: Math.max(...rows.filter(r => r.label?.startsWith('append')).map(r => r.maxDelta)), counts: rows.filter(r => 'count' in r) }, null, 2) + '\nIncremental verification PASS';
+  } catch (error) { output.textContent = JSON.stringify(rows, null, 2) + `\nFAIL: ${error.message}`; }
+};
 </script></body></html>
+<script type="module">
+import { PaintRenderer } from '../src/modes/paint/renderer.ts';
+import { PaintPreviewRenderer } from '../src/modes/paint/preview.ts';
+import { DEFAULT_AUTOPAINT } from '../src/modes/paint/autopaint.ts';
+import { DEFAULT_PAINT_SETTINGS } from '../src/modes/paint/model.ts';
+const button = document.createElement('button'); button.textContent = 'Verify local rebuilds'; document.querySelector('#incremental').after(button);
+button.onclick = async () => {
+  const output = document.querySelector('#results'); output.textContent = 'Checking local rebuilds…';
+  const source = document.createElement('canvas'); source.width = 64; source.height = 48;
+  const ctx = source.getContext('2d'); ctx.fillStyle = '#d43b79'; ctx.fillRect(0, 0, 64, 48); ctx.clearRect(12, 10, 10, 20);
+  const assets = [{ id: 'a', gifData: { width: 64, height: 48, totalDurationMs: 100, frames: [{ image: source, startTimeMs: 0, endTimeMs: 100 }] } }];
+  const preview = new PaintPreviewRenderer(), exact = new PaintRenderer();
+  let comparisons = 0, batches = 0, maxDelta = 0;
+  const pixels = canvas => canvas.getContext('2d').getImageData(0, 0, 270, 480).data;
+  const compare = () => {
+    const a = pixels(preview.canvas), b = pixels(exact.canvas);
+    for (let i = 0; i < a.length; i += 4) {
+      let delta = Math.abs(a[i + 3] - b[i + 3]);
+      for (let c = 0; c < 3; c++) delta = Math.max(delta, Math.abs(a[i + c] * a[i + 3] / 255 - b[i + c] * b[i + 3] / 255));
+      maxDelta = Math.max(maxDelta, delta);
+      if (delta > 2) throw new Error(`Pixel difference ${delta} at comparison ${comparisons}`);
+    }
+    comparisons++;
+  };
+  const finish = async (doc, time) => {
+    preview.render(doc, time, 270, 480, null, 0);
+    let count = 0;
+    while (preview.rebuilding) {
+      if (++count > 10000) throw new Error('Reconstruction did not finish');
+      preview.render(doc, time, 270, 480, null, 0); batches++;
+      if (count % 16 === 0) await new Promise(requestAnimationFrame);
+    }
+    exact.render(doc, time, 270, 480); compare();
+  };
+  try {
+    for (const lifetime of [0, 0.5]) {
+      const strokes = Array.from({ length: 5 }, (_, i) => ({ ...DEFAULT_PAINT_SETTINGS, id: String(i), assetId: 'a', seed: i,
+        sourceOffset: 0, opacity: 0.45, pattern: ['round', 'flat', 'bristle', 'dots', 'stripes'][i], rotation: 37, scatter: 0.2,
+        replay: i % 2 === 0, lifetime, points: [{ x: i * 50 - 100, y: -150, time: 0 }, { x: i * 40 + 10, y: 130, time: 1 }] }));
+      const doc = { assets, strokes };
+      for (const time of [0, 5, 12, 5.1, 0.1]) await finish(doc, time);
+      await finish({ ...doc, assets: [...assets, { ...assets[0], id: 'unused' }] }, 0.1);
+      const edit = { ...doc, strokes: [{ ...strokes[0], opacity: 0.2 }, ...strokes.slice(1)] };
+      await finish(edit, 0.1); await finish(doc, 0.1);
+      // Start a long generation, then replace it before it can publish.
+      preview.render(doc, 1800, 270, 480, null, 0);
+      await finish(edit, 0.2);
+    }
+    for (const lifetime of [0, 1.5]) {
+      const doc = { assets, strokes: [], autopaint: { ...DEFAULT_AUTOPAINT, enabled: true, brush: { ...DEFAULT_AUTOPAINT.brush, lifetime } } };
+      for (const time of [0, 10, 20, 10.1, 1800, 10.2]) await finish(doc, time);
+    }
+    output.textContent = `Local rebuild pixels PASS: ${comparisons} comparisons, ${batches} interruptible batches, max premultiplied delta ${maxDelta.toFixed(3)}; checkpoint bytes ${preview.painter.checkpointPixels * 4}`;
+  } catch (error) { output.textContent = `Local rebuild FAIL: ${error.stack}`; }
+  finally { preview.destroy(); exact.destroy(); source.width = 0; source.height = 0; }
+};
+</script>

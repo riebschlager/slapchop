@@ -1,3 +1,4 @@
+import { PaintPreviewRenderer } from '../modes/paint/preview';
 import { PaintRenderer } from '../modes/paint/renderer';
 import type { PaintDocument, PaintStroke } from '../modes/paint/model';
 import { resolveGrid, GridAsset, GridConfig } from '../modes/grid/model';
@@ -71,8 +72,11 @@ export interface RenderState {
   masterFx?: MasterFxConfig;
 }
 
+const paintPreviews = new WeakMap<HTMLCanvasElement, PaintPreviewRenderer>();
 const paintRenderers = new WeakMap<HTMLCanvasElement, PaintRenderer>();
 export function releasePaintRenderer(canvas: HTMLCanvasElement) {
+  paintPreviews.get(canvas)?.destroy();
+  paintPreviews.delete(canvas);
   paintRenderers.get(canvas)?.destroy();
   paintRenderers.delete(canvas);
 }
@@ -417,7 +421,8 @@ export function renderFrame(
   t: number,
   state: RenderState,
   width: number = CANVAS_WIDTH,
-  height: number = CANVAS_HEIGHT
+  height: number = CANVAS_HEIGHT,
+  preview = false
 ) {
   // Resizing a canvas clears its backing store — only do it when needed.
   if (canvas.width !== width) canvas.width = width;
@@ -442,9 +447,15 @@ export function renderFrame(
 
   if (state.appMode !== 'gif-paint') releasePaintRenderer(canvas);
   if (state.appMode === 'gif-paint' && state.paint) {
-    let painter = paintRenderers.get(canvas);
-    if (!painter) { painter = new PaintRenderer(); paintRenderers.set(canvas, painter); }
-    ctx.drawImage(painter.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft), 0, 0);
+    if (preview) {
+      let painter = paintPreviews.get(canvas);
+      if (!painter) { painter = new PaintPreviewRenderer(); paintPreviews.set(canvas, painter); }
+      ctx.drawImage(painter.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft), 0, 0);
+    } else {
+      let painter = paintRenderers.get(canvas);
+      if (!painter) { painter = new PaintRenderer(); paintRenderers.set(canvas, painter); }
+      ctx.drawImage(painter.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft), 0, 0);
+    }
   } else if (state.appMode === 'symmetry') {
     const scaleX = width / CANVAS_WIDTH;
     const scaleY = height / CANVAS_HEIGHT;

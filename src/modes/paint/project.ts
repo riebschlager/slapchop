@@ -1,15 +1,17 @@
+import { normalizeAutopaint, type AutopaintSettings } from './autopaint';
 import { EMPTY_PAINT, MAX_PAINT_DISTANCE, MAX_PAINT_DURATION, MAX_PAINT_POINTS, normalizePaintSettings, pathDistance, type PaintAsset, type PaintDocument, type PaintPoint, type PaintStroke } from './model';
 import type { GifData } from '../../types';
 
 export interface SerializedPaint {
-  version: 1;
+  version: 1 | 2;
+  autopaint?: AutopaintSettings;
   assets: { id: string; name: string; assetId: string; retired?: boolean }[];
   strokes: PaintStroke[];
 }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 export function restorePaint(input: unknown, materialized: ReadonlyMap<string, { src: string; gifData?: GifData }>): PaintDocument {
   if (input === undefined) return { ...EMPTY_PAINT, assets: [], strokes: [] };
-  if (!record(input) || input.version !== 1 || !Array.isArray(input.assets) || !Array.isArray(input.strokes)
+  if (!record(input) || (input.version !== 1 && input.version !== 2) || !Array.isArray(input.assets) || !Array.isArray(input.strokes)
     || input.assets.length > 256 || input.strokes.length > 256) throw new Error('Invalid GIF Paint document or unsupported paint version.');
   const ids = new Set<string>();
   const assets: PaintAsset[] = input.assets.map(source => {
@@ -40,5 +42,6 @@ export function restorePaint(input: unknown, materialized: ReadonlyMap<string, {
     return { ...normalizePaintSettings(stroke), id: stroke.id, name: stroke.name, assetId: stroke.assetId,
       sourceOffset: stroke.sourceOffset, seed: stroke.seed, hidden: stroke.hidden === true, points };
   });
-  return { assets, strokes };
+  if (input.version === 2 && (!record(input.autopaint) || !record(input.autopaint.brush))) throw new Error('Invalid GIF Paint autopaint settings.');
+  return { assets, strokes, ...(input.version === 2 ? { autopaint: normalizeAutopaint(input.autopaint) } : {}) };
 }

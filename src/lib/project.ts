@@ -340,7 +340,8 @@ export async function saveProject(): Promise<void> {
     id: source.id, name: source.name, assetId: await assetIdFor(source.src, source.name)
   })));
   const paint: SerializedPaint = {
-    version: 1,
+    version: doc.paint?.autopaint ? 2 : 1,
+    autopaint: doc.paint?.autopaint,
     assets: await Promise.all((doc.paint?.assets ?? []).map(async source => ({
       id: source.id, name: source.name, retired: source.retired, assetId: await assetIdFor(source.src, source.name)
     }))),

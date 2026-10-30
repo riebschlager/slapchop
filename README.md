@@ -105,7 +105,19 @@ the same. See [Independent creative modes](docs/architecture/mode-independence.m
 for the product decision and incremental architecture direction.
 
 - **GIF Paint** — load a GIF folder, choose a round, flat, bristle, stipple, or
-  striped brush, and drag with a mouse or trackpad. Each stamp freezes the GIF
+  striped brush, and drag with a mouse or trackpad. Enable **Autopaint** in the
+  Inspector to generate human-like meandering arcs, light tapered flicks, loose
+  lines, angular turns, or a mix. Adjust gesture duration, pauses, reach,
+  variation, brush appearance, and paint lifetime (0 accumulates). Each gesture
+  uses the next GIF in a seeded shuffled folder cycle, avoiding consecutive
+  repeats when multiple sources are available. Autopaint appears over saved
+  strokes without adding generated paths to the Stack or undo history. Brush
+  controls edit autopaint while it is enabled and no saved stroke is selected;
+  manual drawing still uses the manual brush. Settings rebuild the repeatable
+  sequence; **New gestures** changes its seed and restarts replay. Disabling
+  autopaint hides its output; **Restart replay** clears and restarts all replay.
+  Autopaint settings and embedded sources save with the project; exports reproduce
+  the sequence from time zero in browser and desktop. Each stamp freezes the GIF
   frame captured at that point in the gesture, including stationary holds.
   Stamp spacing sets the travel distance between stamp centers in brush widths,
   independent of drawing speed; stationary holds capture frames at 30 fps.
@@ -133,8 +145,21 @@ for the product decision and incremental architecture direction.
   short-lived trails redraw only their live window. Matching pre-masked GIF stamp
   images share a separate 4-million-pixel cache. Its eviction
   regenerates small stamp images without rebuilding accumulated paint. Paths
-  remain editable and undoable. Unchanged paintings skip raster work and GPU
-  texture uploads. GPU and Canvas 2D use the same compositor, with shared Master
+  remain editable and undoable. Manual accumulating drafts retain their pixels
+  and sample only new input; unchanged drafts skip raster work. Appending a static
+  stroke to an unchanged top run draws only that stroke, copying the run only if
+  its bounds grow. Drafts with a paint lifetime preserve exact linear fading;
+  constant-speed timing still requires reconstruction when input changes.
+  Retained draft compositing can slightly change translucent overlap rounding
+  during drawing; saved paths and project timing are unchanged.
+  Source changes invalidate only groups using that decoded source; adding an
+  unused GIF keeps existing paint cached. Sampled paths and autopaint gestures
+  are reused across updates. Preview reconstruction yields between batches,
+  keeping the last completed painting visible with the current draft until the
+  updated painting is ready. Bounded checkpoints accelerate undo and repeat
+  seeks for unchanged settings. Exports use a separate paint session and finish
+  every requested frame before encoding.
+  Unchanged paintings skip raster work and GPU texture uploads. GPU and Canvas 2D use the same compositor, with shared Master
   FX and export support. Active brushes have no additional count limit; many
   full-stage paths can still use substantial memory. See the
   [GIF Paint benchmark](docs/architecture/paint-performance.md).
@@ -223,7 +248,11 @@ existing mapping defaults.
 
 Projects now save as format version 12, which embeds GIF Paint sources, frozen
 painting paths, and replay controls. Versions 1–11 still open with their existing
-motion. Existing V12 replay flags, source timing, accumulation, and linear fading
+motion. Projects configured with autopaint use GIF Paint payload version 2 inside
+V12; current builds read payload versions 1 and 2. Earlier builds reject the
+unsupported paint payload rather than silently dropping autopaint. Projects
+without autopaint settings continue to save paint payload version 1.
+Existing V12 replay flags, source timing, accumulation, and linear fading
 remain unchanged; no format migration is required. Moving paths now honor saved
 spacing, so existing V12 strokes may render with fewer overlapping stamps. Pre-masked stamp caching refines
 brush-edge antialiasing, so edge pixels may differ slightly from the initial V12
@@ -243,6 +272,16 @@ renderer is kept as a fallback and as a reference implementation. Two URL flags 
 a backend for comparison: `?renderer=2d` for Canvas 2D, and `?renderer=webgl` to
 reproduce the desktop app's GPU path in a browser. Exports always use the same
 renderer as the live canvas.
+
+GIF Paint also has an opt-in retained GPU **autopaint prototype**: open
+`/?paint=gpu` (WebGPU preference) or `/?paint=gpu&renderer=webgl`. It batches
+stamps into persistent GPU textures while saved paint and drafts keep their
+reference compositors. Exact linear trails retain their timing; small alpha and
+sampling differences from Canvas are expected. Preview and export use separate
+sessions of the selected backend. The default remains the reference compositor;
+`?renderer=2d` always uses Canvas. See the
+[prototype measurements and compatibility limits](docs/architecture/paint-performance.md#october-26-2026-recommendation-3-retained-gpu-prototype).
+
 
 ## Exports
 

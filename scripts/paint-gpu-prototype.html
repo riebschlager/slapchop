@@ -1,0 +1,146 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Retained GPU paint prototype</title><style>body{background:#181818;color:#eee;font:14px monospace;padding:24px}button{padding:12px}canvas{max-width:180px;max-height:320px}</style></head>
+<body><h1>Retained GPU autopaint prototype</h1><p>Opt in to the app with ?paint=gpu. Saved paint and drafts use the reference renderer. Pixel checks include readback; presentation timings do not.</p><button id="verify">Verify GPU pixels</button><button id="measure">Measure dense presentation</button><button id="reference">Measure reference presentation</button><pre id="results"></pre><div id="canvases"></div>
+<script type="module">
+import { autoDetectRenderer, Container, ImageSource, Texture, Sprite } from 'pixi.js';
+import { GpuAutopaint } from '../src/modes/paint/gpuAutopaint.ts';
+import { GpuPaintRenderer } from '../src/modes/paint/gpuPaint.ts';
+import { PaintRenderer } from '../src/modes/paint/renderer.ts';
+import { DEFAULT_PAINT_SETTINGS } from '../src/modes/paint/model.ts';
+import { DEFAULT_AUTOPAINT } from '../src/modes/paint/autopaint.ts';
+const output = document.querySelector('#results');
+const assets = [0, 1].map(id => ({ id: String(id), name: 'fixture', src: '', gifData: { width: 128, height: 96, totalDurationMs: 300,
+  frames: ['#ed4677', '#23cfa0', '#e6b53c'].map((color, i) => {
+    const image = document.createElement('canvas'); image.width = 128; image.height = 96;
+    const ctx = image.getContext('2d'); ctx.fillStyle = color; ctx.fillRect(0, 0, 128, 96);
+    ctx.clearRect(10 + i * 20, 10, 20, 50); ctx.fillStyle = '#19263e'; ctx.fillRect(0, 30 + i * 10, 128, 9);
+    return { image, delayMs: 100, startTimeMs: i * 100, endTimeMs: (i + 1) * 100 };
+  }) } }));
+const patterns = ['round', 'flat', 'bristle', 'dots', 'stripes'];
+const strokes = patterns.map((pattern, i) => ({ ...DEFAULT_PAINT_SETTINGS, pattern, id: String(i), name: 'saved', assetId: String(i % 2), sourceOffset: .1,
+  seed: i, hidden: false, opacity: .6, replay: i % 2 === 0, lifetime: i === 2 ? .5 : 0,
+  points: [{ x: -120, y: -100, time: 0 }, { x: 120, y: 100, time: .5 }] }));
+const pixels = canvas => {
+  const copy = document.createElement('canvas'); copy.width = canvas.width; copy.height = canvas.height;
+  const ctx = copy.getContext('2d'); ctx.drawImage(canvas, 0, 0);
+  return ctx.getImageData(0, 0, copy.width, copy.height).data;
+};
+function difference(a, b) {
+  let max = 0, over4 = 0, sum = 0;
+  for (let i = 0; i < a.length; i += 4) for (let c = 0; c < 4; c++) {
+    const d = Math.abs(c === 3 ? a[i+c] - b[i+c] : a[i+c] * a[i+3] / 255 - b[i+c] * b[i+3] / 255);
+    max = Math.max(max, d); if (d > 4) over4++; sum += d;
+  }
+  return { max, over4, mean: sum / a.length };
+}
+async function renderer(backend, width, height) {
+  const canvas = document.createElement('canvas'); document.querySelector('#canvases').append(canvas);
+  return autoDetectRenderer({ canvas, width, height, preference: backend, backgroundAlpha: 0, antialias: false });
+}
+function present(r, node) { r.render({ container: node, clear: true }); }
+const rows = [];
+document.querySelector('#verify').onclick = async () => {
+  output.textContent = 'Running…'; rows.length = 0;
+  try {
+    for (const backend of ['webgl', 'webgpu']) {
+      const r = await renderer(backend, 270, 480), auto = new GpuAutopaint(r), ref = new PaintRenderer();
+      const root = new Container(); root.addChild(auto.sprite);
+      for (const pattern of patterns) for (const lifetime of [0, .5]) {
+        const config = { ...DEFAULT_AUTOPAINT, enabled: true, duration: .35, pause: .1, gesture: 'mixed', reach: 900,
+          brush: { ...DEFAULT_PAINT_SETTINGS, pattern, lifetime, opacity: .57, rotation: 37, imageRotation: -23, imageZoom: 1.4, scatter: .2 } };
+        const doc = { assets, strokes: [], autopaint: config };
+        for (const t of [0, .1, .4, .8, .8, 2, .3]) {
+          auto.render(config, assets, t, 270, 480, false); present(r, root);
+          const a = pixels(ref.render(doc, t, 270, 480));
+          const diff = difference(a, pixels(r.canvas));
+          rows.push({ backend, pattern, lifetime, t, ...diff });
+        }
+      }
+      // Compare completed hybrid composition with the reference, including
+      // saved/active ordering, a draft over autopaint, edits, and session resize.
+      const hybrid = new GpuPaintRenderer(r, false), hybridRoot = new Container(); hybridRoot.position.set(135, 240); hybridRoot.scale.set(.25); hybridRoot.addChild(hybrid.container);
+      let config = { ...DEFAULT_AUTOPAINT, enabled: true, brush: { ...DEFAULT_PAINT_SETTINGS, opacity: .7, lifetime: .5 } };
+      for (const t of [.3, .7, .1]) {
+        const doc = { assets, strokes, autopaint: config }, draft = { ...strokes[0], replay: false };
+        hybrid.render(doc, t, 270, 480, draft); present(r, hybridRoot);
+        const image = r.canvas;
+        rows.push({ backend, hybrid: true, t, ...difference(pixels(ref.render(doc, t, 270, 480, draft)), pixels(image)) });
+      }
+      // A fresh GPU seek must reproduce sequential deposits, not just resemble
+      // the Canvas reference. Compare completed preview and exact export too.
+      const direct = new GpuAutopaint(r), directRoot = new Container(); directRoot.addChild(direct.sprite);
+      const seekConfig = { ...DEFAULT_AUTOPAINT, enabled: true, brush: { ...DEFAULT_PAINT_SETTINGS, opacity: .63, scatter: .3 } };
+      for (const lifetime of [0, .5]) {
+        const config = { ...seekConfig, brush: { ...seekConfig.brush, lifetime } };
+        for (const t of [0, .1, .6, 2, 5]) auto.render(config, assets, t, 270, 480, false);
+        present(r, root); const sequential = pixels(r.canvas);
+        direct.render(config, assets, 5, 270, 480, false); present(r, directRoot);
+        const diff = difference(sequential, pixels(r.canvas));
+        if (diff.max > 1) throw new Error(`GPU seek mismatch: ${backend}, ${lifetime}, ${diff.max}`);
+        rows.push({ backend, gpuSeek: lifetime, ...diff });
+      }
+      // Force atlas eviction with distinct decoded frames. Neither pixels nor
+      // reconstruction may depend on which source-frame pages remain cached.
+      const many = [{ ...assets[0], gifData: { ...assets[0].gifData, totalDurationMs: 1200,
+        frames: Array.from({ length: 120 }, (_, i) => ({ ...assets[0].gifData.frames[i % 3],
+          image: (() => { const c = document.createElement('canvas'); c.width = 128; c.height = 96; c.getContext('2d').drawImage(assets[0].gifData.frames[i % 3].image, 0, 0); return c; })(),
+          startTimeMs: i * 10, endTimeMs: (i + 1) * 10, delayMs: 10 })) } }];
+      const large = { ...seekConfig, duration: 3, pause: 0, reach: 1800, brush: { ...seekConfig.brush, size: 600 } };
+      auto.render(large, many, 60, 270, 480, false); present(r, root);
+      const pressure = auto.metrics;
+      if (!pressure.atlasEvictions || pressure.atlasPixels > 4 * 1024 * 1024 || pressure.poolSize > 2048) throw new Error('GPU atlas budget regression');
+      rows.push({ backend, atlasPressure: true, ...difference(pixels(ref.render({ assets: many, strokes: [], autopaint: large }, 60, 270, 480)), pixels(r.canvas)) });
+      // Partial reconstruction is discarded on an edit; source replacement,
+      // resolution changes, and disable must also drop obsolete resources.
+      auto.render({ ...large, brush: { ...large.brush, size: 24 } }, assets, 60, 270, 480, true);
+      auto.render(seekConfig, assets, .2, 270, 480, false);
+      const replaced = assets.map(a => ({ ...a, gifData: { ...a.gifData } }));
+      auto.render(seekConfig, replaced, .3, 270, 480, false); present(r, root);
+      rows.push({ backend, sourceReplacement: true, ...difference(pixels(ref.render({ assets: replaced, strokes: [], autopaint: seekConfig }, .3, 270, 480)), pixels(r.canvas)) });
+      r.resize(540, 960); auto.render(seekConfig, replaced, .3, 540, 960, false); present(r, root);
+      rows.push({ backend, resize: true, ...difference(pixels(ref.render({ assets: replaced, strokes: [], autopaint: seekConfig }, .3, 540, 960)), pixels(r.canvas)) });
+      auto.render(undefined, replaced, .3, 540, 960, false);
+      if (auto.metrics.renderPixels || auto.metrics.atlasPixels) throw new Error('GPU resource release regression');
+      rows.push({ backend, metrics: pressure });
+      direct.destroy(); directRoot.destroy();
+      hybrid.destroy(); hybridRoot.destroy(); auto.destroy(); root.destroy(); ref.destroy(); r.destroy(true);
+    }
+    const comparisons = rows.filter(row => row.max !== undefined);
+    output.textContent = JSON.stringify({ status: comparisons.every(r => r.max <= 6) ? 'PASS (prototype tolerance 6)' : 'FAIL', comparisons: comparisons.length, max: Math.max(...comparisons.map(r => r.max)),
+      over4: comparisons.reduce((n, r) => n + r.over4, 0), summaries: ['webgl', 'webgpu'].map(backend => ({ backend, max: Math.max(...comparisons.filter(r => r.backend === backend).map(r => r.max)), worst: comparisons.filter(r => r.backend === backend).sort((a,b) => b.max-a.max).slice(0,5), metrics: rows.find(r => r.backend === backend && r.metrics)?.metrics })) }, null, 2);
+  } catch (error) { output.textContent = error.stack; }
+};
+async function measure(reference = false) {
+  output.textContent = 'Running fresh presentation samples…';
+  const results = [];
+  try {
+    for (const backend of ['webgl', 'webgpu']) {
+      const r = await renderer(backend, 1080, 1920), auto = new GpuAutopaint(r), ref = new PaintRenderer(), root = new Container(); root.addChild(auto.sprite);
+      const config = { ...DEFAULT_AUTOPAINT, enabled: true, duration: .15, pause: 0, reach: 1800,
+        brush: { ...DEFAULT_PAINT_SETTINGS, size: 24, spacing: .1, opacity: .8, lifetime: 10 } };
+      const doc = { assets, strokes: [], autopaint: config };
+      let texture;
+      if (reference) {
+        const canvas = ref.render(doc, 20, 1080, 1920);
+        texture = new Texture({ source: new ImageSource({ resource: canvas, autoGarbageCollect: false }) });
+        root.removeChild(auto.sprite); root.addChild(new Sprite(texture));
+      } else auto.render(config, assets, 20, 1080, 1920, false);
+      present(r, root);
+      const before = reference ? { ...ref.stats } : auto.metrics;
+      const samples = [], intervals = []; let last;
+      for (let i = 1; i <= 60; i++) {
+        const now = await new Promise(requestAnimationFrame); if (last) intervals.push(now - last); last = now;
+        const start = performance.now(); if (reference) { ref.render(doc, 20 + i / 60, 1080, 1920); texture.source.update(); }
+        else auto.render(config, assets, 20 + i / 60, 1080, 1920, false);
+        present(r, root); samples.push(performance.now() - start);
+      }
+      samples.sort((a,b) => a-b); intervals.sort((a,b) => a-b);
+      results.push({ backend, implementation: reference ? 'reference' : 'retained GPU', medianMs: samples[30], p95Ms: samples[57], medianIntervalMs: intervals[29], before, after: reference ? { ...ref.stats } : auto.metrics });
+      auto.destroy(); root.destroy({ children: true }); texture?.destroy(true); ref.destroy(); r.destroy(true);
+    }
+    output.textContent = JSON.stringify(results, null, 2);
+  } catch (error) { output.textContent = error.stack; }
+}
+document.querySelector('#measure').onclick = () => measure();
+document.querySelector('#reference').onclick = () => measure(true);
+</script></body></html>

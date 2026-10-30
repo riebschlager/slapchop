@@ -4,6 +4,7 @@ import { getPlaybackTime } from '../../renderer/loop';
 import { MAX_PAINT_DISTANCE, MAX_PAINT_DURATION, MAX_PAINT_POINTS, type PaintStroke } from './model';
 
 export default function PaintStage() {
+  const autopaint = useStore(s => s.paint.autopaint?.enabled);
   const assets = useStore(s => s.paint.assets);
   const selectedStroke = useStore(s => s.paint.strokes.find(stroke => stroke.id === s.selectedPaintStrokeId));
   const strokeCount = useStore(s => s.paint.strokes.length);
@@ -88,9 +89,9 @@ export default function PaintStage() {
       <polyline points={selectedStroke.points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#28c76f" strokeWidth="2" strokeDasharray="8 6" vectorEffect="non-scaling-stroke" />
       <circle cx={selectedStroke.points[0].x} cy={selectedStroke.points[0].y} r="12" fill="#28c76f" />
     </svg>}
-    {(!assets.some(a => !a.retired) || !strokeCount || notice) && <div className="pointer-events-none absolute inset-x-3 bottom-4 flex justify-center">
+    {(!assets.some(a => !a.retired) || (!strokeCount && !autopaint) || notice) && <div className="pointer-events-none absolute inset-x-3 bottom-4 flex justify-center">
       <p role="status" className="max-w-full rounded-lg border border-ui-border bg-ui-canvas/95 px-3 py-2 text-center text-[10px] leading-relaxed text-ui-text-muted">
-        {notice || (assets.some(a => !a.retired) ? 'Drag to paint frozen GIF frames · Esc cancels a stroke' : 'Choose a GIF folder in the Stack to start painting')}
+        {notice || (assets.some(a => !a.retired) ? autopaint ? 'Autopaint running · Dial in gestures in the Inspector · Drag to add a saved stroke' : 'Drag to paint frozen GIF frames · Esc cancels a stroke' : 'Choose a GIF folder in the Stack to start painting')}
       </p>
     </div>}
   </div>;
