@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TUNNEL, TunnelAsset } from '../types';
-import { resolveTunnelScene, tunnelUvRect } from './tunnel';
+import { DEFAULT_TUNNEL, DEFAULT_TUNNEL_SCALE_MOTION, TunnelAsset, TunnelConfig } from '../types';
+import { resolveTunnelScene, tunnelPaneScale, tunnelUvRect } from './tunnel';
 
 const assets: TunnelAsset[] = [
   { id: 'a', name: 'a.gif', src: 'a', width: 400, height: 200 },
@@ -66,5 +66,48 @@ describe('tunnelUvRect', () => {
   it('zooms and clamps offsets inside the source', () => {
     const uv = tunnelUvRect(1, 1, 2, 1, -1);
     expect(uv).toEqual({ u0: 0.5, v0: 0, u1: 1, v1: 0.5 });
+  });
+});
+
+describe('tunnelPaneScale', () => {
+  const withMotion = (updates: Partial<typeof DEFAULT_TUNNEL_SCALE_MOTION>): TunnelConfig => ({
+    ...DEFAULT_TUNNEL,
+    textureScale: 1.2,
+    textureScaleMotion: { ...DEFAULT_TUNNEL_SCALE_MOTION, ...updates }
+  });
+
+  it('uses the static UV scale when sweep and noise are off', () => {
+    expect(tunnelPaneScale(withMotion({}), 3, 2, 1.7)).toBe(1.2);
+    expect(tunnelPaneScale(DEFAULT_TUNNEL, 3, 2, 1.7)).toBe(DEFAULT_TUNNEL.textureScale);
+  });
+
+  it('sweeps between the user range at the configured speed', () => {
+    const config = withMotion({ sweep: true, min: 0.5, max: 2.5, speed: 0.5, ringSpread: 0 });
+    expect(tunnelPaneScale(config, 0, 0, 0)).toBeCloseTo(1.5);
+    expect(tunnelPaneScale(config, 0, 0, 0.5)).toBeCloseTo(2.5);
+    expect(tunnelPaneScale(config, 0, 0, 1.5)).toBeCloseTo(0.5);
+    expect(tunnelPaneScale(config, 7, 3, 0.5)).toBeCloseTo(2.5);
+  });
+
+  it('travels the sweep down the tunnel by ring spread', () => {
+    const config = withMotion({ sweep: true, min: 0, max: 2, speed: 1, ringSpread: 0.25 });
+    // Ring 1 at t reaches the phase ring 0 had a quarter cycle earlier.
+    expect(tunnelPaneScale(config, 1, 0, 0.5)).toBeCloseTo(tunnelPaneScale(config, 0, 0, 0.25));
+  });
+
+  it('adds bounded, deterministic noise that differs per pane', () => {
+    const config = withMotion({ noise: true, noiseAmplitude: 0.3, noisePeriod: 0.5 });
+    const samples = Array.from({ length: 200 }, (_, index) => tunnelPaneScale(config, index % 9, index % 5, index * 0.037));
+    expect(samples.every(scale => scale >= 0.9 && scale <= 1.5)).toBe(true);
+    expect(new Set(samples.map(scale => scale.toFixed(4))).size).toBeGreaterThan(100);
+    expect(tunnelPaneScale(config, 2, 1, 3.3)).toBe(tunnelPaneScale(config, 2, 1, 3.3));
+    expect(tunnelPaneScale(config, 2, 1, 3.3)).not.toBe(tunnelPaneScale(config, 2, 2, 3.3));
+  });
+
+  it('drives the UV rect of GIF panes only', () => {
+    const config = { ...withMotion({ sweep: true, min: 2, max: 2 }), speed: 0, gifEvery: 2, sides: 4 };
+    const ring = resolveTunnelScene(assets, config, 0).panes.filter(pane => pane.ringIndex === 0);
+    const gifPane = ring.find(pane => pane.asset)!;
+    expect(gifPane.uv.u1 - gifPane.uv.u0).toBeLessThan(0.5);
   });
 });

@@ -21,14 +21,15 @@ describe('ring document integration', () => {
       onload?: () => void;
       readAsDataURL() { this.onload?.(); }
     });
-    const rings = { ...DEFAULT_RINGS, gifsPerRing: 19, speed: -500, ringPhase: 0.3 };
+    const rings = { ...DEFAULT_RINGS, gifsPerRing: 19, speed: -500, ringPhase: 0.3, gifRotation: -90,
+      sizeMotion: { ...DEFAULT_RINGS.sizeMotion, sweep: true, min: 120, max: 900, noise: true, noisePeriod: 3 } };
     useStore.getState().loadDocument({ ...initial, rings, ringsAssets: [
       { id: 'saved', name: 'source.png', src: 'blob:source', width: 20, height: 40 }
     ] });
     await saveProject();
     const blob = vi.mocked(saveBlob).mock.calls.at(-1)![0];
     const payload = JSON.parse(await blob.text());
-    expect(payload.version).toBe(12);
+    expect(payload.version).toBe(13);
     expect(payload.ringsAssets[0].src).toBeUndefined();
     const id = payload.ringsAssets[0].assetId;
     expect(payload.assets[id].dataUrl).toBe('data:image/png;base64,c291cmNl');

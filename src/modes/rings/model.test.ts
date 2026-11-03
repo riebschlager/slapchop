@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RINGS, normalizeRings, resolveRings, RingsAsset } from './model';
+import { DEFAULT_RINGS, DEFAULT_RINGS_SIZE_MOTION, normalizeRings, resolveRings, ringCardSize, RingsAsset, RingsConfig, RingsSizeMotion } from './model';
 
 const assets: RingsAsset[] = [
   { id: 'a', name: 'wide.gif', src: 'a', width: 400, height: 200 },
@@ -38,5 +38,72 @@ describe('ring flight', () => {
     expect(normalizeRings({ gifsPerRing: 1e9, ringCount: -1, fov: NaN, speed: Infinity }))
       .toMatchObject({ gifsPerRing: 48, ringCount: 4, fov: 74, speed: 900 });
     expect(resolveRings([], DEFAULT_RINGS, 0)).toEqual([]);
+  });
+});
+
+describe('ring card size motion', () => {
+  const withMotion = (updates: Partial<RingsSizeMotion>): RingsConfig =>
+    normalizeRings({ ...DEFAULT_RINGS, gifSize: 300, sizeMotion: { ...DEFAULT_RINGS_SIZE_MOTION, ...updates } });
+
+  it('uses the static GIF size when sweep and noise are off', () => {
+    expect(ringCardSize(withMotion({}), 4, 2, 1.3)).toBe(300);
+  });
+
+  it('sweeps between the user range at the configured speed', () => {
+    const c = withMotion({ sweep: true, min: 100, max: 500, speed: 0.5, ringSpread: 0 });
+    expect(ringCardSize(c, 0, 0, 0)).toBeCloseTo(300);
+    expect(ringCardSize(c, 0, 0, 0.5)).toBeCloseTo(500);
+    expect(ringCardSize(c, 0, 0, 1.5)).toBeCloseTo(100);
+  });
+
+  it('travels the sweep down the corridor by ring spread', () => {
+    const c = withMotion({ sweep: true, min: 100, max: 500, speed: 1, ringSpread: 0.25 });
+    // Ring 1 at t reaches the phase ring 0 had a quarter cycle earlier.
+    expect(ringCardSize(c, 1, 0, 0.5)).toBeCloseTo(ringCardSize(c, 0, 0, 0.25));
+  });
+
+  it('adds bounded, deterministic noise that differs per card', () => {
+    const c = withMotion({ noise: true, noiseAmplitude: 100, noisePeriod: 0.5 });
+    const samples = Array.from({ length: 200 }, (_, index) => ringCardSize(c, index % 9, index % 5, index * 0.037));
+    expect(samples.every(size => size >= 200 && size <= 400)).toBe(true);
+    expect(new Set(samples.map(size => size.toFixed(3))).size).toBeGreaterThan(100);
+    expect(ringCardSize(c, 2, 1, 3.3)).not.toBe(ringCardSize(c, 2, 2, 3.3));
+  });
+
+  it('keeps card size positive and scales projected sprites', () => {
+    const c = { ...withMotion({ noise: true, noiseAmplitude: 800 }), gifSize: 20 };
+    for (let t = 0; t < 5; t += 0.1) expect(ringCardSize(c, 1, 1, t)).toBeGreaterThanOrEqual(1);
+    const still = { ...DEFAULT_RINGS, speed: 0, rotationSpeed: 0 };
+    const doubled = normalizeRings({ ...still, sizeMotion: { ...DEFAULT_RINGS_SIZE_MOTION, sweep: true, min: 640, max: 640 } });
+    const base = resolveRings(assets, still, 0)[0];
+    expect(resolveRings(assets, doubled, 0)[0].width).toBeCloseTo(base.width * 2);
+  });
+
+  it('defaults and clamps persisted size motion', () => {
+    expect(normalizeRings({}).sizeMotion).toEqual(DEFAULT_RINGS_SIZE_MOTION);
+    expect(normalizeRings({ sizeMotion: { sweep: true, min: -5, noisePeriod: 0, speed: NaN } as unknown as RingsSizeMotion }).sizeMotion)
+      .toEqual({ ...DEFAULT_RINGS_SIZE_MOTION, sweep: true, min: 20, noisePeriod: 0.05 });
+  });
+});
+
+describe('ring card rotation offset', () => {
+  const still = { ...DEFAULT_RINGS, speed: 0, rotationSpeed: 0, twist: 0, cameraRoll: 0 };
+
+  it('offsets radial and camera-parallel cards by the same angle', () => {
+    for (const radialOrientation of [true, false]) {
+      const base = resolveRings(assets, { ...still, radialOrientation }, 0);
+      const turned = resolveRings(assets, { ...still, radialOrientation, gifRotation: 90 }, 0);
+      turned.forEach((item, index) => {
+        expect(item.rotation - base[index].rotation).toBeCloseTo(Math.PI / 2);
+        expect(item.x).toBe(base[index].x);
+      });
+    }
+  });
+
+  it('defaults older configs to no offset and clamps persisted values', () => {
+    const legacy: Partial<RingsConfig> = { ...DEFAULT_RINGS };
+    delete legacy.gifRotation;
+    expect(normalizeRings(legacy).gifRotation).toBe(0);
+    expect(normalizeRings({ gifRotation: 720 }).gifRotation).toBe(180);
   });
 });

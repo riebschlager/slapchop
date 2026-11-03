@@ -1,4 +1,4 @@
-import { TunnelAsset, TunnelConfig, TextureTiling } from '../types';
+import { DEFAULT_TUNNEL_SCALE_MOTION, TunnelAsset, TunnelConfig, TextureTiling } from '../types';
 import { applyMotion } from './motion';
 
 export type TunnelVec3 = [number, number, number];
@@ -180,6 +180,35 @@ export function tunnelUvRect(
   };
 }
 
+// Smooth 1D value noise in [-1, 1]. `key` decorrelates panes so each one
+// drifts independently while staying a pure function of time.
+function valueNoise(x: number, key: number, seed: number): number {
+  const cell = Math.floor(x);
+  const f = x - cell;
+  const eased = f * f * (3 - 2 * f);
+  const a = seededRandom(cell + key * 1013, seed);
+  const b = seededRandom(cell + 1 + key * 1013, seed);
+  return (a + (b - a) * eased) * 2 - 1;
+}
+
+// Sides are capped at 24, so a fixed stride keeps pane keys stable when the
+// side count changes instead of reshuffling every pane's noise.
+const PANE_KEY_STRIDE = 32;
+
+export function tunnelPaneScale(config: TunnelConfig, ringIndex: number, sideIndex: number, t: number): number {
+  const motion = { ...DEFAULT_TUNNEL_SCALE_MOTION, ...config.textureScaleMotion };
+  let scale = config.textureScale;
+  if (motion.sweep) {
+    const wave = Math.sin((t * motion.speed - ringIndex * motion.ringSpread) * Math.PI * 2);
+    scale = motion.min + (motion.max - motion.min) * (wave * 0.5 + 0.5);
+  }
+  if (motion.noise && motion.noiseAmplitude !== 0) {
+    const key = ringIndex * PANE_KEY_STRIDE + sideIndex;
+    scale += valueNoise(t / Math.max(0.05, motion.noisePeriod), key, config.seed) * motion.noiseAmplitude;
+  }
+  return scale;
+}
+
 function assetForRing(assets: TunnelAsset[], config: TunnelConfig, ringIndex: number): TunnelAsset | null {
   if (assets.length === 0) return null;
   const assetIndex = config.shuffle
@@ -259,7 +288,7 @@ export function resolveTunnelScene(
         uv: tunnelUvRect(
           sourceWidth / Math.max(1, sourceHeight),
           paneWidth / Math.max(1, paneHeight),
-          config.textureScale,
+          asset ? tunnelPaneScale(config, ringIndex, side, t) : config.textureScale,
           config.textureOffsetX,
           config.textureOffsetY,
           config.textureTiling

@@ -173,13 +173,19 @@ for the product decision and incremental architecture direction.
 - **GIF Rings** — fly through an endless corridor of separate GIF rings. Each
   ring repeats one source with its original aspect ratio. Choose GIFs per ring,
   speed (including reverse), radius, spacing, size, twist, rotation, radial
-  orientation, camera offsets/roll/FOV, playback speed/phase, shuffle, and depth
-  fog. Folder libraries can also include static images. Project V7 embeds the
-  library; V1–V6 projects remain readable.
+  orientation, a GIF rotation offset, camera offsets/roll/FOV, playback speed/phase, shuffle, and depth
+  fog. Animate GIF size with a Size Sweep between a from/to range at a set
+  speed (Ring Spread makes the wave travel down the corridor) and/or per-GIF
+  Size Noise with amplitude and period controls. Folder libraries can also
+  include static images. Project V7 embeds the library; V1–V6 projects remain
+  readable.
 - **GIF Tunnel** — wallpaper a procedurally bent, endlessly advancing low-poly
   tunnel with an ordered or seeded library of GIFs and static images. Configure
   ring detail, pane occupancy, palette/transparent gaps, UV crop, camera,
   synchronized or phase-shifted playback, fog, twist, and path modulation.
+  Animate GIF pane scale with a Scale Sweep that oscillates between a
+  from/to range at a set speed (Ring Spread makes the wave travel down the
+  tunnel) and/or per-pane Scale Noise with amplitude and period controls.
 - **GIF Grid** — stretch a folder of animated GIFs across an elastic grid. Set
   rows, columns, gutters, and margins; animate row heights and column widths
   independently with wave strength, speed, frequency, phase, direction, and a
@@ -257,6 +263,12 @@ remain unchanged; no format migration is required. Moving paths now honor saved
 spacing, so existing V12 strokes may render with fewer overlapping stamps. Pre-masked stamp caching refines
 brush-edge antialiasing, so edge pixels may differ slightly from the initial V12
 renderer. Older builds refuse version 12 files rather than discard paint content.
+
+Format version 13 adds GIF Tunnel scale animation (Scale Sweep and Scale Noise)
+and GIF Rings size animation (Size Sweep and Size Noise) plus a GIF rotation
+offset. It is otherwise identical to V12; older builds refuse V13 files rather
+than silently render without them. V12 and V13 files restore the polygon
+underpainting and texture folder.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

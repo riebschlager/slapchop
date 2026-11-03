@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_MASTER_FX, DEFAULT_TUNNEL } from '../types';
+import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, DEFAULT_TUNNEL_SCALE_MOTION } from '../types';
 import { restoreProjectDocument, restorePolygonTextureFolder, restorePolygonUnderpainting } from './project';
 
 describe('restoreProjectDocument', () => {
@@ -355,4 +355,38 @@ it('restores V8 brush shapes with their centerline and parallel pressures', asyn
   });
   // The file was one pressure short; restore pads it rather than desyncing.
   expect(restored.brush?.pressures).toEqual([0.2, 0.9, 1]);
+});
+
+it('round-trips tunnel scale motion and fills fields missing from a partial config', () => {
+  const base = {
+    app: 'slapchop' as const, version: 6 as const, savedAt: '', canvasBg: '#000000',
+    layers: [], polygonLayers: [], mesh3dLayers: [],
+    flythroughAssets: [], tunnelAssets: [], gifVoronoiAssets: [], landscapeTerrainAssets: [], landscapeSkySources: [],
+    gifVoronoi: DEFAULT_GIF_VORONOI, landscape: DEFAULT_LANDSCAPE,
+    assets: {}
+  };
+  const motion = { ...DEFAULT_TUNNEL_SCALE_MOTION, sweep: true, min: 0.5, max: 3, noise: true, noisePeriod: 4 };
+  const restored = restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, tunnel: { ...DEFAULT_TUNNEL, textureScaleMotion: motion } })));
+  expect(restored.tunnel.textureScaleMotion).toEqual(motion);
+
+  const partial = restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, tunnel: { ...DEFAULT_TUNNEL, textureScaleMotion: { sweep: true } } })));
+  expect(partial.tunnel.textureScaleMotion).toEqual({ ...DEFAULT_TUNNEL_SCALE_MOTION, sweep: true });
+
+  expect(restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, tunnel: DEFAULT_TUNNEL }))).tunnel.textureScaleMotion).toBeUndefined();
+});
+
+it('restores polygon underpainting and texture folders from V12 and V13 files', () => {
+  for (const version of [12, 13]) {
+    const payload = JSON.parse(JSON.stringify({
+      app: 'slapchop', version, savedAt: '', canvasBg: '#000000',
+      layers: [], polygonLayers: [], mesh3dLayers: [], flythroughAssets: [], tunnelAssets: [],
+      gifVoronoiAssets: [], landscapeTerrainAssets: [], landscapeSkySources: [], ringsAssets: [],
+      rings: {}, gridAssets: [], assets: {},
+      polygonUnderpainting: { assetId: 'ref', name: 'sketch.png', visible: true, opacity: 0.5 },
+      polygonTextureFolder: { name: 'loops', assets: [{ id: 'a', name: 'a.gif', assetId: 'x' }] }
+    }));
+    const materialized = new Map([['ref', { src: 'blob:ref' }], ['x', { src: 'blob:x' }]]);
+    expect(restorePolygonUnderpainting(payload, materialized)?.src).toBe('blob:ref');
+    expect(restorePolygonTextureFolder(payload, materialized)?.assets).toHaveLength(1);
+  }
 });

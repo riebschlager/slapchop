@@ -2,7 +2,8 @@ import ControlSection from '../../controls/ControlSection';
 import TextureTilingControl from '../../controls/TextureTilingControl';
 import { Camera, Circle, CloudFog, Dices, Image as ImageIcon, Palette, Plus, Route, Shuffle, X } from 'lucide-react';
 import { useStore } from '../../../store';
-import { TunnelPaneFill } from '../../../types';
+import { formatRate } from '../../../lib/sliderScale';
+import { DEFAULT_TUNNEL_SCALE_MOTION, TunnelPaneFill, TunnelScaleMotion } from '../../../types';
 import MotionControl from '../../controls/MotionControl';
 import Select, { SelectOption } from '../../controls/Select';
 import Slider from '../../controls/Slider';
@@ -36,6 +37,11 @@ export default function TunnelInspector() {
   const assets = useStore(state => state.tunnelAssets);
   const update = useStore(state => state.updateTunnel);
   const reseed = useStore(state => state.reseedTunnel);
+
+  const scaleMotion = { ...DEFAULT_TUNNEL_SCALE_MOTION, ...config.textureScaleMotion };
+  const updateScaleMotion = (updates: Partial<TunnelScaleMotion>) => update({
+    textureScaleMotion: { ...scaleMotion, ...updates }
+  });
 
   const updatePalette = (index: number, color: string) => {
     const palette = [...config.palette];
@@ -115,7 +121,41 @@ export default function TunnelInspector() {
         <Slider label="Ring Phase" display={`${Math.round(config.ringPhase * 100)}%`} value={config.ringPhase} min={0} max={1} step={0.01} onChange={ringPhase => update({ ringPhase })} />
         <TextureTilingControl allowClamp value={config.textureTiling ?? 'clamp'} onChange={textureTiling => update({ textureTiling })} />
         <Slider label="Texture Rotation" display={`${Math.round(config.textureRotation ?? 0)}°`} value={config.textureRotation ?? 0} min={-180} max={180} step={1} onChange={textureRotation => update({ textureRotation })} />
-        <Slider label="UV Scale" display={`${config.textureScale.toFixed(2)}×`} value={config.textureScale} min={0.25} max={4} step={0.05} onChange={textureScale => update({ textureScale })} />
+        {!scaleMotion.sweep && (
+          <Slider label="UV Scale" display={`${config.textureScale.toFixed(2)}×`} value={config.textureScale} min={0.25} max={4} step={0.05} onChange={textureScale => update({ textureScale })} />
+        )}
+        <div>
+          <ControlSection
+            sectionKey="tunnel-scale-sweep"
+            title="Scale Sweep"
+            className="mb-2 rounded border border-ui-border bg-ui-surface/40"
+            contentClassName={scaleMotion.sweep ? 'px-2 pb-2' : 'hidden'}
+            actions={<Toggle checked={scaleMotion.sweep} onChange={sweep => updateScaleMotion({ sweep })} title="Toggle sine scale sweep" />}
+          >
+            {scaleMotion.sweep && (
+              <div className="mt-2 grid grid-cols-2 gap-2 border-t border-ui-border/60 pt-2">
+                <Slider size="xs" label="From" display={`${scaleMotion.min.toFixed(2)}×`} value={scaleMotion.min} min={0.25} max={4} step={0.05} onChange={min => updateScaleMotion({ min })} />
+                <Slider size="xs" label="To" display={`${scaleMotion.max.toFixed(2)}×`} value={scaleMotion.max} min={0.25} max={4} step={0.05} onChange={max => updateScaleMotion({ max })} />
+                <Slider size="xs" label="Speed" display={formatRate(scaleMotion.speed)} value={scaleMotion.speed} min={0} max={10} step={0.001} scale="log" minPositive={0.001} onChange={speed => updateScaleMotion({ speed })} />
+                <Slider size="xs" label="Ring Spread" display={scaleMotion.ringSpread.toFixed(2)} value={scaleMotion.ringSpread} min={-0.5} max={0.5} step={0.01} onChange={ringSpread => updateScaleMotion({ ringSpread })} />
+              </div>
+            )}
+          </ControlSection>
+          <ControlSection
+            sectionKey="tunnel-scale-noise"
+            title="Scale Noise"
+            className="rounded border border-ui-border bg-ui-surface/40"
+            contentClassName={scaleMotion.noise ? 'px-2 pb-2' : 'hidden'}
+            actions={<Toggle checked={scaleMotion.noise} onChange={noise => updateScaleMotion({ noise })} title="Toggle per-pane scale noise" />}
+          >
+            {scaleMotion.noise && (
+              <div className="mt-2 grid grid-cols-2 gap-2 border-t border-ui-border/60 pt-2">
+                <Slider size="xs" label="Amplitude" display={`±${scaleMotion.noiseAmplitude.toFixed(2)}×`} value={scaleMotion.noiseAmplitude} min={0} max={2} step={0.01} onChange={noiseAmplitude => updateScaleMotion({ noiseAmplitude })} />
+                <Slider size="xs" label="Period" display={`${scaleMotion.noisePeriod.toFixed(2)}s`} value={scaleMotion.noisePeriod} min={0.05} max={10} step={0.05} onChange={noisePeriod => updateScaleMotion({ noisePeriod })} />
+              </div>
+            )}
+          </ControlSection>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Slider size="sm" label="UV Offset X" display={config.textureOffsetX.toFixed(2)} value={config.textureOffsetX} min={-0.5} max={0.5} step={0.01} onChange={textureOffsetX => update({ textureOffsetX })} />
           <Slider size="sm" label="UV Offset Y" display={config.textureOffsetY.toFixed(2)} value={config.textureOffsetY} min={-0.5} max={0.5} step={0.01} onChange={textureOffsetY => update({ textureOffsetY })} />

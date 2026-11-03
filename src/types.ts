@@ -610,6 +610,32 @@ export interface TunnelAsset {
 
 export type TunnelPaneFill = 'palette' | 'transparent';
 
+// Animated wallpaper zoom. The sweep oscillates each ring between `min` and
+// `max`, stepping its phase by `ringSpread` cycles per ring so a non-zero
+// spread travels down the tunnel. Noise is per pane and layers over either the
+// sweep or the static UV scale; `noisePeriod` is seconds between noise keys.
+export interface TunnelScaleMotion {
+  sweep: boolean;
+  min: number;
+  max: number;
+  speed: number;
+  ringSpread: number;
+  noise: boolean;
+  noiseAmplitude: number;
+  noisePeriod: number;
+}
+
+export const DEFAULT_TUNNEL_SCALE_MOTION: TunnelScaleMotion = {
+  sweep: false,
+  min: 0.75,
+  max: 1.5,
+  speed: 0.25,
+  ringSpread: 0.08,
+  noise: false,
+  noiseAmplitude: 0.25,
+  noisePeriod: 1.5
+};
+
 export interface TunnelConfig {
   sides: number;
   radius: number;
@@ -631,6 +657,7 @@ export interface TunnelConfig {
   textureOffsetX: number;
   textureOffsetY: number;
   textureRotation?: number;
+  textureScaleMotion?: TunnelScaleMotion;
   gifEvery: number;
   ringPatternOffset: number;
   ringPhase: number;
