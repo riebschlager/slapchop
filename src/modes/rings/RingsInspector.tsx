@@ -4,7 +4,7 @@ import Slider from '../../components/controls/Slider';
 import Toggle from '../../components/controls/Toggle';
 import MasterFxPanel from '../../components/panels/MasterFxPanel';
 import { formatRate } from '../../lib/sliderScale';
-import type { RingsConfig, RingsSizeMotion } from './model';
+import type { RingsConfig, RingsPositionNoise, RingsSizeMotion } from './model';
 
 type NumberKey = { [K in keyof RingsConfig]: RingsConfig[K] extends number ? K : never }[keyof RingsConfig];
 const sections: { title: string; controls: [NumberKey, string, number, number, number][] }[] = [
@@ -32,6 +32,8 @@ export default function RingsInspector() {
   const reseed = useStore(s => s.reseedRings);
   const sizeMotion = config.sizeMotion;
   const updateSizeMotion = (updates: Partial<RingsSizeMotion>) => update({ sizeMotion: { ...sizeMotion, ...updates } });
+  const positionNoise = config.positionNoise;
+  const updatePositionNoise = (updates: Partial<RingsPositionNoise>) => update({ positionNoise: { ...positionNoise, ...updates } });
   return <div className="flex flex-col">
     <div className="border-b border-ui-border bg-ui-surface p-3">
       <h2 className="text-xs font-bold uppercase tracking-[0.16em] text-ui-text">Ring Flight</h2>
@@ -70,6 +72,22 @@ export default function RingsInspector() {
           <Slider size="xs" label="Period" display={`${sizeMotion.noisePeriod.toFixed(2)}s`} value={sizeMotion.noisePeriod} min={0.05} max={10} step={0.05} onChange={noisePeriod => updateSizeMotion({ noisePeriod })} />
         </div>}
       </ControlSection>
+    </ControlSection>
+    <ControlSection sectionKey="GIF position noise" title={<span>GIF position noise</span>}>
+      <ControlSection
+        sectionKey="rings-position-noise"
+        title="Position Noise"
+        className="rounded border border-ui-border bg-ui-surface/40"
+        contentClassName={positionNoise.enabled ? 'px-2 pb-2' : 'hidden'}
+        actions={<Toggle checked={positionNoise.enabled} onChange={enabled => updatePositionNoise({ enabled })} title="Toggle per-GIF X/Y position noise" />}
+      >
+        {positionNoise.enabled && <div className="mt-2 grid grid-cols-2 gap-2 border-t border-ui-border/60 pt-2">
+          <Slider size="xs" label="Amplitude" display={`±${Math.round(positionNoise.amplitude)}`} value={positionNoise.amplitude} min={0} max={1600} step={5} onChange={amplitude => updatePositionNoise({ amplitude })} />
+          <Slider size="xs" label="Period" display={Math.round(positionNoise.period)} value={positionNoise.period} min={50} max={5000} step={10} onChange={period => updatePositionNoise({ period })} />
+          <Slider size="xs" label="Speed" display={formatRate(positionNoise.speed)} value={positionNoise.speed} min={0} max={10} step={0.001} scale="log" minPositive={0.001} onChange={speed => updatePositionNoise({ speed })} />
+        </div>}
+      </ControlSection>
+      <p className="text-[10px] text-ui-text-subtle">Period is the noise wavelength in world units: long periods sway neighboring GIFs together, short ones scatter them.</p>
     </ControlSection>
     <ControlSection sectionKey="assignment" title="Orientation & assignment">
       <div className="flex items-center justify-between text-[11px] text-ui-text-muted">

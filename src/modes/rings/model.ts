@@ -30,6 +30,22 @@ export const DEFAULT_RINGS_SIZE_MOTION: RingsSizeMotion = {
   noise: false, noiseAmplitude: 80, noisePeriod: 1.5
 };
 
+// Smooth X/Y jitter of each card's ring position, in world units before
+// perspective. `period` is the noise wavelength in world units, sampled at the
+// card's home spot in the corridor, so a long period moves neighboring cards
+// and rings together while a short one scatters them; `speed` is noise cycles
+// per second.
+export interface RingsPositionNoise {
+  enabled: boolean;
+  amplitude: number;
+  period: number;
+  speed: number;
+}
+
+export const DEFAULT_RINGS_POSITION_NOISE: RingsPositionNoise = {
+  enabled: false, amplitude: 120, period: 900, speed: 0.4
+};
+
 export interface RingsConfig {
   speed: number;
   gifsPerRing: number;
@@ -38,6 +54,7 @@ export interface RingsConfig {
   spacing: number;
   gifSize: number;
   sizeMotion: RingsSizeMotion;
+  positionNoise: RingsPositionNoise;
   twist: number;
   rotationSpeed: number;
   radialOrientation: boolean;
@@ -56,7 +73,7 @@ export interface RingsConfig {
 
 export const DEFAULT_RINGS: RingsConfig = {
   speed: 900, gifsPerRing: 12, ringCount: 24, radius: 850, spacing: 700,
-  gifSize: 320, sizeMotion: DEFAULT_RINGS_SIZE_MOTION, twist: 8, rotationSpeed: 6, radialOrientation: false, gifRotation: 0,
+  gifSize: 320, sizeMotion: DEFAULT_RINGS_SIZE_MOTION, positionNoise: DEFAULT_RINGS_POSITION_NOISE, twist: 8, rotationSpeed: 6, radialOrientation: false, gifRotation: 0,
   fov: 74, cameraX: 0, cameraY: 0, cameraRoll: 0,
   gifSpeed: 1, ringPhase: 0, shuffle: false, seed: 1,
   fog: 0.00015, backgroundColor: '#03040a'
@@ -89,6 +106,22 @@ function normalizeSizeMotion(input: Partial<RingsSizeMotion> | undefined): Rings
   return result;
 }
 
+const POSITION_NOISE_LIMITS: Record<Exclude<keyof RingsPositionNoise, 'enabled'>, [number, number]> = {
+  amplitude: [0, 1600], period: [50, 5000], speed: [0, 10]
+};
+
+function normalizePositionNoise(input: Partial<RingsPositionNoise> | undefined): RingsPositionNoise {
+  const result = { ...DEFAULT_RINGS_POSITION_NOISE };
+  if (!input || typeof input !== 'object') return result;
+  for (const key of Object.keys(POSITION_NOISE_LIMITS) as (keyof typeof POSITION_NOISE_LIMITS)[]) {
+    const value = input[key];
+    const range = POSITION_NOISE_LIMITS[key];
+    if (typeof value === 'number' && Number.isFinite(value)) result[key] = Math.max(range[0], Math.min(range[1], value));
+  }
+  if (typeof input.enabled === 'boolean') result.enabled = input.enabled;
+  return result;
+}
+
 /** Validate this mode's persisted values before they reach allocation or projection. */
 export function normalizeRings(input: Partial<RingsConfig> = {}): RingsConfig {
   const result = { ...DEFAULT_RINGS };
@@ -104,6 +137,7 @@ export function normalizeRings(input: Partial<RingsConfig> = {}): RingsConfig {
     if (typeof input[key] === 'boolean') result[key] = input[key];
   }
   result.sizeMotion = normalizeSizeMotion(input.sizeMotion);
+  result.positionNoise = normalizePositionNoise(input.positionNoise);
   if (typeof input.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(input.backgroundColor)) {
     result.backgroundColor = input.backgroundColor;
   }
@@ -154,6 +188,37 @@ export function ringCardSize(c: RingsConfig, ringIndex: number, cardIndex: numbe
   return Math.max(1, size);
 }
 
+// Smooth 3D value noise in [-1, 1], trilinear over hashed lattice corners.
+function valueNoise3(x: number, y: number, z: number, key: number, seed: number): number {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  const ease = (f: number) => f * f * (3 - 2 * f);
+  const fx = ease(x - ix), fy = ease(y - iy), fz = ease(z - iz);
+  const hash = (a: number, b: number, d: number) =>
+    mod(Math.sin(a * 127.1 + b * 311.7 + d * 74.7 + key * 1013 + seed * 78.233) * 43758.5453, 1);
+  const lerp = (a: number, b: number, f: number) => a + (b - a) * f;
+  const plane = (d: number) => lerp(
+    lerp(hash(ix, iy, d), hash(ix + 1, iy, d), fx),
+    lerp(hash(ix, iy + 1, d), hash(ix + 1, iy + 1, d), fx), fy);
+  return lerp(plane(iz), plane(iz + 1), fz) * 2 - 1;
+}
+
+/** World-unit X/Y jitter of one card; expects a normalized config.
+ * Samples at the card's home position (ring rotation over time excluded) so
+ * the distortion rides with the card instead of the card sliding through it.
+ */
+export function ringCardOffset(c: RingsConfig, ringIndex: number, cardIndex: number, t: number): { x: number; y: number } {
+  const noise = c.positionNoise;
+  if (!noise.enabled || noise.amplitude === 0) return { x: 0, y: 0 };
+  const angle = cardIndex * Math.PI * 2 / c.gifsPerRing + radians(ringIndex * c.twist);
+  const px = Math.cos(angle) * c.radius / noise.period;
+  const py = Math.sin(angle) * c.radius / noise.period;
+  const pz = ringIndex * c.spacing / noise.period + t * noise.speed;
+  return {
+    x: valueNoise3(px, py, pz, 1, c.seed) * noise.amplitude,
+    y: valueNoise3(px, py, pz, 2, c.seed) * noise.amplitude
+  };
+}
+
 /** Camera-parallel cards in perspective; both renderers use these exact projections.
  * Absolute ring IDs keep asset choice and twist stable when a ring passes the camera.
  */
@@ -181,8 +246,9 @@ export function resolveRings(assets: RingsAsset[], input: RingsConfig, t: number
     const sourceTime = t * c.gifSpeed + mod(ringIndex * c.ringPhase, 1) * (asset.gifData?.totalDurationMs ?? 0) / 1000;
     for (let i = 0; i < c.gifsPerRing; i++) {
       const angle = i * Math.PI * 2 / c.gifsPerRing + radians(ringIndex * c.twist + t * c.rotationSpeed);
-      const x = (Math.cos(angle) * c.radius - c.cameraX) * scale;
-      const y = (Math.sin(angle) * c.radius - c.cameraY) * scale;
+      const offset = ringCardOffset(c, ringIndex, i, t);
+      const x = (Math.cos(angle) * c.radius + offset.x - c.cameraX) * scale;
+      const y = (Math.sin(angle) * c.radius + offset.y - c.cameraY) * scale;
       const size = ringCardSize(c, ringIndex, i, t) * scale;
       const w = size * Math.min(1, aspect);
       const h = size * Math.min(1, 1 / aspect);

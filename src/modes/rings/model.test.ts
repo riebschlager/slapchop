@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RINGS, DEFAULT_RINGS_SIZE_MOTION, normalizeRings, resolveRings, ringCardSize, RingsAsset, RingsConfig, RingsSizeMotion } from './model';
+import { DEFAULT_RINGS, DEFAULT_RINGS_POSITION_NOISE, DEFAULT_RINGS_SIZE_MOTION, normalizeRings, resolveRings, ringCardOffset, ringCardSize, RingsAsset, RingsConfig, RingsPositionNoise, RingsSizeMotion } from './model';
 
 const assets: RingsAsset[] = [
   { id: 'a', name: 'wide.gif', src: 'a', width: 400, height: 200 },
@@ -105,5 +105,64 @@ describe('ring card rotation offset', () => {
     delete legacy.gifRotation;
     expect(normalizeRings(legacy).gifRotation).toBe(0);
     expect(normalizeRings({ gifRotation: 720 }).gifRotation).toBe(180);
+  });
+});
+
+describe('ring card position noise', () => {
+  const still = { ...DEFAULT_RINGS, speed: 0, rotationSpeed: 0, twist: 0, cameraRoll: 0 };
+  const withNoise = (updates: Partial<RingsPositionNoise>): RingsConfig =>
+    normalizeRings({ ...still, positionNoise: { ...DEFAULT_RINGS_POSITION_NOISE, enabled: true, ...updates } });
+
+  it('leaves positions untouched when disabled or at zero amplitude', () => {
+    expect(ringCardOffset(normalizeRings(still), 3, 2, 1.7)).toEqual({ x: 0, y: 0 });
+    expect(ringCardOffset(withNoise({ amplitude: 0 }), 3, 2, 1.7)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('stays within amplitude, varies per card and axis, and is deterministic', () => {
+    const c = withNoise({ amplitude: 200, period: 300, speed: 1 });
+    const samples = Array.from({ length: 300 }, (_, index) => ringCardOffset(c, index % 11, index % 12, index * 0.041));
+    expect(samples.every(({ x, y }) => Math.abs(x) <= 200 && Math.abs(y) <= 200)).toBe(true);
+    expect(new Set(samples.map(({ x }) => x.toFixed(3))).size).toBeGreaterThan(200);
+    expect(samples.some(({ x, y }) => Math.abs(x - y) > 1)).toBe(true);
+    expect(ringCardOffset(c, 4, 1, 2.5)).toEqual(ringCardOffset(c, 4, 1, 2.5));
+    expect(ringCardOffset(c, 4, 1, 2.5)).not.toEqual(ringCardOffset(c, 4, 2, 2.5));
+  });
+
+  it('holds still at zero speed and animates with speed', () => {
+    const frozen = withNoise({ speed: 0 });
+    expect(ringCardOffset(frozen, 2, 3, 0)).toEqual(ringCardOffset(frozen, 2, 3, 9));
+    const moving = withNoise({ speed: 2 });
+    expect(ringCardOffset(moving, 2, 3, 0)).not.toEqual(ringCardOffset(moving, 2, 3, 0.4));
+  });
+
+  it('moves neighboring cards together at long periods and apart at short ones', () => {
+    const spread = (period: number) => {
+      const c = withNoise({ amplitude: 100, period, speed: 0 });
+      let total = 0;
+      for (let ring = 1; ring < 20; ring++) {
+        for (let card = 0; card < c.gifsPerRing; card++) {
+          total += Math.abs(ringCardOffset(c, ring, card, 0).x - ringCardOffset(c, ring, (card + 1) % c.gifsPerRing, 0).x);
+        }
+      }
+      return total;
+    };
+    expect(spread(5000)).toBeLessThan(spread(100) / 3);
+  });
+
+  it('shifts projected sprites by the world offset in perspective', () => {
+    const c = withNoise({ amplitude: 400 });
+    const base = resolveRings(assets, still, 0);
+    const shifted = resolveRings(assets, c, 0);
+    shifted.forEach((item, index) => {
+      expect(item.width).toBe(base[index].width);
+      expect(item.rotation).toBe(base[index].rotation);
+    });
+    expect(shifted.some((item, index) => Math.abs(item.x - base[index].x) > 1)).toBe(true);
+  });
+
+  it('defaults and clamps persisted position noise', () => {
+    expect(normalizeRings({}).positionNoise).toEqual(DEFAULT_RINGS_POSITION_NOISE);
+    expect(normalizeRings({ positionNoise: { enabled: true, amplitude: 9999, period: 0, speed: NaN } as unknown as RingsPositionNoise }).positionNoise)
+      .toEqual({ ...DEFAULT_RINGS_POSITION_NOISE, enabled: true, amplitude: 1600, period: 50 });
   });
 });

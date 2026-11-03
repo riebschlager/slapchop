@@ -16,7 +16,7 @@ const serialized = () => ({ version: 1, assets: [{ id: 'gif', name: 'paint.gif',
 const materialized = new Map([['embedded', { src: 'blob:restored', gifData }]]);
 afterEach(() => { useStore.getState().loadDocument(initial); clearHistory(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-it('saves V13 with embedded sources, every stroke control, and original timing', async () => {
+it('saves V14 with embedded sources, every stroke control, and original timing', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ blob: async () => new Blob(['gif'], { type: 'image/gif' }) }));
   vi.stubGlobal('FileReader', class {
     result = 'data:image/gif;base64,Z2lm'; onload?: () => void;
@@ -27,7 +27,7 @@ it('saves V13 with embedded sources, every stroke control, and original timing',
   useStore.getState().loadDocument({ ...initial, paint: { assets: [source], strokes: [painted] } });
   await saveProject();
   const payload = JSON.parse(await vi.mocked(saveBlob).mock.calls.at(-1)![0].text());
-  expect(payload.version).toBe(13);
+  expect(payload.version).toBe(14);
   expect(payload.paint.assets[0].src).toBeUndefined();
   const assetId = payload.paint.assets[0].assetId;
   expect(payload.assets[assetId].dataUrl).toBe('data:image/gif;base64,Z2lm');

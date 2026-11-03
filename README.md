@@ -176,7 +176,9 @@ for the product decision and incremental architecture direction.
   orientation, a GIF rotation offset, camera offsets/roll/FOV, playback speed/phase, shuffle, and depth
   fog. Animate GIF size with a Size Sweep between a from/to range at a set
   speed (Ring Spread makes the wave travel down the corridor) and/or per-GIF
-  Size Noise with amplitude and period controls. Folder libraries can also
+  Size Noise with amplitude and period controls. Position Noise jitters each
+  GIF's X/Y spot on its ring with amplitude, period (noise wavelength in world
+  units), and speed controls. Folder libraries can also
   include static images. Project V7 embeds the library; V1–V6 projects remain
   readable.
 - **GIF Tunnel** — wallpaper a procedurally bent, endlessly advancing low-poly
@@ -267,8 +269,11 @@ renderer. Older builds refuse version 12 files rather than discard paint content
 Format version 13 adds GIF Tunnel scale animation (Scale Sweep and Scale Noise)
 and GIF Rings size animation (Size Sweep and Size Noise) plus a GIF rotation
 offset. It is otherwise identical to V12; older builds refuse V13 files rather
-than silently render without them. V12 and V13 files restore the polygon
-underpainting and texture folder.
+than silently render without them.
+
+Format version 14 adds GIF Rings Position Noise. It is otherwise identical to
+V13; older builds refuse V14 files rather than silently render without it.
+V12–V14 files restore the polygon underpainting and texture folder.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,

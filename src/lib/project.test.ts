@@ -375,8 +375,8 @@ it('round-trips tunnel scale motion and fills fields missing from a partial conf
   expect(restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, tunnel: DEFAULT_TUNNEL }))).tunnel.textureScaleMotion).toBeUndefined();
 });
 
-it('restores polygon underpainting and texture folders from V12 and V13 files', () => {
-  for (const version of [12, 13]) {
+it('restores polygon underpainting and texture folders from V12, V13, and V14 files', () => {
+  for (const version of [12, 13, 14]) {
     const payload = JSON.parse(JSON.stringify({
       app: 'slapchop', version, savedAt: '', canvasBg: '#000000',
       layers: [], polygonLayers: [], mesh3dLayers: [], flythroughAssets: [], tunnelAssets: [],

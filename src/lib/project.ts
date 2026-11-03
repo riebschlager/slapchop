@@ -217,7 +217,12 @@ interface ProjectFileV13 extends Omit<ProjectFileV12, 'version'> {
   version: 13;
 }
 
-type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8 | ProjectFileV9 | ProjectFileV10 | ProjectFileV11 | ProjectFileV12 | ProjectFileV13;
+// V14 adds GIF Rings' per-card position noise; V13 builds would drop it silently.
+interface ProjectFileV14 extends Omit<ProjectFileV13, 'version'> {
+  version: 14;
+}
+
+type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8 | ProjectFileV9 | ProjectFileV10 | ProjectFileV11 | ProjectFileV12 | ProjectFileV13 | ProjectFileV14;
 type MaterializedAsset = { src: string; gifData?: Layer['gifData'] };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -354,9 +359,9 @@ export async function saveProject(): Promise<void> {
     }))),
     strokes: doc.paint?.strokes ?? []
   };
-  const payload: ProjectFileV13 = {
+  const payload: ProjectFileV14 = {
     app: 'slapchop',
-    version: 13,
+    version: 14,
     paint,
     gridAssets,
     grid: doc.grid,
@@ -389,7 +394,7 @@ export async function saveProject(): Promise<void> {
 
 export async function openProject(file: File): Promise<void> {
   const payload = JSON.parse(await file.text()) as ProjectFile;
-  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(payload.version)) {
+  if (payload.app !== 'slapchop' || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(payload.version)) {
     throw new Error('Not a recognized slapchop project file.');
   }
 
@@ -527,18 +532,18 @@ export function restoreProjectDocument(
     ? { ...DEFAULT_LANDSCAPE, ...payload.landscape }
     : { ...DEFAULT_LANDSCAPE };
 
-  const ringsAssets: RingsAsset[] = (payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13) ? payload.ringsAssets.map(source => {
+  const ringsAssets: RingsAsset[] = (payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13 || payload.version === 14) ? payload.ringsAssets.map(source => {
     const { assetId, ...rest } = source;
     const asset = materialized.get(assetId);
     if (!asset) throw new Error(`GIF Rings source “${source.name}” is missing.`);
     return { ...rest, src: asset.src, gifData: asset.gifData };
   }) : [];
 
-  if ((payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13) && !Array.isArray(payload.gridAssets)) {
+  if ((payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13 || payload.version === 14) && !Array.isArray(payload.gridAssets)) {
     throw new Error('GIF Grid library must be an array of sources.');
   }
   const gridIds = new Set<string>();
-  const gridAssets: GridAsset[] = (payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13) ? payload.gridAssets.map(source => {
+  const gridAssets: GridAsset[] = (payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13 || payload.version === 14) ? payload.gridAssets.map(source => {
     if (!source || typeof source.id !== 'string' || !source.id || typeof source.name !== 'string'
       || typeof source.assetId !== 'string' || gridIds.has(source.id)) {
       throw new Error('GIF Grid contains an invalid or duplicate source.');
@@ -549,16 +554,16 @@ export function restoreProjectDocument(
     return { id: source.id, name: source.name, src: asset.src, gifData: asset.gifData };
   }) : [];
 
-  if ((payload.version === 12 || payload.version === 13) && !payload.paint) {
+  if ((payload.version === 12 || payload.version === 13 || payload.version === 14) && !payload.paint) {
     throw new Error(`GIF Paint document is missing from this V${payload.version} project.`);
   }
 
   return {
-    paint: restorePaint((payload.version === 12 || payload.version === 13) ? payload.paint : undefined, materialized),
+    paint: restorePaint((payload.version === 12 || payload.version === 13 || payload.version === 14) ? payload.paint : undefined, materialized),
     gridAssets,
-    grid: normalizeGrid((payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13) ? payload.grid : undefined),
+    grid: normalizeGrid((payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13 || payload.version === 14) ? payload.grid : undefined),
     ringsAssets,
-    rings: normalizeRings(payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13 ? payload.rings : undefined),
+    rings: normalizeRings(payload.version === 7 || payload.version === 8 || payload.version === 9 || payload.version === 10 || payload.version === 11 || payload.version === 12 || payload.version === 13 || payload.version === 14 ? payload.rings : undefined),
     layers,
     polygonLayers,
     mesh3dLayers,
@@ -581,7 +586,7 @@ export function restorePolygonUnderpainting(
   payload: ProjectFile,
   materialized: ReadonlyMap<string, MaterializedAsset> = new Map()
 ): PolygonUnderpainting | null {
-  if ((payload.version !== 7 && payload.version !== 8 && payload.version !== 9 && payload.version !== 10 && payload.version !== 11 && payload.version !== 12 && payload.version !== 13) || !payload.polygonUnderpainting) return null;
+  if ((payload.version !== 7 && payload.version !== 8 && payload.version !== 9 && payload.version !== 10 && payload.version !== 11 && payload.version !== 12 && payload.version !== 13 && payload.version !== 14) || !payload.polygonUnderpainting) return null;
   const { assetId, ...rest } = payload.polygonUnderpainting;
   const asset = materialized.get(assetId);
   if (!asset) throw new Error(`Tiled GIF underpainting “${rest.name}” is missing from the project file.`);
@@ -597,7 +602,7 @@ export function restorePolygonTextureFolder(
   payload: ProjectFile,
   materialized: ReadonlyMap<string, MaterializedAsset> = new Map()
 ): PolygonTextureFolder | null {
-  if ((payload.version !== 8 && payload.version !== 9 && payload.version !== 10 && payload.version !== 11 && payload.version !== 12 && payload.version !== 13) || !payload.polygonTextureFolder) return null;
+  if ((payload.version !== 8 && payload.version !== 9 && payload.version !== 10 && payload.version !== 11 && payload.version !== 12 && payload.version !== 13 && payload.version !== 14) || !payload.polygonTextureFolder) return null;
   const { name, assets } = payload.polygonTextureFolder;
   const restored = assets.map(({ id, name: assetName, assetId }) => {
     const asset = materialized.get(assetId);
