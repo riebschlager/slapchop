@@ -376,3 +376,13 @@ frame rate, but WebRTC may still drop frames or reduce quality if the software
 encoder cannot keep up. In the Video Stream In TOP, use **Output Resolution: Use
 Input** and disable **Use Global Res Multiplier** to avoid additional receiver-side
 scaling.
+
+## Standalone TouchDesigner animations
+
+[GIF Rings v2](tools/touchdesigner/gif_rings_v2.py) and
+[GIF Tunnel v2](tools/touchdesigner/gif_tunnel_v2.py) build standalone TouchDesigner
+components from a Text DAT. Each supports a GIF/image folder, an ordered list of
+live TOPs, or a BASE/COMP publishing `tex_*` TOPs. Live textures remain on the GPU;
+the upstream networks control their playback. The original `gif_rings.py` and
+`gif_tunnel.py` scripts remain available unchanged, and v2 builds separate COMPs.
+See the [TouchDesigner setup and validation guide](tools/touchdesigner/README.md).
