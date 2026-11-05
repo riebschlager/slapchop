@@ -8,3 +8,7 @@ tmp/
 .env*
 !.env.example
 public/__giphy-spike/
+
+# Python bytecode (tools/touchdesigner)
+__pycache__/
+*.py[cod]
