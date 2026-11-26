@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a1c1d"/><stop offset="1" stop-color="#090a0a"/></linearGradient>
+<clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+<clipPath id="top"><polygon points="-267,962 1291,62 541,-1237 -1017,-337"/></clipPath><clipPath id="bot"><polygon points="-267,962 1291,62 2041,1361 483,2261"/></clipPath></defs>
+<rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+<rect x="102" y="102" width="820" height="820" rx="184" fill="none" stroke="#2d3133" stroke-width="4"/>
+<g clip-path="url(#top)" transform="translate(11.6,-24.0)"><text x="512" y="676" font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif" font-weight="900" font-size="460" text-anchor="middle" letter-spacing="-30"><tspan fill="#f1f3f2">S</tspan><tspan fill="#28c76f">C</tspan></text></g>
+<g clip-path="url(#bot)" transform="translate(-11.6,24.0)"><text x="512" y="676" font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif" font-weight="900" font-size="460" text-anchor="middle" letter-spacing="-30"><tspan fill="#f1f3f2">S</tspan><tspan fill="#28c76f">C</tspan></text></g>
+</svg>
