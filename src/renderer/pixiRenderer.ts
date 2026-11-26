@@ -668,7 +668,9 @@ export class PixiSceneRenderer {
       maxX: this.design.width / 2,
       maxY: this.design.height / 2
     };
-    const geometryKey = gifVoronoiGeometryFrameKey(config, t);
+    // Cell masks and gutters are cached by this key, so it must include the
+    // frame size: an aspect switch re-lays out the cells and needs fresh masks.
+    const geometryKey = `${this.design.width}x${this.design.height}|${gifVoronoiGeometryFrameKey(config, t)}`;
     const geometryChanged = geometryKey !== this.gifVoronoiGeometryKey;
     const layoutKey = [
       this.design.width,
