@@ -5,6 +5,7 @@ import { DocumentState, clearHistory, getDocumentSnapshot, useStore } from '../s
 import { saveBlob } from './native';
 import { CanvasAspect, DEFAULT_CANVAS_ASPECT, isCanvasAspect } from './canvasSize';
 import {
+  AppMode,
   Camera3dConfig,
   DEFAULT_BRUSH_TOOL,
   DEFAULT_CAMERA3D,
@@ -228,6 +229,34 @@ interface ProjectFileV14 extends Omit<ProjectFileV13, 'version'> {
 interface ProjectFileV15 extends Omit<ProjectFileV14, 'version'> {
   version: 15;
   canvasAspect: CanvasAspect;
+  // Optional editor hint: the mode that was active when saved. It changes no
+  // rendered content, so it needs no version bump; builds that predate it
+  // ignore it, and files without it open in the current mode.
+  appMode?: AppMode;
+}
+
+const APP_MODES: Record<AppMode, true> = {
+  symmetry: true,
+  polygon: true,
+  '3d': true,
+  flythrough: true,
+  tunnel: true,
+  'gif-voronoi': true,
+  landscape: true,
+  rings: true,
+  'gif-grid': true,
+  'gif-paint': true
+};
+
+/**
+ * Mode to switch to after opening a project, or null to stay in the current
+ * mode. Untrusted input: only V15+ files carry the hint, and an unrecognized
+ * value (for example, a mode from a newer build) is ignored rather than
+ * rejecting a file whose document content is otherwise valid.
+ */
+export function restoreProjectAppMode(payload: { version: number; appMode?: unknown }): AppMode | null {
+  const mode = payload.version >= 15 ? payload.appMode : undefined;
+  return typeof mode === 'string' && Object.hasOwn(APP_MODES, mode) ? mode as AppMode : null;
 }
 
 type ProjectFile = ProjectFileV1 | ProjectFileV2 | ProjectFileV3 | ProjectFileV4 | ProjectFileV5 | ProjectFileV6 | ProjectFileV7 | ProjectFileV8 | ProjectFileV9 | ProjectFileV10 | ProjectFileV11 | ProjectFileV12 | ProjectFileV13 | ProjectFileV14 | ProjectFileV15;
@@ -376,6 +405,7 @@ export async function saveProject(): Promise<void> {
     savedAt: new Date().toISOString(),
     canvasBg: doc.canvasBg,
     canvasAspect: doc.canvasAspect,
+    appMode: useStore.getState().appMode,
     masterFx: doc.masterFx,
     layers,
     polygonLayers,
@@ -432,6 +462,8 @@ export async function openProject(file: File): Promise<void> {
   useStore.getState().loadDocument(doc);
   useStore.getState().setPolygonUnderpainting(underpainting);
   useStore.getState().setPolygonTextureFolder(textureFolder);
+  const appMode = restoreProjectAppMode(payload);
+  if (appMode) useStore.getState().setAppMode(appMode);
   clearHistory();
 }
 

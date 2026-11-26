@@ -280,6 +280,10 @@ files from V1–V14 open in the original 9:16 portrait frame, and older builds
 refuse V15 files rather than render a landscape or square document into the
 portrait frame.
 
+Projects also record the mode that was active when saved, and opening one
+switches to that mode. The field is optional: files saved before it existed
+open in whichever mode is current, and earlier V15 builds ignore it.
+
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,
 CRT scanlines, film grain, bloom/glow, color grading, and a smudge displacement

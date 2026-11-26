@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FLYTHROUGH, DEFAULT_GIF_VORONOI, DEFAULT_LANDSCAPE, DEFAULT_MASTER_FX, DEFAULT_TUNNEL, DEFAULT_TUNNEL_SCALE_MOTION } from '../types';
-import { restoreProjectDocument, restorePolygonTextureFolder, restorePolygonUnderpainting } from './project';
+import { restoreProjectAppMode, restoreProjectDocument, restorePolygonTextureFolder, restorePolygonUnderpainting } from './project';
 
 describe('restoreProjectDocument', () => {
   it('preserves legacy Voronoi fields while restoring a V1 project', () => {
@@ -402,4 +402,25 @@ it('restores the canvas aspect from V15 files and defaults older files to portra
   expect(restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, version: 15, canvasAspect: '16:9' }))).canvasAspect).toBe('16:9');
   expect(() => restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, version: 15, canvasAspect: '4:3' }))))
     .toThrow(/Unsupported canvas aspect/);
+});
+
+describe('restoreProjectAppMode', () => {
+  it('returns the saved mode from a V15 project', () => {
+    expect(restoreProjectAppMode({ version: 15, appMode: 'tunnel' })).toBe('tunnel');
+    expect(restoreProjectAppMode({ version: 15, appMode: 'gif-voronoi' })).toBe('gif-voronoi');
+  });
+
+  it('keeps the current mode when the hint is missing', () => {
+    expect(restoreProjectAppMode({ version: 15 })).toBeNull();
+  });
+
+  it('ignores unrecognized or malformed modes', () => {
+    expect(restoreProjectAppMode({ version: 15, appMode: 'hologram' })).toBeNull();
+    expect(restoreProjectAppMode({ version: 15, appMode: 'toString' })).toBeNull();
+    expect(restoreProjectAppMode({ version: 15, appMode: 3 })).toBeNull();
+  });
+
+  it('ignores the field on versions that never wrote it', () => {
+    expect(restoreProjectAppMode({ version: 14, appMode: 'tunnel' })).toBeNull();
+  });
 });
