@@ -3,6 +3,7 @@ import TextureTilingControl from '../../controls/TextureTilingControl';
 import { Camera, Dices, Grid3X3, Image as ImageIcon, Mountain, Play, Sun, Waves } from 'lucide-react';
 import { formatRate } from '../../../lib/sliderScale';
 import { useStore } from '../../../store';
+import { getCanvasSize } from '../../../lib/canvasSize';
 import MotionControl from '../../controls/MotionControl';
 import Slider from '../../controls/Slider';
 import Toggle from '../../controls/Toggle';
@@ -19,6 +20,7 @@ function SectionTitle({ icon: Icon, children }: { icon: typeof Mountain; childre
 
 export default function LandscapeInspector() {
   const config = useStore(state => state.landscape);
+  const frame = getCanvasSize(useStore(state => state.canvasAspect));
   const terrainAssets = useStore(state => state.landscapeTerrainAssets);
   const skySources = useStore(state => state.landscapeSkySources);
   const selectedSkySourceId = useStore(state => state.selectedLandscapeSkySourceId);
@@ -109,15 +111,15 @@ export default function LandscapeInspector() {
 
       <ControlSection sectionKey="Concentric Sky" title={<SectionTitle icon={Sun}>Concentric Sky</SectionTitle>}>
         <div className="grid grid-cols-2 gap-3">
-          <Slider size="sm" label="Sun X" display={Math.round(config.skyCenterX)} value={config.skyCenterX} min={-540} max={540} step={5} onChange={skyCenterX => update({ skyCenterX })} />
-          <Slider size="sm" label="Sun Y" display={Math.round(config.skyCenterY)} value={config.skyCenterY} min={-960} max={960} step={5} onChange={skyCenterY => update({ skyCenterY })} />
+          <Slider size="sm" label="Sun X" display={Math.round(config.skyCenterX)} value={config.skyCenterX} min={-frame.width / 2} max={frame.width / 2} step={5} onChange={skyCenterX => update({ skyCenterX })} />
+          <Slider size="sm" label="Sun Y" display={Math.round(config.skyCenterY)} value={config.skyCenterY} min={-frame.height / 2} max={frame.height / 2} step={5} onChange={skyCenterY => update({ skyCenterY })} />
           <Slider size="sm" label="Circles" display={Math.round(config.skyCircleCount)} value={config.skyCircleCount} min={1} max={18} step={1} onChange={skyCircleCount => update({ skyCircleCount })} />
           <Slider size="sm" label="Ring Width" display={Math.round(config.skyRingWidth)} value={config.skyRingWidth} min={40} max={420} step={5} onChange={skyRingWidth => update({ skyRingWidth })} />
         </div>
         <Slider label="Ring Gap" display={Math.round(config.skyRingGap)} value={config.skyRingGap} min={0} max={80} step={1} onChange={skyRingGap => update({ skyRingGap })} />
         <div className="pt-1">
-          <MotionControl label="Sun Drift X" config={config.motionSkyCenterX} onChange={motionSkyCenterX => update({ motionSkyCenterX })} maxAmplitude={540} stepAmplitude={5} />
-          <MotionControl label="Sun Drift Y" config={config.motionSkyCenterY} onChange={motionSkyCenterY => update({ motionSkyCenterY })} maxAmplitude={960} stepAmplitude={5} />
+          <MotionControl label="Sun Drift X" config={config.motionSkyCenterX} onChange={motionSkyCenterX => update({ motionSkyCenterX })} maxAmplitude={frame.width / 2} stepAmplitude={5} />
+          <MotionControl label="Sun Drift Y" config={config.motionSkyCenterY} onChange={motionSkyCenterY => update({ motionSkyCenterY })} maxAmplitude={frame.height / 2} stepAmplitude={5} />
           <MotionControl label="Ring Breathing" config={config.motionSkyRingWidth} onChange={motionSkyRingWidth => update({ motionSkyRingWidth })} maxAmplitude={210} stepAmplitude={5} />
         </div>
         <label className="text-[10px] text-ui-text-muted"><span className="mb-1 block">Sky Ground</span><input type="color" value={config.skyBackgroundColor} onChange={event => update({ skyBackgroundColor: event.target.value })} className="h-7 w-full cursor-pointer rounded border border-ui-border bg-ui-canvas p-0.5" /></label>

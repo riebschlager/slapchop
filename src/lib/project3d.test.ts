@@ -160,3 +160,17 @@ describe('pickMesh3dAt', () => {
     expect(pick({ x: screen.x, y: screen.y }, [mesh])?.meshId).toBe(mesh.id);
   });
 });
+
+describe('canvas aspect presets', () => {
+  it('keeps a Z=0 point at design-pixel scale in every frame, including orthographic', () => {
+    for (const projection of ['perspective', 'orthographic'] as const) {
+      for (const [width, height] of [[1080, 1920], [1920, 1080], [1080, 1080], [1280, 720]]) {
+        const scale = Math.min(width, height) / 1080;
+        const { project } = createScreen3dProjector({ ...DEFAULT_CAMERA3D, projection }, 0, width, height);
+        const point = project([100, 50, 0])!;
+        expect(point.x - width / 2).toBeCloseTo(100 * scale, 6);
+        expect(point.y - height / 2).toBeCloseTo(50 * scale, 6);
+      }
+    }
+  });
+});

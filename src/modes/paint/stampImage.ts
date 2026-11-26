@@ -1,4 +1,5 @@
 import type { BrushPattern, PaintStroke } from './model';
+import { getDesignSizeForOutput } from '../../lib/canvasSize';
 
 export function brushPath(ctx: Path2D, pattern: BrushPattern, size: number) {
   const r = size / 2;
@@ -19,7 +20,8 @@ export function brushPath(ctx: Path2D, pattern: BrushPattern, size: number) {
 /** Reference brush raster, shared by Canvas deposits and GPU atlas entries. */
 export function createStampImage(stroke: PaintStroke, frame: CanvasImageSource, sourceWidth: number, sourceHeight: number,
   width: number, height: number, mask?: Path2D): HTMLCanvasElement {
-  const sx = width / 1080, sy = height / 1920;
+  const design = getDesignSizeForOutput(width, height);
+  const sx = width / design.width, sy = height / design.height;
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(stroke.size * Math.SQRT2 * sx) + 2;
   canvas.height = Math.ceil(stroke.size * Math.SQRT2 * sy) + 2;

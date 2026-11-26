@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getDocumentSnapshot, useStore } from '../store';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, releasePaintRenderer } from '../renderer/render2d';
+import { RenderState, getDesignSize, releasePaintRenderer } from '../renderer/render2d';
+import { ExportResolution, getExportSize } from '../lib/canvasSize';
 import {
   createRawFrameSource,
   getActiveRendererName,
@@ -19,20 +20,13 @@ import { beginExportProfile } from '../lib/exportProfiler';
 import { isNative, pickDirectoryPath, pickSavePath, saveBlob } from '../lib/native';
 
 export type ExportType = 'mp4' | 'webm' | 'prores' | 'gif' | 'zip' | 'sequence';
-export type ExportResolution = 'full' | 'hd' | 'compact';
+export type { ExportResolution } from '../lib/canvasSize';
 export type ExportImageFormat = 'png' | 'jpeg';
 
 export interface ExportJob {
   label: string;
   percent: number;
 }
-
-/** Output sizes, all portrait subdivisions of the 1080x1920 design space. */
-export const EXPORT_RESOLUTIONS: Record<ExportResolution, readonly [number, number]> = {
-  full: [1080, 1920],
-  hd: [720, 1280],
-  compact: [540, 960]
-};
 
 function getExportTimestamp(): string {
   const now = new Date();
@@ -53,6 +47,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportType, setExportType] = useState<ExportType>('mp4');
   const [exportResolution, setExportResolution] = useState<ExportResolution>('hd');
+  const canvasAspect = useStore(s => s.canvasAspect);
   const [exportFormat, setExportFormat] = useState<ExportImageFormat>('png');
   const [exportStartTime, setExportStartTime] = useState<number>(0);
   const [exportDuration, setExportDuration] = useState<number>(3);
@@ -96,7 +91,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
       return;
     }
     let stale = false;
-    const [width, height] = EXPORT_RESOLUTIONS[exportResolution];
+    const { width, height } = getExportSize(canvasAspect, exportResolution);
     planVideoExport({ format: exportType, width, height, fps: exportFps }).then(
       (plan) => {
         if (stale) return;
@@ -110,7 +105,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
       }
     );
     return () => { stale = true; };
-  }, [exportType, exportResolution, exportFps]);
+  }, [exportType, exportResolution, exportFps, canvasAspect]);
 
   const openExportModal = () => {
     setExportError(null);
@@ -132,7 +127,8 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     const canvas = document.createElement('canvas');
     try {
       const state = { ...snapshotRenderState(), paintEpoch: useStore.getState().paintEpoch };
-      renderExportFrame(canvas, getPlaybackTime(), state, CANVAS_WIDTH, CANVAS_HEIGHT);
+      const { width, height } = getDesignSize(state);
+      renderExportFrame(canvas, getPlaybackTime(), state, width, height);
       const blob = await (await fetch(canvas.toDataURL('image/png'))).blob();
       await saveBlob(blob, `slapchop-art-${getExportTimestamp()}.png`);
     } catch (e) {
@@ -248,7 +244,7 @@ export function useExport({ liveOutputStreaming = false }: UseExportOptions = {}
     setExportError(null);
     setExportNotice(null);
     const doc = snapshotRenderState();
-    const [resW, resH] = EXPORT_RESOLUTIONS[exportResolution];
+    const { width: resW, height: resH } = getExportSize(doc.canvasAspect, exportResolution);
     const ts = getExportTimestamp();
 
     const common = {

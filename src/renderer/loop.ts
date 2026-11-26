@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, renderFrame, releasePaintRenderer } from './render2d';
+import { RenderState, renderFrame, releasePaintRenderer } from './render2d';
 import { PixiSceneRenderer } from './pixiRenderer';
 import {
   isLivePreviewRenderingSuspended,
@@ -212,7 +212,7 @@ export function startRenderLoop(
           if (activeGpu === gpu) activeGpu = null;
           discardRenderer(canvas, gpu);
           gpu = null;
-          draw = (t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT, true);
+          draw = (t, state) => renderFrame(canvas, t, state, undefined, undefined, true);
           consecutiveErrors = 0;
         }
       }
@@ -264,7 +264,7 @@ export function startRenderLoop(
       );
       return;
     }
-    stopTicking = startTicking((t, state) => renderFrame(canvas, t, state, CANVAS_WIDTH, CANVAS_HEIGHT, true));
+    stopTicking = startTicking((t, state) => renderFrame(canvas, t, state, undefined, undefined, true));
   };
 
   if (is2dRendererForced()) {

@@ -20,6 +20,9 @@ vi.mock('pixi.js', () => {
 });
 import { GpuAutopaint } from './gpuAutopaint';
 import type { Renderer } from 'pixi.js';
+import { getCanvasSize } from '../../lib/canvasSize';
+
+const PORTRAIT = getCanvasSize('9:16');
 
 const frame = {} as CanvasImageSource;
 const assets: PaintAsset[] = [{ id: 'a', name: 'a', src: '', gifData: { width: 20, height: 20, totalDurationMs: 100,
@@ -45,7 +48,7 @@ it('only deposits new accumulating stamps and skips all GPU work at unchanged ti
   painter.render(config, assets, 2, 270, 480, false);
   expect(render).not.toHaveBeenCalled(); expect(painter.metrics).toEqual(before);
   painter.render(config, assets, 2.5, 270, 480, false);
-  const expected = [...new AutopaintSequence(config, assets).stamps(2, 2.5)].length;
+  const expected = [...new AutopaintSequence(config, assets, PORTRAIT).stamps(2, 2.5)].length;
   expect(painter.metrics.stamps! - before.stamps!).toBe(expected);
   expect(painter.metrics.rebuilds).toBe(before.rebuilds);
   expect(painter.metrics.renderPixels).toBe(270 * 480 * 2);
@@ -55,7 +58,7 @@ it('retains only the exact linear lifetime window, including forward jumps', () 
   const { painter } = setup(); const fading = { ...config, brush: { ...config.brush, lifetime: .5 } };
   for (const time of [1, 1.1, 30]) {
     painter.render(fading, assets, time, 270, 480, false);
-    const expected = [...new AutopaintSequence(fading, assets).stamps(time - .5, time)].filter(s => stampAlpha(s, time) > 0).length;
+    const expected = [...new AutopaintSequence(fading, assets, PORTRAIT).stamps(time - .5, time)].filter(s => stampAlpha(s, time) > 0).length;
     expect(painter.metrics.liveStamps).toBe(expected);
   }
   painter.destroy();
@@ -72,7 +75,7 @@ it('keys invalidation by palette order and decoded identity rather than metadata
 it('reconstructs on backward seek, brush edit, and resolution change', () => {
   const { painter } = setup(); painter.render(config, assets, 1, 270, 480, false);
   painter.render(config, assets, .1, 270, 480, false);
-  expect(painter.metrics.stamps).toBe([...new AutopaintSequence(config, assets).stamps(-1e-9, .1)].length);
+  expect(painter.metrics.stamps).toBe([...new AutopaintSequence(config, assets, PORTRAIT).stamps(-1e-9, .1)].length);
   const edited = { ...config, brush: { ...config.brush, opacity: .4 } };
   painter.render(edited, assets, .2, 270, 480, false);
   painter.render(edited, assets, .2, 540, 960, false);

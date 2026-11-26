@@ -1,5 +1,6 @@
 import { brushPath, createStampImage } from './stampImage';
 import { autoStroke, AutopaintSequence, type AutopaintSettings } from './autopaint';
+import { getDesignSizeForOutput } from '../../lib/canvasSize';
 import { getGifFrameAtTime } from '../../lib/gifUtils';
 import {
   PaintDabCursor, buildPaintDabs, pathDistance, originalStamps, replayStamps, stampAlpha, stampPosition,
@@ -27,13 +28,14 @@ function context(canvas: HTMLCanvasElement) {
 }
 function bounds(data: StrokeData[], width: number, height: number): Bounds {
   let left = width, top = height, right = 0, bottom = 0;
+  const { width: dw, height: dh } = getDesignSizeForOutput(width, height);
   for (const { stroke, extent } of data) {
     // Round only at the output boundary to preserve the original sampling grid.
     const pad = stroke.size * (Math.SQRT1_2 + stroke.scatter / 2);
-    left = Math.min(left, (extent.left - pad + 540) * width / 1080);
-    right = Math.max(right, (extent.right + pad + 540) * width / 1080);
-    top = Math.min(top, (extent.top - pad + 960) * height / 1920);
-    bottom = Math.max(bottom, (extent.bottom + pad + 960) * height / 1920);
+    left = Math.min(left, (extent.left - pad + dw / 2) * width / dw);
+    right = Math.max(right, (extent.right + pad + dw / 2) * width / dw);
+    top = Math.min(top, (extent.top - pad + dh / 2) * height / dh);
+    bottom = Math.max(bottom, (extent.bottom + pad + dh / 2) * height / dh);
   }
   const x = Math.max(0, Math.floor(left) - 1), y = Math.max(0, Math.floor(top) - 1);
   return { x, y, width: Math.max(1, Math.min(width, Math.ceil(right) + 1) - x),
@@ -102,7 +104,8 @@ export class PaintRenderer {
     ctx.save();
     ctx.globalAlpha = alpha;
     const pressure = stamp.pressure ?? 1;
-    const w = image.canvas.width * 1080 / this.canvas.width * pressure, h = image.canvas.height * 1920 / this.canvas.height * pressure;
+    const design = getDesignSizeForOutput(this.canvas.width, this.canvas.height);
+    const w = image.canvas.width * design.width / this.canvas.width * pressure, h = image.canvas.height * design.height / this.canvas.height * pressure;
     ctx.drawImage(image.canvas, p.x - w / 2, p.y - h / 2, w, h);
     ctx.restore();
     this.stats.stampDraws++;
@@ -134,6 +137,7 @@ export class PaintRenderer {
   *renderBatches(doc: PaintDocument, time: number, width: number, height: number, draft?: PaintStroke | null): Generator<void> {
     let operations = 0;
     time = Math.max(0, time);
+    const design = getDesignSizeForOutput(width, height);
     if (this.canvas.width !== width || this.canvas.height !== height) {
       this.clear();
       this.canvas.width = width;
@@ -239,7 +243,7 @@ export class PaintRenderer {
         layer.clearRect(0, 0, cache.width, cache.height);
         changed = true;
       }
-      layer.setTransform(width / 1080, 0, 0, height / 1920, width / 2 - cache.x, height / 2 - cache.y);
+      layer.setTransform(width / design.width, 0, 0, height / design.height, width / 2 - cache.x, height / 2 - cache.y);
       if (rebuild) { this.stats.historyRebuilds++; cache.live = []; }
       if (rebuild || appended.length) {
         for (const data of rebuild ? cache.data : appended) for (const stamp of savedStamps(data)) {
@@ -298,18 +302,18 @@ export class PaintRenderer {
           const canvas = document.createElement('canvas');
           canvas.width = width; canvas.height = height;
           context(canvas).drawImage(checkpoint.canvas, 0, 0, width, height);
-          this.auto = { ...checkpoint, canvas, live: [...checkpoint.live], sequence: new AutopaintSequence(config, doc.assets) };
+          this.auto = { ...checkpoint, canvas, live: [...checkpoint.live], sequence: new AutopaintSequence(config, doc.assets, design) };
           this.stats.checkpointHits++;
         }
       }
       if (!this.auto) {
-        const owner = autoStroke(config, doc.assets, 0);
+        const owner = autoStroke(config, doc.assets, 0, design);
         if (owner) {
           const canvas = document.createElement('canvas');
           canvas.width = width; canvas.height = height;
           const mask = new Path2D();
           brushPath(mask, config.brush.pattern, config.brush.size);
-          this.auto = { config, canvas, owner, mask, time: -Infinity, live: [], sequence: new AutopaintSequence(config, doc.assets), sources: palette };
+          this.auto = { config, canvas, owner, mask, time: -Infinity, live: [], sequence: new AutopaintSequence(config, doc.assets, design), sources: palette };
           this.stats.historyRebuilds++;
           changed = true;
         }
@@ -323,7 +327,7 @@ export class PaintRenderer {
           ctx.clearRect(0, 0, width, height);
           changed = true;
         }
-        ctx.setTransform(width / 1080, 0, 0, height / 1920, width / 2, height / 2);
+        ctx.setTransform(width / design.width, 0, 0, height / design.height, width / 2, height / 2);
         const from = Math.max(auto.time, lifetime > 0 ? time - lifetime : -1e-9);
         for (const stamp of auto.sequence.stamps(from, time)) {
           if (lifetime > 0) auto.live.push(stamp);
@@ -459,7 +463,8 @@ export class PaintRenderer {
       ctx.clearRect(0, 0, width, height);
       changed = true;
     }
-    ctx.setTransform(width / 1080, 0, 0, height / 1920, width / 2, height / 2);
+    const design = getDesignSizeForOutput(width, height);
+    ctx.setTransform(width / design.width, 0, 0, height / design.height, width / 2, height / 2);
     for (const stamp of originalStamps(stroke, dabs)) {
       if (this.draw(ctx, stamp, 0, draft.mask)) changed = true;
     }

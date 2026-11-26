@@ -42,9 +42,12 @@ import {
   gifVoronoiSourceTime
 } from '../lib/gifVoronoi';
 import { renderLandscapeScene2d } from './landscape2d';
+import { CanvasAspect, CanvasSize, getCanvasSize, getPatternAnchor } from '../lib/canvasSize';
 
-export const CANVAS_WIDTH = 1080;
-export const CANVAS_HEIGHT = 1920;
+/** Design-space frame for the document's aspect preset (center-origin units). */
+export function getDesignSize(state: Pick<RenderState, 'canvasAspect'>): CanvasSize {
+  return getCanvasSize(state.canvasAspect);
+}
 
 export interface RenderState {
   paint?: PaintDocument;
@@ -69,6 +72,7 @@ export interface RenderState {
   landscapeSkySources: LandscapeSkySource[];
   landscape: LandscapeConfig;
   canvasBg: string;
+  canvasAspect: CanvasAspect;
   masterFx?: MasterFxConfig;
 }
 
@@ -268,7 +272,8 @@ function renderPolygon(
   polygon: PolygonLayer,
   t: number,
   width: number,
-  height: number
+  height: number,
+  design: CanvasSize
 ) {
   if (!polygon.points || !isPolygonShapeRenderable(polygon)) return;
   const points = getDeformedPoints(polygon, t);
@@ -278,11 +283,12 @@ function renderPolygon(
 
   const scaleVal = applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t);
   const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
-  const offsetX = applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
-  const offsetY = applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
+  const anchor = getPatternAnchor(design);
+  const offsetX = anchor.x + applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
+  const offsetY = anchor.y + applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
 
-  const scaleX = width / CANVAS_WIDTH;
-  const scaleY = height / CANVAS_HEIGHT;
+  const scaleX = width / design.width;
+  const scaleY = height / design.height;
 
   let frameSource: CanvasImageSource | null = null;
   if (polygon.gifData) {
@@ -380,10 +386,11 @@ function renderVoronoiLayer(
   w: number,
   h: number,
   width: number,
-  height: number
+  height: number,
+  design: CanvasSize
 ) {
-  const scaleX = width / CANVAS_WIDTH;
-  const scaleY = height / CANVAS_HEIGHT;
+  const scaleX = width / design.width;
+  const scaleY = height / design.height;
   const m = getModulatedLayer(layer, t);
   const halfW = (w * Math.abs(m.scaleX)) / 2;
   const halfH = (h * Math.abs(m.scaleY)) / 2;
@@ -420,10 +427,11 @@ export function renderFrame(
   canvas: HTMLCanvasElement,
   t: number,
   state: RenderState,
-  width: number = CANVAS_WIDTH,
-  height: number = CANVAS_HEIGHT,
+  width: number = getDesignSize(state).width,
+  height: number = getDesignSize(state).height,
   preview = false
 ) {
+  const design = getDesignSize(state);
   // Resizing a canvas clears its backing store — only do it when needed.
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
@@ -457,8 +465,8 @@ export function renderFrame(
       ctx.drawImage(painter.render(state.paint, t - (state.paintEpoch ?? 0), width, height, state.paintDraft), 0, 0);
     }
   } else if (state.appMode === 'symmetry') {
-    const scaleX = width / CANVAS_WIDTH;
-    const scaleY = height / CANVAS_HEIGHT;
+    const scaleX = width / design.width;
+    const scaleY = height / design.height;
 
     state.layers.forEach((layer) => {
       if (layer.hidden) return;
@@ -486,7 +494,7 @@ export function renderFrame(
       if (!drawSource) return;
 
       if (layer.symmetry === 'voronoi') {
-        renderVoronoiLayer(ctx, layer, t, drawSource, w, h, width, height);
+        renderVoronoiLayer(ctx, layer, t, drawSource, w, h, width, height, design);
         return;
       }
 
@@ -509,7 +517,7 @@ export function renderFrame(
   } else if (state.appMode === 'polygon') {
     state.polygonLayers.forEach((polygon) => {
       if (polygon.hidden) return;
-      renderPolygon(ctx, polygon, t, width, height);
+      renderPolygon(ctx, polygon, t, width, height, design);
     });
   } else if (state.appMode === '3d') {
     renderMesh3dScene(ctx, t, state.mesh3dLayers, state.camera3d, width, height);
@@ -520,9 +528,9 @@ export function renderFrame(
     // Cells do not overlap: add their fractional edge coverage on a transparent
     // stage, then put the background behind them to avoid dark triangle seams.
     if (deformableGrid) ctx.globalCompositeOperation = 'lighter';
-    ctx.scale(width / CANVAS_WIDTH, height / CANVAS_HEIGHT);
-    ctx.translate(540, 960);
-    for (const cell of resolveGrid(state.gridAssets, state.grid, t)) {
+    ctx.scale(width / design.width, height / design.height);
+    ctx.translate(design.width / 2, design.height / 2);
+    for (const cell of resolveGrid(state.gridAssets, state.grid, t, design)) {
       const frame = getGifFrameAtTime(cell.asset.gifData, cell.sourceTime, 1);
       if (!frame) continue;
       if (cell.corners) {
@@ -549,8 +557,8 @@ export function renderFrame(
         : getCachedImage(item.asset.src);
       if (!source) continue;
       ctx.save();
-      ctx.scale(width / CANVAS_WIDTH, height / CANVAS_HEIGHT);
-      ctx.translate(CANVAS_WIDTH / 2 + item.x, CANVAS_HEIGHT / 2 + item.y);
+      ctx.scale(width / design.width, height / design.height);
+      ctx.translate(design.width / 2 + item.x, design.height / 2 + item.y);
       ctx.rotate(item.rotation);
       ctx.globalAlpha = item.alpha;
       ctx.drawImage(source, -item.width / 2, -item.height / 2, item.width, item.height);
@@ -559,13 +567,13 @@ export function renderFrame(
   } else if (state.appMode === 'tunnel') {
     renderTunnelScene(ctx, t, state.tunnelAssets, state.tunnel, width, height);
   } else if (state.appMode === 'gif-voronoi') {
-    renderGifVoronoiScene(ctx, t, state.gifVoronoiAssets, state.gifVoronoi, width, height);
+    renderGifVoronoiScene(ctx, t, state.gifVoronoiAssets, state.gifVoronoi, width, height, design);
   } else if (state.appMode === 'landscape') {
-    renderLandscapeScene2d(ctx, t, state.landscapeTerrainAssets, state.landscapeSkySources, state.landscape, width, height);
+    renderLandscapeScene2d(ctx, t, state.landscapeTerrainAssets, state.landscapeSkySources, state.landscape, width, height, design);
   }
 
   if (state.masterFx?.enabled) {
-    applyMasterFx2D(ctx, t, state.masterFx, width, height);
+    applyMasterFx2D(ctx, t, state.masterFx, width, height, design);
   }
 }
 
@@ -575,15 +583,18 @@ function renderGifVoronoiScene(
   assets: GifVoronoiAsset[],
   config: GifVoronoiConfig,
   width: number,
-  height: number
+  height: number,
+  design: CanvasSize
 ) {
   const stageBounds = {
-    minX: -CANVAS_WIDTH / 2,
-    minY: -CANVAS_HEIGHT / 2,
-    maxX: CANVAS_WIDTH / 2,
-    maxY: CANVAS_HEIGHT / 2
+    minX: -design.width / 2,
+    minY: -design.height / 2,
+    maxX: design.width / 2,
+    maxY: design.height / 2
   };
   const layoutKey = [
+    design.width,
+    design.height,
     gifVoronoiGeometryFrameKey(config, t),
     config.arrangement,
     config.occupancy,
@@ -597,8 +608,8 @@ function renderGifVoronoiScene(
     gifVoronoiLayoutCacheKey = layoutKey;
   }
   const cells = gifVoronoiLayoutCache;
-  const scaleX = width / CANVAS_WIDTH;
-  const scaleY = height / CANVAS_HEIGHT;
+  const scaleX = width / design.width;
+  const scaleY = height / design.height;
 
   for (const cell of cells) {
     ctx.save();
@@ -984,7 +995,8 @@ function applyMasterFx2D(
   t: number,
   fx: MasterFxConfig | undefined,
   width: number,
-  height: number
+  height: number,
+  design: CanvasSize
 ) {
   if (!fx || !fx.enabled) return;
 
@@ -1005,7 +1017,7 @@ function applyMasterFx2D(
       if (hue !== 0) filterParts.push(`hue-rotate(${hue}deg)`);
     }
     if (hasBloom) {
-      filterParts.push(`blur(${fx.bloomStrength * (width / CANVAS_WIDTH) * 0.5}px)`);
+      filterParts.push(`blur(${fx.bloomStrength * (width / design.width) * 0.5}px)`);
     }
 
     if (filterParts.length > 0) {
@@ -1024,7 +1036,7 @@ function applyMasterFx2D(
   }
 
   // 2. Pixel passes (Smudge, Duotone, RGB Split, Noise)
-  const smudge = fx.smudgeEnabled ? resolveSmudgeParams(fx, t, width) : null;
+  const smudge = fx.smudgeEnabled ? resolveSmudgeParams(fx, t, width / design.width) : null;
   const hasSmudge = smudge !== null && isSmudgeActive(smudge);
   const hasDuotone = fx.duotoneEnabled && fx.duotoneIntensity > 0;
   const hasRgbSplit = fx.rgbSplitEnabled;
@@ -1065,7 +1077,7 @@ function applyMasterFx2D(
 
     // RGB Split
     if (hasRgbSplit) {
-      const offsetPx = applyMotion(fx.rgbSplitOffset, fx.motionRgbSplitOffset, t) * (width / CANVAS_WIDTH);
+      const offsetPx = applyMotion(fx.rgbSplitOffset, fx.motionRgbSplitOffset, t) * (width / design.width);
       const angleRad = (fx.rgbSplitAngle * Math.PI) / 180;
       const dx = Math.round(Math.cos(angleRad) * offsetPx);
       const dy = Math.round(Math.sin(angleRad) * offsetPx);

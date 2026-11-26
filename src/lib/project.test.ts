@@ -390,3 +390,16 @@ it('restores polygon underpainting and texture folders from V12, V13, and V14 fi
     expect(restorePolygonTextureFolder(payload, materialized)?.assets).toHaveLength(1);
   }
 });
+
+it('restores the canvas aspect from V15 files and defaults older files to portrait', () => {
+  const base = {
+    app: 'slapchop', savedAt: '', canvasBg: '#000000',
+    layers: [], polygonLayers: [], mesh3dLayers: [], flythroughAssets: [], tunnelAssets: [],
+    gifVoronoiAssets: [], landscapeTerrainAssets: [], landscapeSkySources: [], ringsAssets: [],
+    rings: {}, gridAssets: [], paint: { version: 1, assets: [], strokes: [] }, assets: {}
+  };
+  expect(restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, version: 14 }))).canvasAspect).toBe('9:16');
+  expect(restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, version: 15, canvasAspect: '16:9' }))).canvasAspect).toBe('16:9');
+  expect(() => restoreProjectDocument(JSON.parse(JSON.stringify({ ...base, version: 15, canvasAspect: '4:3' }))))
+    .toThrow(/Unsupported canvas aspect/);
+});

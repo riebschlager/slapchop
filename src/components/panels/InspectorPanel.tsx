@@ -5,6 +5,7 @@ import RingsInspector from '../../modes/rings/RingsInspector';
 import { useState } from 'react';
 import { Download, Video, Loader2, Radio, PanelRightOpen, Github } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { CANVAS_ASPECTS, CanvasAspect, getCanvasSize } from '../../lib/canvasSize';
 import { useStore } from '../../store';
 import Segmented, { SegmentedOption } from '../controls/Segmented';
 import ResizeHandle from '../controls/ResizeHandle';
@@ -56,6 +57,15 @@ function InspectorPanelContent({ exportApi, liveOutputApi }: InspectorPanelProps
   const selectedMesh = mesh3dLayers.find(m => m.id === selectedMesh3dId);
 
   const { liveOutputStreaming, liveOutputConnected, liveOutputBusy, showLiveOutputModal, setShowLiveOutputModal } = liveOutputApi;
+  const canvasAspect = useStore(s => s.canvasAspect);
+  const setCanvasAspect = useStore(s => s.setCanvasAspect);
+  // Exports snapshot the frame size up front and a live stream is negotiated
+  // at a fixed resolution, so the frame cannot change under either.
+  const canvasAspectLocked = liveOutputStreaming || exportApi.exportJob !== null;
+  const canvasAspectOptions: SegmentedOption<CanvasAspect>[] = CANVAS_ASPECTS.map(aspect => {
+    const { width, height } = getCanvasSize(aspect);
+    return { value: aspect, label: aspect, title: `${width}×${height}` };
+  });
 
   const mesh3dTabOptions: SegmentedOption<Mesh3dTab>[] = [
     { value: 'transform', label: 'Transform' },
@@ -142,6 +152,13 @@ function InspectorPanelContent({ exportApi, liveOutputApi }: InspectorPanelProps
 
       {/* Output dock: export and live-output triggers, always reachable regardless of selection. */}
       <ControlSection sectionKey="output" title="Output" className="border-t shrink-0" contentClassName="space-y-2">
+        <Segmented
+          label="Canvas aspect"
+          options={canvasAspectOptions}
+          value={canvasAspect}
+          onChange={setCanvasAspect}
+          disabled={canvasAspectLocked}
+        />
         <button
           onClick={() => setShowLiveOutputModal(true)}
           className={cn(

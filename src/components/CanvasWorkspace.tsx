@@ -1,6 +1,7 @@
 import PaintStage from '../modes/paint/PaintStage';
 import React, { RefObject, useEffect, useRef, useState } from 'react';
 import { DEFAULT_SYMMETRY_PARAMS, PolygonPoint } from '../types';
+import { getCanvasSize } from '../lib/canvasSize';
 import { cn } from '../lib/utils';
 import { Brush, PenTool } from 'lucide-react';
 import { getPolygonCentroid, isPointInPolygon } from '../lib/polygonUtils';
@@ -29,8 +30,7 @@ import {
 } from '../lib/camera3dNav';
 import { pauseHistory, resumeHistory, useStore } from '../store';
 import {
-  CANVAS_HEIGHT,
-  CANVAS_WIDTH,
+  getDesignSize,
   getLayerSize
 } from '../renderer/render2d';
 import { getActiveRendererName, getPlaybackTime, startRenderLoop } from '../renderer/loop';
@@ -87,6 +87,8 @@ function camera3dGestureFor(e: React.MouseEvent): Camera3dGesture | null {
 
 export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HTMLCanvasElement | null> }) {
   const appMode = useStore(s => s.appMode);
+  const canvasAspect = useStore(s => s.canvasAspect);
+  const design = getCanvasSize(canvasAspect);
   const layers = useStore(s => s.layers);
   const polygonLayers = useStore(s => s.polygonLayers);
   const selectedLayerId = useStore(s => s.selectedLayerId);
@@ -182,8 +184,9 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     if (!wrap) return;
     const updateScale = () => {
       const rect = wrap.getBoundingClientRect();
-      const scaleX = (rect.width - WORKSPACE_FIT_MARGIN * 2) / CANVAS_WIDTH;
-      const scaleY = (rect.height - WORKSPACE_FIT_MARGIN * 2) / CANVAS_HEIGHT;
+      const { width: designWidth, height: designHeight } = getCanvasSize(canvasAspect);
+      const scaleX = (rect.width - WORKSPACE_FIT_MARGIN * 2) / designWidth;
+      const scaleY = (rect.height - WORKSPACE_FIT_MARGIN * 2) / designHeight;
       const next = Math.min(scaleX, scaleY, 1);
       scaleRef.current = next;
       setScale(next);
@@ -196,7 +199,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     const observer = new ResizeObserver(updateScale);
     observer.observe(wrap);
     return () => observer.disconnect();
-  }, []);
+  }, [canvasAspect]);
 
   // In the desktop app Tauri intercepts Finder drags before HTML5 sees them,
   // and hands us real paths — which also makes folder drops possible.
@@ -309,7 +312,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     ? getVisibleHandleBounds(viewport, scale, handleViewportInsets)
     : null;
   const polygonExtendsOffCanvas = !!selectedPolygon
-    && selectedPolygon.points.some(pt => isPointOutsideCanvas(pt, CANVAS_WIDTH, CANVAS_HEIGHT));
+    && selectedPolygon.points.some(pt => isPointOutsideCanvas(pt, design.width, design.height));
 
   // Selection overlay for symmetry layers follows motion-modulated instances.
   // Positions are written straight to the DOM each frame — React only
@@ -327,8 +330,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
           const box = el.children[i] as HTMLElement;
           const inst = instances[i];
           if (!inst) break;
-          box.style.left = `${(CANVAS_WIDTH / 2 + inst.x) * scale}px`;
-          box.style.top = `${(CANVAS_HEIGHT / 2 + inst.y) * scale}px`;
+          box.style.left = `${(design.width / 2 + inst.x) * scale}px`;
+          box.style.top = `${(design.height / 2 + inst.y) * scale}px`;
           box.style.width = `${w * Math.abs(inst.scaleX) * scale}px`;
           box.style.height = `${h * Math.abs(inst.scaleY) * scale}px`;
           box.style.transform = `translate(-50%, -50%) rotate(${inst.rotation}deg)`;
@@ -338,7 +341,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [appMode, selectedLayer, scale]);
+  }, [appMode, selectedLayer, scale, design.width, design.height]);
 
   // 3D translate gizmo overlay. Like the symmetry overlay above, positions are
   // written straight to the DOM each frame rather than through state: the
@@ -354,7 +357,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         const state = useStore.getState();
         const mesh = state.mesh3dLayers.find(m => m.id === selectedMesh3dId);
         const t = getPlaybackTime();
-        const projector = createScreen3dProjector(state.camera3d, t, CANVAS_WIDTH, CANVAS_HEIGHT);
+        const { width: designWidth, height: designHeight } = getDesignSize(state);
+        const projector = createScreen3dProjector(state.camera3d, t, designWidth, designHeight);
         const origin = mesh && !mesh.hidden ? getMesh3dPrimaryOrigin(mesh, t) : null;
         const center = origin ? projector.project(origin) : null;
         const s = scaleRef.current;
@@ -609,7 +613,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
   };
 
   const toBrushCss = (pt: PolygonPoint) =>
-    `${((CANVAS_WIDTH / 2 + pt.x) * scaleRef.current).toFixed(1)},${((CANVAS_HEIGHT / 2 + pt.y) * scaleRef.current).toFixed(1)}`;
+    `${((design.width / 2 + pt.x) * scaleRef.current).toFixed(1)},${((design.height / 2 + pt.y) * scaleRef.current).toFixed(1)}`;
 
   const handleWorkspacePointerMove = (e: React.PointerEvent) => {
     const cursor = brushCursorRef.current;
@@ -620,8 +624,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
       return;
     }
     cursor.style.visibility = 'visible';
-    cursor.style.left = `${(CANVAS_WIDTH / 2 + coords.x) * scaleRef.current}px`;
-    cursor.style.top = `${(CANVAS_HEIGHT / 2 + coords.y) * scaleRef.current}px`;
+    cursor.style.left = `${(design.width / 2 + coords.x) * scaleRef.current}px`;
+    cursor.style.top = `${(design.height / 2 + coords.y) * scaleRef.current}px`;
   };
 
   const handleWorkspacePointerLeave = () => {
@@ -801,7 +805,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
    */
   const startCamera3dGesture = (gesture: Camera3dGesture, e: React.MouseEvent) => {
     const startCamera = useStore.getState().camera3d;
-    const projector = createScreen3dProjector(startCamera, getPlaybackTime(), CANVAS_WIDTH, CANVAS_HEIGHT);
+    const projector = createScreen3dProjector(startCamera, getPlaybackTime(), design.width, design.height);
     const startX = e.clientX;
     const startY = e.clientY;
 
@@ -830,7 +834,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     const mesh = state.mesh3dLayers.find(m => m.id === meshId);
     if (!mesh) return null;
     const t = getPlaybackTime();
-    const projector = createScreen3dProjector(state.camera3d, t, CANVAS_WIDTH, CANVAS_HEIGHT);
+    const projector = createScreen3dProjector(state.camera3d, t, design.width, design.height);
     const origin = getMesh3dPrimaryOrigin(mesh, t);
     const center = origin ? projector.project(origin) : null;
     return { start: { x: mesh.x, y: mesh.y, z: mesh.z }, projector, origin, center };
@@ -926,12 +930,12 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
     // getCanvasCoords is center-origin; picking works in the renderer's
     // top-left-origin canvas space.
     const pick = pickMesh3dAt(
-      { x: coords.x + CANVAS_WIDTH / 2, y: coords.y + CANVAS_HEIGHT / 2 },
+      { x: coords.x + design.width / 2, y: coords.y + design.height / 2 },
       useStore.getState().mesh3dLayers,
       useStore.getState().camera3d,
       getPlaybackTime(),
-      CANVAS_WIDTH,
-      CANVAS_HEIGHT
+      design.width,
+      design.height
     );
     if (!pick) {
       onSelectMesh3d(null);
@@ -1042,7 +1046,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                       ? 'GIF Tunnel'
                       : appMode === 'gif-voronoi' ? 'GIF Voronoi' : 'GIF Landscape'}
           </span>
-          <span className="text-ui-text-subtle font-mono">1080x1920</span>
+          <span className="text-ui-text-subtle font-mono">{design.width}x{design.height}</span>
           {appMode === '3d' && (
             <span className="text-ui-text-subtle border-l border-ui-border-strong pl-2">
               Alt-drag orbit · Shift-drag pan · Scroll zoom
@@ -1115,8 +1119,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
             : appMode === '3d' && camera3dNavArmed ? "cursor-grab" : "cursor-default"
         )}
         style={{
-          width: CANVAS_WIDTH * scale,
-          height: CANVAS_HEIGHT * scale,
+          width: design.width * scale,
+          height: design.height * scale,
           backgroundColor: appMode === 'gif-grid' ? grid.backgroundColor : appMode === 'rings'
             ? rings.backgroundColor
             : appMode === 'tunnel'
@@ -1129,8 +1133,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
         {/* Native 2D Canvas */}
         <canvas
           ref={canvasRef}
-          width={CANVAS_WIDTH}
-          height={CANVAS_HEIGHT}
+          width={design.width}
+          height={design.height}
           className="w-full h-full block"
         />
 
@@ -1183,7 +1187,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
             {/* Underpainting: a DOM layer over the rendered frame rather than a
                 renderer layer, so it cannot reach exports, live output, or
                 Master FX. It stays beneath the edit handles and is fitted
-                (contain) to the 1080 x 1920 frame. */}
+                (contain) to the active design frame. */}
             {polygonUnderpainting?.visible && (
               <img
                 src={polygonUnderpainting.src}
@@ -1203,7 +1207,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
               >
                 {drawingPoints.length > 0 && (
                   <polyline
-                    points={drawingPoints.map(p => `${(CANVAS_WIDTH / 2 + p.x) * scale},${(CANVAS_HEIGHT / 2 + p.y) * scale}`).join(' ')}
+                    points={drawingPoints.map(p => `${(design.width / 2 + p.x) * scale},${(design.height / 2 + p.y) * scale}`).join(' ')}
                     fill="none"
                     stroke={OVERLAY_DRAW_STROKE}
                     strokeWidth={2}
@@ -1212,10 +1216,10 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                 )}
                 {drawingPoints.length > 0 && mouseCanvasPos && (
                   <line
-                    x1={(CANVAS_WIDTH / 2 + drawingPoints[drawingPoints.length - 1].x) * scale}
-                    y1={(CANVAS_HEIGHT / 2 + drawingPoints[drawingPoints.length - 1].y) * scale}
-                    x2={(CANVAS_WIDTH / 2 + mouseCanvasPos.x) * scale}
-                    y2={(CANVAS_HEIGHT / 2 + mouseCanvasPos.y) * scale}
+                    x1={(design.width / 2 + drawingPoints[drawingPoints.length - 1].x) * scale}
+                    y1={(design.height / 2 + drawingPoints[drawingPoints.length - 1].y) * scale}
+                    x2={(design.width / 2 + mouseCanvasPos.x) * scale}
+                    y2={(design.height / 2 + mouseCanvasPos.y) * scale}
                     stroke={OVERLAY_DRAW_RUBBER_BAND}
                     strokeWidth={2}
                   />
@@ -1223,8 +1227,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                 {drawingPoints.map((pt, i) => (
                   <circle
                     key={`draw-pt-${i}`}
-                    cx={(CANVAS_WIDTH / 2 + pt.x) * scale}
-                    cy={(CANVAS_HEIGHT / 2 + pt.y) * scale}
+                    cx={(design.width / 2 + pt.x) * scale}
+                    cy={(design.height / 2 + pt.y) * scale}
                     r={i === 0 ? 8 : 5}
                     fill={i === 0 ? OVERLAY_ACCENT : OVERLAY_DRAW_STROKE}
                     stroke="#ffffff"
@@ -1266,7 +1270,7 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                     {(() => {
                       const outline = {
                         points: selectedPolygon.points
-                          .map(p => `${(CANVAS_WIDTH / 2 + p.x) * scale},${(CANVAS_HEIGHT / 2 + p.y) * scale}`)
+                          .map(p => `${(design.width / 2 + p.x) * scale},${(design.height / 2 + p.y) * scale}`)
                           .join(' '),
                         fill: 'none',
                         stroke: OVERLAY_ACCENT,
@@ -1293,8 +1297,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                     <div
                       onMouseDown={(e) => handlePolygonCenterMouseDown(e, selectedPolygon.id)}
                       style={{
-                        left: `${(CANVAS_WIDTH / 2 + center.x) * scale}px`,
-                        top: `${(CANVAS_HEIGHT / 2 + center.y) * scale}px`
+                        left: `${(design.width / 2 + center.x) * scale}px`,
+                        top: `${(design.height / 2 + center.y) * scale}px`
                       }}
                       className={cn(
                         "absolute w-6 h-6 -ml-3 -mt-3 rounded-full bg-ui-accent-strong/90 hover:bg-ui-accent border-2 shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-20",
@@ -1321,8 +1325,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                       key={`v-handle-${i}`}
                       onMouseDown={(e) => handleVertexMouseDown(e, i)}
                       style={{
-                        left: `${(CANVAS_WIDTH / 2 + vertex.x) * scale}px`,
-                        top: `${(CANVAS_HEIGHT / 2 + vertex.y) * scale}px`
+                        left: `${(design.width / 2 + vertex.x) * scale}px`,
+                        top: `${(design.height / 2 + vertex.y) * scale}px`
                       }}
                       className={cn(
                         "absolute w-4 h-4 -ml-2 -mt-2 rounded-full shadow-md pointer-events-auto cursor-move hover:scale-150 transition-transform z-20",
@@ -1349,8 +1353,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                     <div
                       onMouseDown={(e) => handleSymmetryOriginMouseDown(e, 'polygon', selectedPolygon.id)}
                       style={{
-                        left: `${(CANVAS_WIDTH / 2 + origin.x) * scale}px`,
-                        top: `${(CANVAS_HEIGHT / 2 + origin.y) * scale}px`
+                        left: `${(design.width / 2 + origin.x) * scale}px`,
+                        top: `${(design.height / 2 + origin.y) * scale}px`
                       }}
                       className={cn(
                         "absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-amber-500/90 hover:bg-amber-400 border-2 shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-30",
@@ -1411,8 +1415,8 @@ export default function CanvasWorkspace({ canvasRef }: { canvasRef: RefObject<HT
                 <div
                   onMouseDown={(e) => handleSymmetryOriginMouseDown(e, 'layer', selectedLayer.id)}
                   style={{
-                    left: `${(CANVAS_WIDTH / 2 + origin.x) * scale}px`,
-                    top: `${(CANVAS_HEIGHT / 2 + origin.y) * scale}px`
+                    left: `${(design.width / 2 + origin.x) * scale}px`,
+                    top: `${(design.height / 2 + origin.y) * scale}px`
                   }}
                   className={cn(
                     "absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-amber-500/90 hover:bg-amber-400 border-2 shadow-xl pointer-events-auto cursor-grab active:cursor-grabbing flex items-center justify-center transition-transform hover:scale-125 z-30",

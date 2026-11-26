@@ -1,5 +1,6 @@
 import { LandscapeConfig, LandscapeSkySource, MotionConfig } from '../types';
 import { applyMotion } from './motion';
+import type { CanvasSize } from './canvasSize';
 
 export interface LandscapePoint {
   x: number;
@@ -92,7 +93,9 @@ function resolveSkySource(source: LandscapeSkySource, t: number): LandscapeSkySo
 export function resolveLandscapeFrame(
   config: LandscapeConfig,
   skySources: LandscapeSkySource[],
-  t: number
+  t: number,
+  // Bounds the modulated sun drift to the active design frame.
+  frame: CanvasSize
 ): ResolvedLandscapeFrame {
   return {
     config: {
@@ -103,8 +106,8 @@ export function resolveLandscapeFrame(
       cameraX: resolveBoundedMotion(config.cameraX, config.motionCameraX, t, -1800, 1800),
       lookAhead: resolveBoundedMotion(config.lookAhead, config.motionLookAhead, t, 500, 8000),
       fov: resolveBoundedMotion(config.fov, config.motionFov, t, 30, 110),
-      skyCenterX: resolveBoundedMotion(config.skyCenterX, config.motionSkyCenterX, t, -540, 540),
-      skyCenterY: resolveBoundedMotion(config.skyCenterY, config.motionSkyCenterY, t, -960, 960),
+      skyCenterX: resolveBoundedMotion(config.skyCenterX, config.motionSkyCenterX, t, -frame.width / 2, frame.width / 2),
+      skyCenterY: resolveBoundedMotion(config.skyCenterY, config.motionSkyCenterY, t, -frame.height / 2, frame.height / 2),
       skyRingWidth: resolveBoundedMotion(config.skyRingWidth, config.motionSkyRingWidth, t, 40, 420)
     },
     skySources: skySources.map(source => resolveSkySource(source, t)),

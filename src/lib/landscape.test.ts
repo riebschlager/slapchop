@@ -9,6 +9,9 @@ import {
   resolveLandscapeCells,
   resolveLandscapeFrame
 } from './landscape';
+import { getCanvasSize } from './canvasSize';
+
+const PORTRAIT = getCanvasSize('9:16');
 
 describe('GIF Landscape procedural scene', () => {
   it('resolves identical terrain for an identical document time', () => {
@@ -59,7 +62,7 @@ describe('GIF Landscape procedural scene', () => {
       motionCameraX: { type: 'sine', speed: 1, amplitude: 3000, phase: 0 },
       motionFov: { type: 'sine', speed: 1, amplitude: 100, phase: Math.PI },
       motionSkyRingWidth: { type: 'sine', speed: 1, amplitude: 400, phase: 0 }
-    }, [], 0.25);
+    }, [], 0.25, PORTRAIT);
 
     expect(frame.config.heightScale).toBe(3200);
     expect(frame.config.cameraX).toBe(1800);
@@ -79,7 +82,7 @@ describe('GIF Landscape procedural scene', () => {
       textureRotation: 540,
       gifSpeed: 1
     };
-    const frame = resolveLandscapeFrame(config, [source], 2);
+    const frame = resolveLandscapeFrame(config, [source], 2, PORTRAIT);
 
     expect(frame.config.cameraX).toBe(2400);
     expect(frame.config.fov).toBe(120);
@@ -104,7 +107,7 @@ describe('GIF Landscape procedural scene', () => {
       motionTextureScale: { type: 'sine' as const, speed: 1, amplitude: 0.5, phase: 0 },
       motionTextureRotation: { type: 'sine' as const, speed: 1, amplitude: 30, phase: 0 }
     };
-    const frame = resolveLandscapeFrame(DEFAULT_LANDSCAPE, [source], 0.25);
+    const frame = resolveLandscapeFrame(DEFAULT_LANDSCAPE, [source], 0.25, PORTRAIT);
 
     expect(frame.skySources[0].textureScale).toBeCloseTo(1.5);
     expect(frame.skySources[0].textureRotation).toBe(-160);

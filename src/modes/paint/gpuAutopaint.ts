@@ -3,6 +3,7 @@ import { AutopaintSequence, type AutopaintSettings } from './autopaint';
 import { getGifFrameAtTime } from '../../lib/gifUtils';
 import { stampAlpha, stampPosition, type PaintAsset, type PaintStamp, type PaintStroke } from './model';
 import { createStampImage } from './stampImage';
+import { CanvasSize, getDesignSizeForOutput } from '../../lib/canvasSize';
 
 const BATCH_SIZE = 2048;
 const ATLAS_PIXELS = 4 * 1024 * 1024;
@@ -22,7 +23,10 @@ class StampBatch {
   private container = new ParticleContainer({ dynamicProperties: { position: true, vertex: true, uvs: true, color: true } });
   private current: Page | null = null;
   private count = 0;
-  constructor(private renderer: Renderer, private width: number, private height: number) {}
+  private design: CanvasSize;
+  constructor(private renderer: Renderer, private width: number, private height: number) {
+    this.design = getDesignSizeForOutput(width, height);
+  }
   get atlasPixels() { return this.pages.reduce((n, p) => n + p.canvas.width * p.canvas.height, 0); }
   get poolSize() { return this.particles.length; }
 
@@ -86,8 +90,8 @@ class StampBatch {
     const particle = this.particles[this.count] ??= new Particle({ texture, anchorX: 0.5, anchorY: 0.5 });
     particle.texture = texture;
     const position = stampPosition(stamp);
-    particle.x = (position.x + 540) * this.width / 1080;
-    particle.y = (position.y + 960) * this.height / 1920;
+    particle.x = (position.x + this.design.width / 2) * this.width / this.design.width;
+    particle.y = (position.y + this.design.height / 2) * this.height / this.design.height;
     particle.scaleX = particle.scaleY = stamp.pressure ?? 1;
     particle.alpha = alpha;
     this.count++;
@@ -160,7 +164,7 @@ export class GpuAutopaint {
     if (invalid) {
       this.reset(!!this.front && width === this.width && height === this.height); this.width = width; this.height = height; this.config = config; this.sources = sources;
       this.assets = new Map(sources.map(a => [a.id, a]));
-      this.sequence = new AutopaintSequence(config, sources);
+      this.sequence = new AutopaintSequence(config, sources, getDesignSizeForOutput(width, height));
       if (!this.front) {
         this.front = RenderTexture.create({ width, height }); this.back = RenderTexture.create({ width, height });
         this.clear(this.front); this.clear(this.back);

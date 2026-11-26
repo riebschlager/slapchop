@@ -6,6 +6,7 @@ import { deformGeometry } from '../lib/deformation3d';
 import { getMesh3dInstances, resolveCameraPose } from '../lib/motion3d';
 import { getGifFrameIndexAtTime } from '../lib/gifUtils';
 import { getCachedImage } from './render2d';
+import { fitFovToFrame } from '../lib/project3d';
 
 // GPU scene graph for 3D Mesh Mode: reconciles mesh3dLayers/camera3d into a
 // Three.js scene each frame and renders it to an offscreen canvas, which
@@ -145,7 +146,7 @@ export class ThreeSceneRenderer {
       this.width = width;
       this.height = height;
     }
-    this.syncCamera(camera3d, t, width / height);
+    this.syncCamera(camera3d, t, width, height);
     this.reconcileNodes(mesh3dLayers);
     mesh3dLayers.forEach((layer) => this.syncMesh(this.nodes.get(layer.id)!, layer, t));
     this.sweepTextures(mesh3dLayers);
@@ -167,7 +168,8 @@ export class ThreeSceneRenderer {
 
   // --------------------------------------------------------------------- camera
 
-  private syncCamera(camera3d: Camera3dConfig, t: number, aspect: number) {
+  private syncCamera(camera3d: Camera3dConfig, t: number, width: number, height: number) {
+    const aspect = width / height;
     if (camera3d.projection !== this.cameraProjection) {
       this.camera = camera3d.projection === 'orthographic'
         ? new THREE.OrthographicCamera(-1, 1, 1, -1, NEAR, FAR)
@@ -176,6 +178,8 @@ export class ThreeSceneRenderer {
     }
 
     const pose = resolveCameraPose(camera3d, t);
+    // Must match createScreen3dProjector so the 2D fallback and gizmo picking agree.
+    const fovDeg = fitFovToFrame(pose.fovDeg, width, height);
     this.camera.position.set(pose.eyeX, pose.eyeY, pose.eyeZ);
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
@@ -184,11 +188,11 @@ export class ThreeSceneRenderer {
     this.headlight.target.position.set(pose.targetX, pose.targetY, pose.targetZ);
 
     if (this.camera instanceof THREE.PerspectiveCamera) {
-      this.camera.fov = pose.fovDeg;
+      this.camera.fov = fovDeg;
       this.camera.aspect = aspect;
       this.camera.updateProjectionMatrix();
     } else {
-      const fovRad = (pose.fovDeg * Math.PI) / 180;
+      const fovRad = (fovDeg * Math.PI) / 180;
       const halfHeight = pose.distance * Math.tan(fovRad / 2);
       const halfWidth = halfHeight * aspect;
       this.camera.left = -halfWidth;

@@ -50,7 +50,7 @@ export default function LiveOutputModal({ api }: { api: LiveOutputApi }) {
           <h3 className="text-lg font-bold text-ui-text">TouchDesigner Live Output</h3>
         </div>
         <p className="text-xs text-ui-text-muted mb-5">
-          Stream the live 1080×1920 canvas over WebRTC using TouchDesigner&apos;s signaling server.
+          Stream the live canvas at full design resolution over WebRTC using TouchDesigner&apos;s signaling server.
         </p>
 
         {blockedReason && (

@@ -1,4 +1,5 @@
 import { buildPaintDabs, DEFAULT_PAINT_SETTINGS, normalizePaintSettings, type PaintDab, type PaintAsset, type PaintSettings, type PaintStamp, type PaintStroke } from './model';
+import type { CanvasSize } from '../../lib/canvasSize';
 
 export type AutoGesture = 'mixed' | 'arcs' | 'flicks' | 'lines' | 'angles';
 export interface AutopaintSettings {
@@ -34,14 +35,15 @@ function random(seed: number, index: number, salt: number): number {
 }
 /** Slots have fixed boundaries, allowing an arbitrary export timestamp to locate
  * its gestures without replaying the clock. Variation lives inside each slot. */
-export function autoStroke(config: AutopaintSettings, assets: PaintAsset[], index: number): PaintStroke | null {
-  return gestureStroke(config, seededPalette(config, assets), index);
+export function autoStroke(config: AutopaintSettings, assets: PaintAsset[], index: number, frame: CanvasSize): PaintStroke | null {
+  return gestureStroke(config, seededPalette(config, assets), index, frame);
 }
 function seededPalette(config: AutopaintSettings, assets: PaintAsset[]): PaintAsset[] {
   return assets.filter(a => !a.retired).map((asset, i) => ({ asset, rank: random(config.seed, i, 91) }))
     .sort((a, b) => a.rank - b.rank).map(entry => entry.asset);
 }
-function gestureStroke(config: AutopaintSettings, ordered: PaintAsset[], index: number): PaintStroke | null {
+// Gestures scatter over the active frame, inset so brush heads stay mostly on it.
+function gestureStroke(config: AutopaintSettings, ordered: PaintAsset[], index: number, frame: CanvasSize): PaintStroke | null {
   if (!ordered.length) return null;
   const r = (salt: number) => random(config.seed, index, salt);
   const asset = ordered[index % ordered.length];
@@ -49,7 +51,8 @@ function gestureStroke(config: AutopaintSettings, ordered: PaintAsset[], index: 
   const duration = config.duration * (1 - config.variation * r(2) * 0.65) * (gesture === 'flicks' ? 0.45 : 1);
   const reach = config.reach * (1 - config.variation * r(3) * 0.65) * (gesture === 'flicks' ? 0.65 : 1);
   const angle = r(4) * Math.PI * 2;
-  const cx = (r(5) - 0.5) * 920, cy = (r(6) - 0.5) * 1700;
+  const cx = (r(5) - 0.5) * (frame.width - 160), cy = (r(6) - 0.5) * (frame.height - 220);
+  const maxX = frame.width / 2 - 10, maxY = frame.height / 2 - 10;
   const bend = (r(7) < 0.5 ? -1 : 1) * reach * (0.2 + r(8) * 0.45);
   const points = Array.from({ length: 65 }, (_, i) => {
     const t = i / 64;
@@ -61,15 +64,15 @@ function gestureStroke(config: AutopaintSettings, ordered: PaintAsset[], index: 
     if (gesture === 'flicks') y = u * u * bend * 0.4;
     if (gesture === 'angles') y = (u < 0.5 ? u * 2 : (1 - u) * 2) * bend;
     if (gesture === 'lines') y = Math.sin(u * Math.PI * 2) * reach * config.variation * 0.025;
-    return { x: Math.max(-530, Math.min(530, cx + x * Math.cos(angle) - y * Math.sin(angle))),
-      y: Math.max(-950, Math.min(950, cy + x * Math.sin(angle) + y * Math.cos(angle))), time: t * duration };
+    return { x: Math.max(-maxX, Math.min(maxX, cx + x * Math.cos(angle) - y * Math.sin(angle))),
+      y: Math.max(-maxY, Math.min(maxY, cy + x * Math.sin(angle) + y * Math.cos(angle))), time: t * duration };
   });
   return { ...config.brush, replay: false, constantSpeed: false, id: `auto-${index}`, name: `Autopaint ${index + 1}`,
     assetId: asset.id, hidden: false, seed: Math.floor(r(9) * 2147483647), points,
     sourceOffset: r(10) * asset.gifData.totalDurationMs / 1000 };
 }
-export function* autopaintStamps(config: AutopaintSettings, assets: PaintAsset[], from: number, to: number): Generator<PaintStamp> {
-  yield* new AutopaintSequence(config, assets).stamps(from, to);
+export function* autopaintStamps(config: AutopaintSettings, assets: PaintAsset[], from: number, to: number, frame: CanvasSize): Generator<PaintStamp> {
+  yield* new AutopaintSequence(config, assets, frame).stamps(from, to);
 }
 
 /** Palette sorting is configuration work; keep only two sampled gestures so
@@ -78,7 +81,7 @@ export class AutopaintSequence {
   private palette: PaintAsset[];
   private gestures = new Map<number, { stroke: PaintStroke; dabs: PaintDab[] }>();
   readonly stats = { gestureBuilds: 0 };
-  constructor(private config: AutopaintSettings, assets: PaintAsset[]) {
+  constructor(private config: AutopaintSettings, assets: PaintAsset[], private frame: CanvasSize) {
     this.palette = seededPalette(config, assets);
   }
   *stamps(from: number, to: number): Generator<PaintStamp> {
@@ -90,7 +93,7 @@ export class AutopaintSequence {
     for (let index = first; index <= last; index++) {
       let gesture = this.gestures.get(index);
       if (!gesture) {
-        const stroke = gestureStroke(config, this.palette, index);
+        const stroke = gestureStroke(config, this.palette, index, this.frame);
         if (!stroke) return;
         gesture = { stroke, dabs: buildPaintDabs(stroke) };
         this.stats.gestureBuilds++;

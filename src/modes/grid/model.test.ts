@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest';
+import { getCanvasSize } from '../../lib/canvasSize';
 import { DEFAULT_GRID, GridAsset, normalizeGrid, resolveAxis, resolveDriftAxis, resolveGrid } from './model';
+
+const PORTRAIT = getCanvasSize('9:16');
 
 const assets: GridAsset[] = ['a', 'b', 'c'].map(id => ({ id, name: `${id}.gif`, src: id,
   gifData: { width: 80, height: 40, totalDurationMs: 1000, frames: [] } }));
 describe('elastic grid geometry', () => {
   it('tiles the entire centered stage with equal cells when modulation is off', () => {
     const c = normalizeGrid({ rows: 2, columns: 3, x: { ...DEFAULT_GRID.x, amount: 0 }, y: { ...DEFAULT_GRID.y, amount: 0 } });
-    const cells = resolveGrid(assets, c, 17);
+    const cells = resolveGrid(assets, c, 17, PORTRAIT);
     expect(cells).toHaveLength(6);
     expect(cells[0]).toMatchObject({ x: -360, y: -480, width: 360, height: 960 });
     expect(cells[5]).toMatchObject({ x: 360, y: 480, width: 360, height: 960 });
     expect(cells.map(cell => cell.asset.id)).toEqual(['a', 'b', 'c', 'a', 'b', 'c']);
+  });
+  it('fills landscape and square frames', () => {
+    const c = normalizeGrid({ rows: 2, columns: 2, x: { ...DEFAULT_GRID.x, amount: 0 }, y: { ...DEFAULT_GRID.y, amount: 0 } });
+    expect(resolveGrid(assets, c, 0, getCanvasSize('16:9'))[3]).toMatchObject({ x: 480, y: 270, width: 960, height: 540 });
+    expect(resolveGrid(assets, c, 0, getCanvasSize('1:1'))[0]).toMatchObject({ x: -270, y: -270, width: 540, height: 540 });
   });
   it('keeps all boundaries ordered and outer edges fixed at extreme settings', () => {
     const axis = { ...DEFAULT_GRID.x, amount: 2.5, harmonic: 1, weights: [0.2, 5] };
@@ -23,9 +31,9 @@ describe('elastic grid geometry', () => {
   });
   it('is seekable and deterministic with independent axis timing', () => {
     const c = normalizeGrid({ x: { ...DEFAULT_GRID.x, speed: 0 }, shuffle: true });
-    const first = resolveGrid(assets, c, 0);
-    const later = resolveGrid(assets, c, 2);
-    expect(later).toEqual(resolveGrid(assets, c, 2));
+    const first = resolveGrid(assets, c, 0, PORTRAIT);
+    const later = resolveGrid(assets, c, 2, PORTRAIT);
+    expect(later).toEqual(resolveGrid(assets, c, 2, PORTRAIT));
     expect(first.map(cell => cell.width)).toEqual(later.map(cell => cell.width));
     expect(first.map(cell => cell.height)).not.toEqual(later.map(cell => cell.height));
     expect(first.map(cell => cell.asset.id)).toEqual(later.map(cell => cell.asset.id));
@@ -33,7 +41,7 @@ describe('elastic grid geometry', () => {
   it('honors individual base sizes, margin, gutters, and GIF phase', () => {
     const c = normalizeGrid({ rows: 1, columns: 2, margin: 40, gutter: 10, gifSpeed: 0, cellPhase: 0.25,
       x: { ...DEFAULT_GRID.x, amount: 0, weights: [1, 3] } });
-    const cells = resolveGrid(assets, c, 200);
+    const cells = resolveGrid(assets, c, 200, PORTRAIT);
     expect(cells[0]).toMatchObject({ width: 240, height: 1830, sourceTime: 0 });
     expect(cells[1]).toMatchObject({ width: 740, sourceTime: 0.25 });
   });
@@ -47,14 +55,14 @@ describe('elastic grid geometry', () => {
     expect(c.x.weights).toEqual([0.2, 1, 5]);
     expect(c.x.speed).toBe(DEFAULT_GRID.x.speed);
     expect(c.backgroundColor).toBe(DEFAULT_GRID.backgroundColor);
-    expect(resolveGrid([], c, 0)).toEqual([]);
+    expect(resolveGrid([], c, 0, PORTRAIT)).toEqual([]);
   });
 });
 
 
 describe('organic grid drift', () => {
   const config = normalizeGrid({ motionPattern: 'organic' });
-  const geometry = (t: number, c = config) => resolveGrid(assets, c, t).map(({ x, y, width, height }) => ({ x, y, width, height }));
+  const geometry = (t: number, c = config) => resolveGrid(assets, c, t, PORTRAIT).map(({ x, y, width, height }) => ({ x, y, width, height }));
   it('is seekable, seeded, and evolves on both axes', () => {
     const later = geometry(7);
     geometry(50);
@@ -67,12 +75,12 @@ describe('organic grid drift', () => {
   it('freezes only layout at zero drift speed and keeps GIF playback independent', () => {
     const frozen = normalizeGrid({ ...config, drift: { ...config.drift, speed: 0 } });
     expect(geometry(100, frozen)).toEqual(geometry(0, frozen));
-    expect(resolveGrid(assets, frozen, 100)[0].sourceTime).toBe(100);
+    expect(resolveGrid(assets, frozen, 100, PORTRAIT)[0].sourceTime).toBe(100);
   });
   it('honors base sizes at zero strength and ignores inactive wave settings', () => {
     const c = normalizeGrid({ ...config, rows: 1, columns: 2, margin: 40, gutter: 10,
       drift: { ...config.drift, amount: 0 }, x: { ...DEFAULT_GRID.x, weights: [1, 3] } });
-    expect(resolveGrid(assets, c, 200)[0]).toMatchObject({ width: 240, height: 1830 });
+    expect(resolveGrid(assets, c, 200, PORTRAIT)[0]).toMatchObject({ width: 240, height: 1830 });
     expect(geometry(7, normalizeGrid({ ...config, x: { ...config.x, amount: 0, speed: 2 } }))).toEqual(geometry(7));
   });
   it('keeps extreme layouts positive and tiled for negative and long export times', () => {

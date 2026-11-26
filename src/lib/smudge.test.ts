@@ -53,7 +53,7 @@ describe('quantizeSmudge', () => {
 
 describe('smudgeVector', () => {
   it('holds one vector per cell in blocky mode', () => {
-    const p = resolveSmudgeParams(fx({ smudgeSoftness: 0, smudgeCellSize: 40, smudgeBitDepth: 8 }), 1.3, 1080);
+    const p = resolveSmudgeParams(fx({ smudgeSoftness: 0, smudgeCellSize: 40, smudgeBitDepth: 8 }), 1.3, 1);
     const a: [number, number] = [0, 0];
     const b: [number, number] = [0, 0];
     smudgeVector(40.5, 80.5, p, a);
@@ -63,8 +63,8 @@ describe('smudgeVector', () => {
 
   it('scales cell boundaries and amount with output width', () => {
     const config = fx({ smudgeSoftness: 0, smudgeCellSize: 40 });
-    const small = resolveSmudgeParams(config, 2, 540);
-    const large = resolveSmudgeParams(config, 2, 1080);
+    const small = resolveSmudgeParams(config, 2, 0.5);
+    const large = resolveSmudgeParams(config, 2, 1);
     const a: [number, number] = [0, 0];
     const b: [number, number] = [0, 0];
     smudgeVector(30.5, 50.5, small, a);
@@ -74,7 +74,7 @@ describe('smudgeVector', () => {
   });
 
   it('aligns every vector with the flow direction at full flow', () => {
-    const p = resolveSmudgeParams(fx({ smudgeFlow: 1, smudgeAngle: 0, smudgeBitDepth: 8 }), 0.5, 1080);
+    const p = resolveSmudgeParams(fx({ smudgeFlow: 1, smudgeAngle: 0, smudgeBitDepth: 8 }), 0.5, 1);
     const v: [number, number] = [0, 0];
     for (let i = 0; i < 20; i++) {
       smudgeVector(i * 37.5, i * 91.5, p, v);
@@ -85,8 +85,8 @@ describe('smudgeVector', () => {
 
   it('holds the field between stutter ticks', () => {
     const config = fx({ smudgeStutter: 4, smudgeSpeed: 1 });
-    expect(resolveSmudgeParams(config, 1.26, 1080)).toEqual(resolveSmudgeParams(config, 1.49, 1080));
-    expect(resolveSmudgeParams(config, 1.26, 1080)).not.toEqual(resolveSmudgeParams(config, 1.51, 1080));
+    expect(resolveSmudgeParams(config, 1.26, 1)).toEqual(resolveSmudgeParams(config, 1.49, 1));
+    expect(resolveSmudgeParams(config, 1.26, 1)).not.toEqual(resolveSmudgeParams(config, 1.51, 1));
   });
 });
 
@@ -97,7 +97,7 @@ describe('applySmudgePixels', () => {
   it('leaves pixels untouched at zero amount or zero coverage', () => {
     for (const overrides of [{ smudgeAmount: 0 }, { smudgeCoverage: 0 }]) {
       const data = gradient(width, height);
-      applySmudgePixels(data, width, height, resolveSmudgeParams(fx(overrides), 1, width));
+      applySmudgePixels(data, width, height, resolveSmudgeParams(fx(overrides), 1, width / 1080));
       expect(data).toEqual(gradient(width, height));
     }
   });
@@ -106,8 +106,8 @@ describe('applySmudgePixels', () => {
     const config = fx({ smudgeAmount: 400, smudgeCellSize: 200, smudgeSmear: 3 });
     const a = gradient(width, height);
     const b = gradient(width, height);
-    applySmudgePixels(a, width, height, resolveSmudgeParams(config, 2.5, width));
-    applySmudgePixels(b, width, height, resolveSmudgeParams(config, 2.5, width));
+    applySmudgePixels(a, width, height, resolveSmudgeParams(config, 2.5, width / 1080));
+    applySmudgePixels(b, width, height, resolveSmudgeParams(config, 2.5, width / 1080));
     expect(a).toEqual(b);
     expect(a).not.toEqual(gradient(width, height));
   });

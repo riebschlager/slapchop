@@ -43,7 +43,8 @@ import {
 } from '../lib/motion';
 import { getVoronoiCells, VoronoiCell } from '../lib/voronoi';
 import { getBrushDrawOnProgress, getBrushPieces, getPiecesBounds, isBrushAnimated, isPolygonShapeRenderable } from '../lib/brushStroke';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, RenderState, getCachedImage, getLayerSize } from './render2d';
+import { RenderState, getCachedImage, getDesignSize, getLayerSize } from './render2d';
+import { CanvasSize, getCanvasSize, getPatternAnchor } from '../lib/canvasSize';
 import type { ThreeSceneRenderer } from './threeRenderer';
 import type { FlythroughRenderer } from './flythroughRenderer';
 import type { TunnelRenderer } from './tunnelRenderer';
@@ -159,6 +160,8 @@ interface GifVoronoiCellNode {
 export class PixiSceneRenderer {
   private renderer: Renderer;
   private stage = new Container();
+  // Design frame of the state most recently synced; every sync refreshes it.
+  private design: CanvasSize = getCanvasSize(undefined);
   private bg = new Graphics();
   private root = new Container();
   private symContainer = new Container();
@@ -258,8 +261,8 @@ export class PixiSceneRenderer {
       // GPU parity can be checked without a native build.
       preference: isNative() || isWebglForced() ? 'webgl' : 'webgpu',
       canvas,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
+      width: getCanvasSize(undefined).width,
+      height: getCanvasSize(undefined).height,
       antialias: true,
       backgroundAlpha: 0,
       gcActive: false
@@ -273,7 +276,13 @@ export class PixiSceneRenderer {
 
   /** Render the scene at time t to the live canvas. */
   render(t: number, state: RenderState) {
-    this.sync(t, state, CANVAS_WIDTH, CANVAS_HEIGHT, true);
+    // The live canvas renders at design resolution; an aspect switch resizes
+    // its backing store before the frame is drawn.
+    const design = getDesignSize(state);
+    if (this.renderer.width !== design.width || this.renderer.height !== design.height) {
+      this.renderer.resize(design.width, design.height);
+    }
+    this.sync(t, state, design.width, design.height, true);
     this.renderer.render(this.stage);
   }
 
@@ -367,6 +376,7 @@ export class PixiSceneRenderer {
   // ---------------------------------------------------------------- scene sync
 
   private sync(t: number, state: RenderState, width: number, height: number, preview = false) {
+    this.design = getDesignSize(state);
     this.layout(
       width,
       height,
@@ -459,9 +469,9 @@ export class PixiSceneRenderer {
       }
       if (!preview || this.lastPaintSession !== painter || previousRevision !== painter.revision) this.paintTexture.source.update();
       this.lastPaintSession = painter;
-      this.paintSprite.position.set(-540, -960);
-      this.paintSprite.width = 1080;
-      this.paintSprite.height = 1920;
+      this.paintSprite.position.set(-this.design.width / 2, -this.design.height / 2);
+      this.paintSprite.width = this.design.width;
+      this.paintSprite.height = this.design.height;
     } else if (state.appMode === 'gif-grid') {
       this.syncGrid(t, state);
     } else if (state.appMode === 'rings') {
@@ -511,7 +521,7 @@ export class PixiSceneRenderer {
   }
 
   private syncGrid(t: number, state: RenderState) {
-    const items = resolveGrid(state.gridAssets, state.grid, t);
+    const items = resolveGrid(state.gridAssets, state.grid, t, this.design);
     const deformable = state.grid.motionPattern === 'directional' || state.grid.motionPattern === 'ripple';
     if (deformable) {
       this.gridSprites.forEach(sprite => sprite.destroy());
@@ -612,13 +622,15 @@ export class PixiSceneRenderer {
       state.landscapeSkySources,
       state.landscape,
       width,
-      height
+      height,
+      this.design
     );
-    if (!this.landscapeTexture) {
+    // A resized CanvasSource keeps sampling its first upload's size, so a new
+    // output size (export resolution or canvas aspect) gets a fresh texture.
+    if (!this.landscapeTexture || this.landscapeTexW !== width || this.landscapeTexH !== height) {
+      this.landscapeTexture?.destroy(true);
       this.landscapeTexture = new Texture({ source: new CanvasSource({ resource: canvas, width, height }) });
       this.landscapeSprite.texture = this.landscapeTexture;
-    } else if (this.landscapeTexW !== width || this.landscapeTexH !== height) {
-      this.landscapeTexture.source.resize(width, height, 1);
     }
     this.landscapeTexW = width;
     this.landscapeTexH = height;
@@ -651,14 +663,16 @@ export class PixiSceneRenderer {
   private syncGifVoronoi(t: number, state: RenderState) {
     const config = state.gifVoronoi;
     const stageBounds = {
-      minX: -CANVAS_WIDTH / 2,
-      minY: -CANVAS_HEIGHT / 2,
-      maxX: CANVAS_WIDTH / 2,
-      maxY: CANVAS_HEIGHT / 2
+      minX: -this.design.width / 2,
+      minY: -this.design.height / 2,
+      maxX: this.design.width / 2,
+      maxY: this.design.height / 2
     };
     const geometryKey = gifVoronoiGeometryFrameKey(config, t);
     const geometryChanged = geometryKey !== this.gifVoronoiGeometryKey;
     const layoutKey = [
+      this.design.width,
+      this.design.height,
       geometryKey,
       config.arrangement,
       config.occupancy,
@@ -789,11 +803,12 @@ export class PixiSceneRenderer {
       width,
       height
     );
-    if (!this.tunnelTexture) {
+    // A resized CanvasSource keeps sampling its first upload's size, so a new
+    // output size (export resolution or canvas aspect) gets a fresh texture.
+    if (!this.tunnelTexture || this.tunnelTexW !== width || this.tunnelTexH !== height) {
+      this.tunnelTexture?.destroy(true);
       this.tunnelTexture = new Texture({ source: new CanvasSource({ resource: canvas, width, height }) });
       this.tunnelSprite.texture = this.tunnelTexture;
-    } else if (this.tunnelTexW !== width || this.tunnelTexH !== height) {
-      this.tunnelTexture.source.resize(width, height, 1);
     }
     this.tunnelTexW = width;
     this.tunnelTexH = height;
@@ -823,11 +838,12 @@ export class PixiSceneRenderer {
       width,
       height
     );
-    if (!this.flythroughTexture) {
+    // A resized CanvasSource keeps sampling its first upload's size, so a new
+    // output size (export resolution or canvas aspect) gets a fresh texture.
+    if (!this.flythroughTexture || this.flythroughTexW !== width || this.flythroughTexH !== height) {
+      this.flythroughTexture?.destroy(true);
       this.flythroughTexture = new Texture({ source: new CanvasSource({ resource: canvas, width, height }) });
       this.flythroughSprite.texture = this.flythroughTexture;
-    } else if (this.flythroughTexW !== width || this.flythroughTexH !== height) {
-      this.flythroughTexture.source.resize(width, height, 1);
     }
     this.flythroughTexW = width;
     this.flythroughTexH = height;
@@ -862,11 +878,12 @@ export class PixiSceneRenderer {
     }
     const canvas = this.three.renderToCanvas(t, state.mesh3dLayers, state.camera3d, width, height);
 
-    if (!this.mesh3dTexture) {
+    // A resized CanvasSource keeps sampling its first upload's size, so a new
+    // output size (export resolution or canvas aspect) gets a fresh texture.
+    if (!this.mesh3dTexture || this.mesh3dTexW !== width || this.mesh3dTexH !== height) {
+      this.mesh3dTexture?.destroy(true);
       this.mesh3dTexture = new Texture({ source: new CanvasSource({ resource: canvas, width, height }) });
       this.mesh3dSprite.texture = this.mesh3dTexture;
-    } else if (this.mesh3dTexW !== width || this.mesh3dTexH !== height) {
-      this.mesh3dTexture.source.resize(width, height, 1);
     }
     this.mesh3dTexW = width;
     this.mesh3dTexH = height;
@@ -926,7 +943,7 @@ export class PixiSceneRenderer {
 
     // 3. Bloom / Soft Glow
     if (fx.bloomEnabled && fx.bloomStrength > 0) {
-      this.blurFilter.strength = fx.bloomStrength * (width / CANVAS_WIDTH);
+      this.blurFilter.strength = fx.bloomStrength * (width / this.design.width);
       this.blurFilter.quality = fx.bloomQuality || 3;
       activeFilters.push(this.blurFilter);
     }
@@ -934,7 +951,7 @@ export class PixiSceneRenderer {
     // Smudge sits after bloom (the only non-pointwise pass before it) so the
     // 2D path, which smudges first in its pixel pass, composes identically.
     if (fx.smudgeEnabled) {
-      const smudge = resolveSmudgeParams(fx, t, width);
+      const smudge = resolveSmudgeParams(fx, t, width / this.design.width);
       if (isSmudgeActive(smudge)) {
         this.smudgeFilter.setParams(smudge);
         activeFilters.push(this.smudgeFilter);
@@ -943,7 +960,7 @@ export class PixiSceneRenderer {
 
     // 4. RGB Split / Chromatic Aberration
     if (fx.rgbSplitEnabled) {
-      const offsetPx = applyMotion(fx.rgbSplitOffset, fx.motionRgbSplitOffset, t) * (width / CANVAS_WIDTH);
+      const offsetPx = applyMotion(fx.rgbSplitOffset, fx.motionRgbSplitOffset, t) * (width / this.design.width);
       const angleRad = (fx.rgbSplitAngle * Math.PI) / 180;
       const dx = (Math.cos(angleRad) * offsetPx) / width;
       const dy = (Math.sin(angleRad) * offsetPx) / height;
@@ -988,7 +1005,7 @@ export class PixiSceneRenderer {
       this.bgColor = bgColor;
     }
     this.root.position.set(width / 2, height / 2);
-    this.root.scale.set(width / CANVAS_WIDTH, height / CANVAS_HEIGHT);
+    this.root.scale.set(width / this.design.width, height / this.design.height);
   }
 
   private reconcileSymNodes(layers: Layer[]) {
@@ -1042,12 +1059,23 @@ export class PixiSceneRenderer {
     };
   }
 
+  // Tilers cover the whole frame with their origin on its top-left, matching
+  // Canvas 2D pattern space; an aspect switch must resize existing ones.
+  private fitTilerToFrame(tiler: TilingSprite) {
+    const { width, height } = this.design;
+    if (tiler.width !== width || tiler.height !== height) {
+      tiler.width = width;
+      tiler.height = height;
+      tiler.position.set(-width / 2, -height / 2);
+    }
+  }
+
   private createPolygonInstanceNode(): PolygonInstanceNode {
     const wrapper = new Container();
-    const tiler = new TilingSprite({ texture: Texture.EMPTY, width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
+    const tiler = new TilingSprite({ texture: Texture.EMPTY, width: this.design.width, height: this.design.height });
     // Cover the full canvas; local origin lands on the canvas top-left so the
     // tile transform matches the Canvas 2D pattern space exactly.
-    tiler.position.set(-CANVAS_WIDTH / 2, -CANVAS_HEIGHT / 2);
+    tiler.position.set(-this.design.width / 2, -this.design.height / 2);
     const borderG = new Graphics();
     const maskG = new Graphics();
     const fillG = new Graphics();
@@ -1235,8 +1263,9 @@ export class PixiSceneRenderer {
     const origin = resolveSymmetryParams(polygon.symmetryParams);
     const scaleVal = Math.max(0.01, applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t));
     const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
-    const offsetX = applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
-    const offsetY = applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
+    const anchor = getPatternAnchor(this.design);
+    const offsetX = anchor.x + applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
+    const offsetY = anchor.y + applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
     const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
     let borderCache: PolygonPoint[][] | null = null;
     const border = () => (borderCache ??= brush ? getBrushPieces(points, brush, t, polygon.strokeWidth) : []);
@@ -1260,6 +1289,7 @@ export class PixiSceneRenderer {
       if (texture) {
         inst.tiler.visible = true;
         inst.fillG.visible = false;
+        this.fitTilerToFrame(inst.tiler);
         inst.tiler.texture = texture;
         inst.tiler.tileScale.set(scaleVal, scaleVal);
         inst.tiler.tileRotation = rotationVal * DEG;
@@ -1303,8 +1333,8 @@ export class PixiSceneRenderer {
     const parentMaskG = new Graphics();
     const inner = new Container();
     const cellMaskG = new Graphics();
-    const tiler = new TilingSprite({ texture: Texture.EMPTY, width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
-    tiler.position.set(-CANVAS_WIDTH / 2, -CANVAS_HEIGHT / 2);
+    const tiler = new TilingSprite({ texture: Texture.EMPTY, width: this.design.width, height: this.design.height });
+    tiler.position.set(-this.design.width / 2, -this.design.height / 2);
     const fillG = new Graphics();
     const strokeG = new Graphics();
 
@@ -1355,8 +1385,9 @@ export class PixiSceneRenderer {
     const shapeNeedsRedraw = shapeChanged || cellsChanged;
     const scaleVal = Math.max(0.01, applyMotion(polygon.textureScale ?? 1, polygon.motionTextureScale, t));
     const rotationVal = applyMotion(polygon.textureRotation ?? 0, polygon.motionTextureRotation, t);
-    const baseOffsetX = applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
-    const baseOffsetY = applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
+    const anchor = getPatternAnchor(this.design);
+    const baseOffsetX = anchor.x + applyMotion(polygon.textureOffsetX ?? 0, polygon.motionTextureOffsetX, t);
+    const baseOffsetY = anchor.y + applyMotion(polygon.textureOffsetY ?? 0, polygon.motionTextureOffsetY, t);
     const fillColor = polygon.fillColor || '#6366f1';
     const hasStroke = polygon.strokeWidth > 0 && !!polygon.strokeColor && polygon.strokeColor !== 'transparent';
     const spread = 400 * params.voronoiPhaseVariation;
@@ -1375,6 +1406,7 @@ export class PixiSceneRenderer {
       if (texture) {
         shard.tiler.visible = true;
         shard.fillG.visible = false;
+        this.fitTilerToFrame(shard.tiler);
         shard.tiler.texture = texture;
         shard.tiler.tileScale.set(scaleVal, scaleVal);
         shard.tiler.tileRotation = rotationVal * DEG;

@@ -5,7 +5,6 @@ import { applyMotion } from './motion';
 // ports this logic line-for-line; the integer hash keeps per-cell vectors
 // identical on CPU and GPU, which a sin()-based hash would not.
 
-const DESIGN_WIDTH = 1080;
 const MAX_TAPS = 8;
 
 export interface SmudgeParams {
@@ -45,8 +44,8 @@ function smoothstep01(x: number): number {
   return x * x * (3 - 2 * x);
 }
 
-export function resolveSmudgeParams(fx: MasterFxConfig, t: number, width: number): SmudgeParams {
-  const scale = width / DESIGN_WIDTH;
+/** `scale` is output pixels per design unit; amount and cell size are authored in design units. */
+export function resolveSmudgeParams(fx: MasterFxConfig, t: number, scale: number): SmudgeParams {
   const amount = Math.max(0, applyMotion(fx.smudgeAmount, fx.motionSmudgeAmount, t));
   const bits = Math.min(8, Math.max(1, Math.round(fx.smudgeBitDepth)));
   const angle = (fx.smudgeAngle * Math.PI) / 180;

@@ -8,6 +8,7 @@ import {
   resolveLandscapeFrame
 } from '../lib/landscape';
 import { LandscapeAsset, LandscapeConfig, LandscapeSkySource } from '../types';
+import type { CanvasSize } from '../lib/canvasSize';
 
 interface ProjectedPoint {
   x: number;
@@ -57,11 +58,13 @@ export function renderLandscapeSky(
   sources: LandscapeSkySource[],
   config: LandscapeConfig,
   width: number,
-  height: number
+  height: number,
+  design: CanvasSize
 ) {
-  const scale = Math.min(width / 1080, height / 1920);
-  const centerX = width / 2 + config.skyCenterX * width / 1080;
-  const centerY = height / 2 + config.skyCenterY * height / 1920;
+  // Ring sizes and the sun center are in design units.
+  const scale = width / design.width;
+  const centerX = width / 2 + config.skyCenterX * scale;
+  const centerY = height / 2 + config.skyCenterY * scale;
   ctx.save();
   ctx.fillStyle = config.skyBackgroundColor;
   ctx.fillRect(0, 0, width, height);
@@ -133,11 +136,12 @@ export function renderLandscapeScene2d(
   skySources: LandscapeSkySource[],
   config: LandscapeConfig,
   width: number,
-  height: number
+  height: number,
+  design: CanvasSize
 ) {
-  const frame = resolveLandscapeFrame(config, skySources, t);
+  const frame = resolveLandscapeFrame(config, skySources, t, design);
   const resolved = frame.config;
-  renderLandscapeSky(ctx, t, frame.skySources, resolved, width, height);
+  renderLandscapeSky(ctx, t, frame.skySources, resolved, width, height, design);
   const cells = resolveLandscapeCells(resolved, t, terrainAssets.length, frame.travel).reverse();
   for (const cell of cells) {
     const projected = cell.corners.map(point => projectLandscapePoint(point, resolved, width, height));
@@ -179,7 +183,7 @@ export function renderLandscapeScene2d(
       ctx.closePath();
       ctx.strokeStyle = resolved.wireframeColor;
       ctx.globalAlpha = 0.45;
-      ctx.lineWidth = Math.max(0.5, width / 1080);
+      ctx.lineWidth = Math.max(0.5, width / design.width);
       ctx.stroke();
       ctx.globalAlpha = 1;
     }

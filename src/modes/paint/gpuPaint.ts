@@ -3,6 +3,7 @@ import { GpuAutopaint } from './gpuAutopaint';
 import { PaintPreviewRenderer } from './preview';
 import { PaintRenderer } from './renderer';
 import type { PaintDocument, PaintStroke } from './model';
+import { getDesignSizeForOutput } from '../../lib/canvasSize';
 
 class CanvasLayer {
   readonly sprite = new Sprite();
@@ -49,8 +50,9 @@ export class GpuPaintRenderer {
       this.draftLayer.destroy(); this.draft.destroy(); this.draft = null;
       this.draftLayer = new CanvasLayer(); this.container.addChild(this.draftLayer.sprite);
     }
-    this.container.position.set(-540, -960);
-    this.container.scale.set(1080 / width, 1920 / height);
+    const design = getDesignSizeForOutput(width, height);
+    this.container.position.set(-design.width / 2, -design.height / 2);
+    this.container.scale.set(design.width / width, design.height / height);
   }
   destroy() {
     this.base.destroy(); this.draftLayer.destroy(); this.draft?.destroy(); this.draft = null;

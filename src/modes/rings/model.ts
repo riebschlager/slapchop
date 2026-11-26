@@ -1,4 +1,5 @@
 import type { GifData } from '../../types';
+import { REFERENCE_HALF_HEIGHT } from '../../lib/canvasSize';
 
 export interface RingsAsset {
   id: string;
@@ -227,7 +228,8 @@ export function resolveRings(assets: RingsAsset[], input: RingsConfig, t: number
   const c = normalizeRings(input);
   const travel = c.speed * t;
   const first = Math.floor(travel / c.spacing) + 1;
-  const focal = 960 / Math.tan(radians(c.fov) / 2);
+  // Fixed portrait focal reference: ring sizes stay put when the frame changes shape.
+  const focal = REFERENCE_HALF_HEIGHT / Math.tan(radians(c.fov) / 2);
   const roll = radians(c.cameraRoll);
   const gifRotation = radians(c.gifRotation);
   const sprites: RingSprite[] = [];

@@ -2,7 +2,9 @@ import { Clapperboard, Download, Film, Loader2, Repeat, Video, X } from 'lucide-
 import { cn } from '../../lib/utils';
 import { isNative } from '../../lib/native';
 import { ExportSpeed } from '../../lib/ffmpegExport';
-import { EXPORT_RESOLUTIONS, ExportApi, ExportType } from '../../hooks/useExport';
+import { ExportApi, ExportType } from '../../hooks/useExport';
+import { ExportResolution, getExportSize } from '../../lib/canvasSize';
+import { useStore } from '../../store';
 
 function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -37,7 +39,12 @@ export default function ExportModal({ api }: { api: ExportApi }) {
   const native = isNative();
   const durationMax = native && exportType !== 'gif' ? 21_600 : 10;
   const totalFrames = Math.round(exportDuration * exportFps);
-  const [exportWidth, exportHeight] = EXPORT_RESOLUTIONS[exportResolution];
+  const canvasAspect = useStore(s => s.canvasAspect);
+  const { width: exportWidth, height: exportHeight } = getExportSize(canvasAspect, exportResolution);
+  const resolutionLabel = (resolution: ExportResolution) => {
+    const size = getExportSize(canvasAspect, resolution);
+    return `${size.width}x${size.height}`;
+  };
   const uncompressedSequenceBytes = exportWidth * exportHeight * 4 * totalFrames;
   // Encoder speeds only exist for the ffmpeg-backed desktop video formats.
   const isNativeVideo = native
@@ -142,14 +149,14 @@ export default function ExportModal({ api }: { api: ExportApi }) {
           <div>
             <label className="text-xs font-semibold text-ui-text-muted uppercase tracking-wider block mb-2">Resolution</label>
             <div className="grid grid-cols-3 gap-2">
-              {[
-                { id: 'full', label: '1080x1920', sub: 'Full 1080p' },
-                { id: 'hd', label: '720x1280', sub: 'HD Ready' },
-                { id: 'compact', label: '540x960', sub: 'Compact' }
-              ].map((res) => (
+              {([
+                { id: 'full', sub: 'Full 1080p' },
+                { id: 'hd', sub: 'HD Ready' },
+                { id: 'compact', sub: 'Compact' }
+              ] as const).map((res) => (
                 <button
                   key={res.id}
-                  onClick={() => setExportResolution(res.id as 'full' | 'hd' | 'compact')}
+                  onClick={() => setExportResolution(res.id)}
                   className={cn(
                     "p-2 rounded-lg border text-left transition-colors",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent focus-visible:ring-offset-1 focus-visible:ring-offset-ui-panel",
@@ -158,7 +165,7 @@ export default function ExportModal({ api }: { api: ExportApi }) {
                       : "bg-ui-canvas/50 border-ui-border text-ui-text-muted hover:border-ui-border-strong hover:text-ui-text"
                   )}
                 >
-                  <div className="text-xs font-semibold">{res.label}</div>
+                  <div className="text-xs font-semibold">{resolutionLabel(res.id)}</div>
                   <div className="text-[10px] text-ui-text-subtle">{res.sub}</div>
                 </button>
               ))}

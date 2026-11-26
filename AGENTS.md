@@ -23,8 +23,8 @@ Do not edit generated or vendored output in `dist/`, `node_modules/`, `src-tauri
 
 ## Architectural invariants
 
-- Treat each creative mode as an independent product surface. Modes share the 1080 x 1920 output platform, not a required feature set, inspector shape, or document model. Do not add a concept to another mode for parity or generalize unlike concepts to force reuse; see `docs/architecture/mode-independence.md`.
-- Keep the 1080 x 1920 design coordinate system and center-origin layer/polygon coordinates. Scale only at the render or interaction boundary.
+- Treat each creative mode as an independent product surface. Modes share the output platform (a fixed-preset frame: 9:16, 16:9, or 1:1), not a required feature set, inspector shape, or document model. Do not add a concept to another mode for parity or generalize unlike concepts to force reuse; see `docs/architecture/mode-independence.md`.
+- Keep center-origin design coordinates sized by the document's canvas aspect (`src/lib/canvasSize.ts`; the short side is always 1080). Read the frame from state (`getDesignSize`) instead of hard-coding 1080 x 1920, and scale only at the render or interaction boundary. Switching aspect re-frames content; it must never rewrite mode data.
 - Live playback and offline export must use the same rendering semantics. Rendering should remain a deterministic function of `(time, document state)`; never base exported frames on wall-clock timing or React render cadence.
 - Keep PixiJS and Canvas 2D behavior aligned when changing geometry, motion, opacity, visibility, ordering, textures, or blend modes. Test the fallback with `?renderer=2d`.
 - Keep the animation loop outside React. Read rapidly changing state imperatively and avoid triggering component renders on every frame.

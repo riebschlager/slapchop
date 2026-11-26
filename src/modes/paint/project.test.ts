@@ -16,7 +16,7 @@ const serialized = () => ({ version: 1, assets: [{ id: 'gif', name: 'paint.gif',
 const materialized = new Map([['embedded', { src: 'blob:restored', gifData }]]);
 afterEach(() => { useStore.getState().loadDocument(initial); clearHistory(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-it('saves V14 with embedded sources, every stroke control, and original timing', async () => {
+it('saves V15 with embedded sources, every stroke control, and original timing', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ blob: async () => new Blob(['gif'], { type: 'image/gif' }) }));
   vi.stubGlobal('FileReader', class {
     result = 'data:image/gif;base64,Z2lm'; onload?: () => void;
@@ -27,7 +27,7 @@ it('saves V14 with embedded sources, every stroke control, and original timing',
   useStore.getState().loadDocument({ ...initial, paint: { assets: [source], strokes: [painted] } });
   await saveProject();
   const payload = JSON.parse(await vi.mocked(saveBlob).mock.calls.at(-1)![0].text());
-  expect(payload.version).toBe(14);
+  expect(payload.version).toBe(15);
   expect(payload.paint.assets[0].src).toBeUndefined();
   const assetId = payload.paint.assets[0].assetId;
   expect(payload.assets[assetId].dataUrl).toBe('data:image/gif;base64,Z2lm');
@@ -71,7 +71,7 @@ it.each(['missing source', 'duplicate stroke', 'nonfinite', 'backwards time', 'o
     if (problem === 'duplicate stroke') payload.strokes.push(payload.strokes[0]);
     if (problem === 'nonfinite') payload.strokes[0].points[0].x = NaN;
     if (problem === 'backwards time') payload.strokes[0].points[1].time = -1;
-    if (problem === 'oversized coordinates') payload.strokes[0].points[0].x = 541;
+    if (problem === 'oversized coordinates') payload.strokes[0].points[0].x = 961;
     if (problem === 'too many points') payload.strokes[0].points = Array.from({ length: 10001 }, () => ({ x: 0, y: 0, time: 0 }));
     expect(() => restorePaint(payload, materialized)).toThrow('GIF Paint');
   }

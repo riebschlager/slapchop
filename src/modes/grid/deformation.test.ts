@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { getCanvasSize } from '../../lib/canvasSize';
 import { insetGridQuad, resolveGridVertices, type GridQuad } from './deformation';
 import { DEFAULT_GRID, normalizeGrid, resolveAxis, resolveGrid } from './model';
+
+const PORTRAIT = getCanvasSize('9:16');
 
 const assets = [{ id: 'a', name: 'a.gif', src: 'a', gifData: { width: 80, height: 40, totalDurationMs: 1000, frames: [] } }];
 const cross = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }) =>
@@ -9,13 +12,13 @@ const area = (q: GridQuad) => q.reduce((sum, p, i) => sum + p.x * q[(i + 1) % 4]
 
 for (const pattern of ['directional', 'ripple'] as const) describe(`${pattern} grid deformation`, () => {
   const config = normalizeGrid({ motionPattern: pattern });
-  const corners = (t: number, c = config) => resolveGrid(assets, c, t).map(cell => cell.corners);
+  const corners = (t: number, c = config) => resolveGrid(assets, c, t, PORTRAIT).map(cell => cell.corners);
   it('is deterministic and seekable, evolves, and does not change GIF assignment', () => {
-    const later = resolveGrid(assets, config, 2);
-    resolveGrid(assets, config, 100);
-    expect(resolveGrid(assets, config, 2)).toEqual(later);
+    const later = resolveGrid(assets, config, 2, PORTRAIT);
+    resolveGrid(assets, config, 100, PORTRAIT);
+    expect(resolveGrid(assets, config, 2, PORTRAIT)).toEqual(later);
     expect(corners(2)).not.toEqual(corners(0));
-    expect(later.map(cell => cell.asset.id)).toEqual(resolveGrid(assets, config, 0).map(cell => cell.asset.id));
+    expect(later.map(cell => cell.asset.id)).toEqual(resolveGrid(assets, config, 0, PORTRAIT).map(cell => cell.asset.id));
     expect(later[0].sourceTime).toBe(2);
   });
   it('freezes with zero speed and removes displacement at zero strength', () => {
@@ -27,7 +30,7 @@ for (const pattern of ['directional', 'ripple'] as const) describe(`${pattern} g
   });
   it('shares adjacent edges exactly and pins the perimeter to the stage with margins', () => {
     const c = normalizeGrid({ ...config, margin: 40 });
-    const cells = resolveGrid(assets, c, 4);
+    const cells = resolveGrid(assets, c, 4, PORTRAIT);
     for (let row = 0; row < c.rows; row++) for (let col = 0; col < c.columns; col++) {
       const q = cells[row * c.columns + col].corners!;
       if (col < c.columns - 1) {
@@ -52,7 +55,7 @@ for (const pattern of ['directional', 'ripple'] as const) describe(`${pattern} g
         ripple: { ...config.ripple, amount: 5, wavelength: 100, speed: 2, centerX: 0, centerY: 1 },
         x: { ...DEFAULT_GRID.x, weights: Array.from({ length: count }, (_, i) => i % 2 ? 5 : 0.2) },
         y: { ...DEFAULT_GRID.y, weights: Array.from({ length: count }, (_, i) => i % 2 ? 0.2 : 5) } });
-      for (const cell of resolveGrid(assets, c, t)) {
+      for (const cell of resolveGrid(assets, c, t, PORTRAIT)) {
         const q = cell.corners!;
         expect(q.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
         expect(q.every((p, i) => cross(p, q[(i + 1) % 4], q[(i + 2) % 4]) > 0)).toBe(true);
@@ -62,7 +65,7 @@ for (const pattern of ['directional', 'ripple'] as const) describe(`${pattern} g
   it('keeps undersized gutter cells hidden without inverted corners', () => {
     const c = normalizeGrid({ ...config, rows: 24, columns: 24, gutter: 40, margin: 200,
       x: { ...DEFAULT_GRID.x, weights: [0.2, 5] } });
-    for (const cell of resolveGrid(assets, c, 3)) {
+    for (const cell of resolveGrid(assets, c, 3, PORTRAIT)) {
       const q = cell.corners!;
       expect(q.every((p, i) => cross(p, q[(i + 1) % 4], q[(i + 2) % 4]) >= -1e-7)).toBe(true);
     }
@@ -71,9 +74,9 @@ for (const pattern of ['directional', 'ripple'] as const) describe(`${pattern} g
 
 it('rotates the wave field and respects separate rotation timing', () => {
   const c = normalizeGrid({ motionPattern: 'directional', directional: { ...DEFAULT_GRID.directional, speed: 0, rotationSpeed: 20 } });
-  expect(resolveGrid(assets, c, 1)).not.toEqual(resolveGrid(assets, c, 3));
+  expect(resolveGrid(assets, c, 1, PORTRAIT)).not.toEqual(resolveGrid(assets, c, 3, PORTRAIT));
   const changed = normalizeGrid({ ...c, directional: { ...c.directional, angle: -45, rotationSpeed: 0 } });
-  expect(resolveGrid(assets, changed, 0)).not.toEqual(resolveGrid(assets, c, 0));
+  expect(resolveGrid(assets, changed, 0, PORTRAIT)).not.toEqual(resolveGrid(assets, c, 0, PORTRAIT));
 });
 
 it('moves the ripple origin smoothly through vertices without a singularity', () => {
@@ -85,13 +88,13 @@ it('moves the ripple origin smoothly through vertices without a singularity', ()
   const left = resolveGridVertices(xs, ys, normalizeGrid({ ...c, ripple: { ...c.ripple, centerX: 0.5 - 1e-7 } }), 0)[12];
   const right = resolveGridVertices(xs, ys, normalizeGrid({ ...c, ripple: { ...c.ripple, centerX: 0.5 + 1e-7 } }), 0)[12];
   expect(Math.abs(left.x - right.x)).toBeLessThan(0.001);
-  expect(resolveGrid(assets, normalizeGrid({ ...c, ripple: { ...c.ripple, centerX: 0.1 } }), 0)).not.toEqual(resolveGrid(assets, c, 0));
+  expect(resolveGrid(assets, normalizeGrid({ ...c, ripple: { ...c.ripple, centerX: 0.1 } }), 0, PORTRAIT)).not.toEqual(resolveGrid(assets, c, 0, PORTRAIT));
 });
 
 it('reverses travel and normalizes invalid persisted field settings', () => {
   const c = normalizeGrid({ motionPattern: 'ripple' });
   const reversed = normalizeGrid({ ...c, ripple: { ...c.ripple, reverse: true } });
-  expect(resolveGrid(assets, c, -2).map(cell => cell.corners)).toEqual(resolveGrid(assets, reversed, 2).map(cell => cell.corners));
+  expect(resolveGrid(assets, c, -2, PORTRAIT).map(cell => cell.corners)).toEqual(resolveGrid(assets, reversed, 2, PORTRAIT).map(cell => cell.corners));
   const invalid = normalizeGrid({ directional: { ...c.directional, amount: Infinity, speed: -2, wavelength: 0, rotationSpeed: 1000 },
     ripple: { ...c.ripple, centerX: NaN, centerY: 4 } });
   expect(invalid.directional).toMatchObject({ amount: 0.8, speed: 0, wavelength: 100, rotationSpeed: 90 });
@@ -113,8 +116,8 @@ it.each(['directional', 'ripple'] as const)('uses strength above 1 for larger %s
   expect(strong[motionPattern].amount).toBe(5);
   const flat = normalizeGrid({ ...normal, [motionPattern]: { ...normal[motionPattern], amount: 0 } });
   const displacement = (c: typeof normal) => {
-    const base = resolveGrid(assets, flat, 0);
-    return resolveGrid(assets, c, 0).reduce((sum, cell, i) => sum + cell.corners!.reduce((s, p, j) =>
+    const base = resolveGrid(assets, flat, 0, PORTRAIT);
+    return resolveGrid(assets, c, 0, PORTRAIT).reduce((sum, cell, i) => sum + cell.corners!.reduce((s, p, j) =>
       s + Math.hypot(p.x - base[i].corners![j].x, p.y - base[i].corners![j].y), 0), 0);
   };
   expect(displacement(strong)).toBeGreaterThan(displacement(normal));

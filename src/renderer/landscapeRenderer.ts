@@ -4,6 +4,7 @@ import { getGifFrameIndexAtTime } from '../lib/gifUtils';
 import { resolveLandscapeCells, resolveLandscapeFrame } from '../lib/landscape';
 import { GifData, LandscapeAsset, LandscapeConfig, LandscapeSkySource } from '../types';
 import { renderLandscapeSky } from './landscape2d';
+import type { CanvasSize } from '../lib/canvasSize';
 
 /** Three.js terrain renderer owned exclusively by GIF Landscape mode. */
 export class LandscapeRenderer {
@@ -62,7 +63,8 @@ export class LandscapeRenderer {
     skySources: LandscapeSkySource[],
     config: LandscapeConfig,
     width: number,
-    height: number
+    height: number,
+    design: CanvasSize
   ): HTMLCanvasElement {
     if (this.width !== width || this.height !== height) {
       this.renderer.setSize(width, height, false);
@@ -74,10 +76,10 @@ export class LandscapeRenderer {
       this.height = height;
     }
 
-    const frame = resolveLandscapeFrame(config, skySources, t);
+    const frame = resolveLandscapeFrame(config, skySources, t, design);
     const resolved = frame.config;
     const skyContext = this.skyCanvas.getContext('2d');
-    if (skyContext) renderLandscapeSky(skyContext, t, frame.skySources, resolved, width, height);
+    if (skyContext) renderLandscapeSky(skyContext, t, frame.skySources, resolved, width, height, design);
 
     this.camera.aspect = width / height;
     this.camera.fov = resolved.fov;

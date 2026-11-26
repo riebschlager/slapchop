@@ -7,6 +7,7 @@ import { createRingsResourceTracker } from './modes/rings/resources';
 import { DEFAULT_RINGS, normalizeRings, RingsAsset, RingsConfig } from './modes/rings/model';
 import { create } from 'zustand';
 import { temporal } from 'zundo';
+import { CanvasAspect, DEFAULT_CANVAS_ASPECT } from './lib/canvasSize';
 import {
   AppMode,
   BrushToolSettings,
@@ -61,6 +62,7 @@ export interface DocumentState {
   landscapeSkySources: LandscapeSkySource[];
   landscape: LandscapeConfig;
   canvasBg: string;
+  canvasAspect: CanvasAspect;
   masterFx: MasterFxConfig;
 }
 
@@ -97,6 +99,7 @@ export interface AppState extends DocumentState {
 
   setAppMode: (mode: AppMode) => void;
   setCanvasBg: (color: string) => void;
+  setCanvasAspect: (aspect: CanvasAspect) => void;
   loadDocument: (doc: DocumentState) => void;
 
   // Master FX
@@ -406,6 +409,7 @@ export const useStore = create<AppState>()(
       landscapeSkySources: [],
       landscape: { ...DEFAULT_LANDSCAPE },
       canvasBg: '#000000',
+      canvasAspect: DEFAULT_CANVAS_ASPECT,
       masterFx: { ...DEFAULT_MASTER_FX },
       appMode: 'symmetry',
       selectedLayerId: null,
@@ -420,6 +424,7 @@ export const useStore = create<AppState>()(
 
       setAppMode: (mode) => set({ appMode: mode, isDrawingPolygon: false, isBrushingPolygon: false, paintDraft: null }),
       setCanvasBg: (color) => set({ canvasBg: color }),
+      setCanvasAspect: (aspect) => set({ canvasAspect: aspect }),
       loadDocument: (doc) => set({
         paint: doc.paint ?? { ...EMPTY_PAINT, assets: [], strokes: [] },
         paintAssetId: doc.paint?.assets.find(a => !a.retired)?.id ?? null,
@@ -448,6 +453,7 @@ export const useStore = create<AppState>()(
         landscapeSkySources: doc.landscapeSkySources ?? [],
         landscape: doc.landscape ? { ...DEFAULT_LANDSCAPE, ...doc.landscape } : { ...DEFAULT_LANDSCAPE },
         canvasBg: doc.canvasBg,
+        canvasAspect: doc.canvasAspect,
         masterFx: doc.masterFx ? { ...DEFAULT_MASTER_FX, ...doc.masterFx } : { ...DEFAULT_MASTER_FX },
         selectedLayerId: null,
         selectedPolygonId: null,
@@ -889,6 +895,7 @@ export const useStore = create<AppState>()(
         landscapeSkySources: s.landscapeSkySources,
         landscape: s.landscape,
         canvasBg: s.canvasBg,
+        canvasAspect: s.canvasAspect,
         masterFx: s.masterFx
       }),
       equality: (a, b) =>
@@ -900,7 +907,7 @@ export const useStore = create<AppState>()(
         && a.tunnel === b.tunnel && a.gifVoronoiAssets === b.gifVoronoiAssets
         && a.gifVoronoi === b.gifVoronoi && a.landscapeTerrainAssets === b.landscapeTerrainAssets
         && a.landscapeSkySources === b.landscapeSkySources && a.landscape === b.landscape
-        && a.canvasBg === b.canvasBg && a.masterFx === b.masterFx,
+        && a.canvasBg === b.canvasBg && a.canvasAspect === b.canvasAspect && a.masterFx === b.masterFx,
       limit: 100,
       // Coalesce rapid bursts (slider scrubs) into few history entries.
       handleSet: (handleSet) => {
@@ -932,8 +939,8 @@ export const useStore = create<AppState>()(
 );
 
 export function getDocumentSnapshot(): DocumentState {
-  const { paint, layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx } = useStore.getState();
-  return { paint, layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, masterFx };
+  const { paint, layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, canvasAspect, masterFx } = useStore.getState();
+  return { paint, layers, polygonLayers, mesh3dLayers, camera3d, flythroughAssets, flythrough, gridAssets, grid, ringsAssets, rings, tunnelAssets, tunnel, gifVoronoiAssets, gifVoronoi, landscapeTerrainAssets, landscapeSkySources, landscape, canvasBg, canvasAspect, masterFx };
 }
 
 export const undo = () => useStore.temporal.getState().undo();

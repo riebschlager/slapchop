@@ -3,6 +3,7 @@ import { CameraPose, getMesh3dInstances, resolveCameraPose } from './motion3d';
 import { buildMeshWorldMatrix, mat4LookAt, mat4TransformPoint, Mat4, Vec3 } from './mat4';
 import { generateMesh3dGeometry } from './geometry3d';
 import { deformGeometry } from './deformation3d';
+import { getDesignSizeForOutput, REFERENCE_HALF_HEIGHT } from './canvasSize';
 
 // World -> canvas projection for 3D Mesh Mode, shared by the CPU renderer
 // (render2d.ts's 3D path) and the interactive viewport (CanvasWorkspace's
@@ -42,6 +43,19 @@ export interface Screen3dProjector {
   worldPerPixel(viewZ: number): number;
 }
 
+/**
+ * Vertical FOV for a given output frame. A stored FOV spans the 1920-unit
+ * portrait height, so a Z=0 plane at the default distance stays at design
+ * pixel scale; shorter frames narrow the FOV to keep that scale, and the
+ * stored camera is never rewritten.
+ */
+export function fitFovToFrame(fovDeg: number, width: number, height: number): number {
+  const ratio = getDesignSizeForOutput(width, height).height / (2 * REFERENCE_HALF_HEIGHT);
+  if (ratio === 1) return fovDeg;
+  const halfFov = (fovDeg * Math.PI) / 360;
+  return (Math.atan(Math.tan(halfFov) * ratio) * 360) / Math.PI;
+}
+
 export function createScreen3dProjector(
   camera3dRaw: Camera3dConfig,
   t: number,
@@ -51,7 +65,7 @@ export function createScreen3dProjector(
   const pose = resolveCameraPose(camera3dRaw, t);
   const eye: Vec3 = [pose.eyeX, pose.eyeY, pose.eyeZ];
   const view = mat4LookAt(eye, [pose.targetX, pose.targetY, pose.targetZ], pose.rollRad);
-  const tanHalfFov = Math.tan((pose.fovDeg * Math.PI) / 180 / 2);
+  const tanHalfFov = Math.tan((fitFovToFrame(pose.fovDeg, width, height) * Math.PI) / 180 / 2);
   const aspect = width / height;
   const halfHeightWorld = pose.distance * tanHalfFov;
   const orthographic = pose.projection === 'orthographic';

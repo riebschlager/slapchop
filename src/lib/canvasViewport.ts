@@ -2,7 +2,7 @@ import { PolygonPoint } from '../types';
 
 /**
  * Geometry for keeping interactive handles reachable when the point they
- * represent sits outside the 1080x1920 frame.
+ * represent sits outside the design frame.
  *
  * Everything here works in design canvas coordinates (center origin), the same
  * space polygon points and layer positions live in. The workspace scales that

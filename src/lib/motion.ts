@@ -8,6 +8,9 @@ import {
   SymmetryType,
   WallpaperLattice
 } from '../types';
+import { getCanvasSize } from './canvasSize';
+
+const PORTRAIT_FRAME = getCanvasSize('9:16');
 
 const DEG = Math.PI / 180;
 
@@ -161,7 +164,9 @@ export function getSymmetryTransforms(
       const basisRad = group.basisAngleDeg * DEG;
       const a1 = { x: cell, y: 0 };
       const a2 = { x: cell * Math.cos(basisRad), y: cell * Math.sin(basisRad) };
-      const halfDiagonal = Math.hypot(1080, 1920) / 2 + cell;
+      // The lattice fills a circle around the center; 9:16 and 16:9 share the
+      // longest preset diagonal, so one radius covers every canvas aspect.
+      const halfDiagonal = Math.hypot(PORTRAIT_FRAME.width, PORTRAIT_FRAME.height) / 2 + cell;
       let margin = Math.max(1, Math.ceil(halfDiagonal / cell));
       const pointGroupSize = group.order * (group.mirror ? 2 : 1);
       while (margin > 1 && (2 * margin + 1) * (2 * margin + 1) * pointGroupSize > MAX_SYMMETRY_INSTANCES) {

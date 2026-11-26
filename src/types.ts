@@ -1,3 +1,4 @@
+import { REFERENCE_HALF_HEIGHT } from './lib/canvasSize';
 export type AppMode = 'symmetry' | 'polygon' | '3d' | 'flythrough' | 'tunnel' | 'gif-voronoi' | 'landscape' | 'rings' | 'gif-grid' | 'gif-paint';
 
 export interface PolygonPoint {
@@ -527,11 +528,12 @@ export interface Camera3dConfig {
 }
 
 // Coordinate invariant: at the default FOV, a Z=0 plane sized 1080x1920
-// fills the viewport at 1:1 with the 2D canvas, so switching to 3D mode
-// with a bare plane looks identical to the 2D canvas until the user moves
-// the camera or geometry. distance = (viewportHeight/2) / tan(fov/2).
+// fills the portrait viewport at 1:1 with the 2D canvas, so switching to 3D
+// mode with a bare plane looks identical to the 2D canvas until the user moves
+// the camera or geometry. distance = (portraitHeight/2) / tan(fov/2); other
+// canvas aspects keep the same scale through fitFovToFrame (lib/project3d.ts).
 const DEFAULT_CAMERA3D_FOV = 45;
-const DEFAULT_CAMERA3D_DISTANCE = 960 / Math.tan((DEFAULT_CAMERA3D_FOV / 2) * (Math.PI / 180));
+const DEFAULT_CAMERA3D_DISTANCE = REFERENCE_HALF_HEIGHT / Math.tan((DEFAULT_CAMERA3D_FOV / 2) * (Math.PI / 180));
 
 export const DEFAULT_CAMERA3D: Camera3dConfig = {
   fov: DEFAULT_CAMERA3D_FOV,

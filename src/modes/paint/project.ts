@@ -1,6 +1,7 @@
 import { normalizeAutopaint, type AutopaintSettings } from './autopaint';
 import { EMPTY_PAINT, MAX_PAINT_DISTANCE, MAX_PAINT_DURATION, MAX_PAINT_POINTS, normalizePaintSettings, pathDistance, type PaintAsset, type PaintDocument, type PaintPoint, type PaintStroke } from './model';
 import type { GifData } from '../../types';
+import { MAX_HALF_EXTENT } from '../../lib/canvasSize';
 
 export interface SerializedPaint {
   version: 1 | 2;
@@ -32,8 +33,8 @@ export function restorePaint(input: unknown, materialized: ReadonlyMap<string, {
     strokeIds.add(stroke.id);
     let previous = 0;
     const points: PaintPoint[] = stroke.points.map(p => {
-      if (!record(p) || typeof p.x !== 'number' || !Number.isFinite(p.x) || Math.abs(p.x) > 540
-        || typeof p.y !== 'number' || !Number.isFinite(p.y) || Math.abs(p.y) > 960
+      if (!record(p) || typeof p.x !== 'number' || !Number.isFinite(p.x) || Math.abs(p.x) > MAX_HALF_EXTENT.x
+        || typeof p.y !== 'number' || !Number.isFinite(p.y) || Math.abs(p.y) > MAX_HALF_EXTENT.y
         || typeof p.time !== 'number' || !Number.isFinite(p.time) || p.time < previous || p.time > MAX_PAINT_DURATION) throw new Error('Invalid GIF Paint path coordinates or timing.');
       previous = p.time;
       return { x: p.x, y: p.y, time: p.time };

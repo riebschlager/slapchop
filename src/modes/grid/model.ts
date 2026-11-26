@@ -1,3 +1,4 @@
+import type { CanvasSize } from '../../lib/canvasSize';
 import { insetGridQuad, resolveGridVertices, type GridQuad } from './deformation';
 import type { GifData } from '../../types';
 
@@ -162,18 +163,19 @@ export function resolveDriftAxis(count: number, span: number, base: GridAxis, dr
   return edges;
 }
 
-export function resolveGrid(assets: GridAsset[], input: GridConfig, t: number) {
+/** Lays the grid out to fill `frame`, the active design frame, inside its margin. */
+export function resolveGrid(assets: GridAsset[], input: GridConfig, t: number, frame: CanvasSize) {
   if (!assets.length) return [];
   const c = normalizeGrid(input);
   const deformable = c.motionPattern === 'directional' || c.motionPattern === 'ripple';
   const baseX = deformable ? { ...c.x, amount: 0 } : c.x;
   const baseY = deformable ? { ...c.y, amount: 0 } : c.y;
   const xs = c.motionPattern === 'organic'
-    ? resolveDriftAxis(c.columns, 1080 - c.margin * 2, c.x, c.drift, t, 'x')
-    : resolveAxis(c.columns, 1080 - c.margin * 2, baseX, t);
+    ? resolveDriftAxis(c.columns, frame.width - c.margin * 2, c.x, c.drift, t, 'x')
+    : resolveAxis(c.columns, frame.width - c.margin * 2, baseX, t);
   const ys = c.motionPattern === 'organic'
-    ? resolveDriftAxis(c.rows, 1920 - c.margin * 2, c.y, c.drift, t, 'y')
-    : resolveAxis(c.rows, 1920 - c.margin * 2, baseY, t);
+    ? resolveDriftAxis(c.rows, frame.height - c.margin * 2, c.y, c.drift, t, 'y')
+    : resolveAxis(c.rows, frame.height - c.margin * 2, baseY, t);
   const vertices = deformable ? resolveGridVertices(xs, ys, c, t) : undefined;
   return Array.from({ length: c.rows * c.columns }, (_, i) => {
     const col = i % c.columns;
@@ -187,12 +189,12 @@ export function resolveGrid(assets: GridAsset[], input: GridConfig, t: number) {
       const top = row * (c.columns + 1) + col;
       const bottom = top + c.columns + 1;
       const inset = insetGridQuad([vertices[top], vertices[top + 1], vertices[bottom + 1], vertices[bottom]], c.gutter);
-      const centered = (p: { x: number; y: number }) => ({ x: p.x - 540 + c.margin, y: p.y - 960 + c.margin });
+      const centered = (p: { x: number; y: number }) => ({ x: p.x - frame.width / 2 + c.margin, y: p.y - frame.height / 2 + c.margin });
       corners = [centered(inset[0]), centered(inset[1]), centered(inset[2]), centered(inset[3])];
     }
     return {
       corners,
-      asset, x: -540 + c.margin + xs[col] + w / 2, y: -960 + c.margin + ys[row] + h / 2,
+      asset, x: -frame.width / 2 + c.margin + xs[col] + w / 2, y: -frame.height / 2 + c.margin + ys[row] + h / 2,
       width: Math.max(0, w - c.gutter), height: Math.max(0, h - c.gutter),
       sourceTime: t * c.gifSpeed + (i * c.cellPhase % 1) * asset.gifData.totalDurationMs / 1000
     };

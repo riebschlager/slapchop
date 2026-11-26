@@ -19,6 +19,8 @@ export interface SegmentedProps<T extends string> {
   /** Accessible name for the group. */
   label: string;
   className?: string;
+  /** Locks the whole group, e.g. while a dependent operation is running. */
+  disabled?: boolean;
 }
 
 // `focusOffset` names the colour behind each variant's items: the green focus
@@ -47,7 +49,8 @@ export default function Segmented<T extends string>({
   onChange,
   variant = 'tab',
   label,
-  className
+  className,
+  disabled = false
 }: SegmentedProps<T>) {
   const style = VARIANT[variant];
   return (
@@ -59,13 +62,15 @@ export default function Segmented<T extends string>({
             key={opt.value}
             type="button"
             aria-pressed={selected}
+            disabled={disabled}
             title={opt.title}
             onClick={() => onChange(opt.value)}
             className={cn(
               style.item,
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-ui-accent',
               style.focusOffset,
-              selected ? style.on : style.off
+              selected ? style.on : style.off,
+              disabled && 'opacity-50 cursor-not-allowed'
             )}
           >
             {opt.label}

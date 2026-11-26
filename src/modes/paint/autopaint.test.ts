@@ -1,13 +1,16 @@
 import { expect, it } from 'vitest';
 import { autoStroke, autopaintStamps, DEFAULT_AUTOPAINT, normalizeAutopaint } from './autopaint';
 import { pathDistance, stampAlpha, type PaintAsset } from './model';
+import { getCanvasSize } from '../../lib/canvasSize';
+
+const PORTRAIT = getCanvasSize('9:16');
 const assets: PaintAsset[] = Array.from({ length: 4 }, (_, i) => ({ id: String(i), name: `${i}.gif`, src: '',
   gifData: { width: 100, height: 100, totalDurationMs: 800, frames: [] } }));
 const config = { ...DEFAULT_AUTOPAINT, enabled: true };
 it('generates deterministic bounded paths, with a new source per gesture and no retired sources', () => {
   const palette = [...assets, { ...assets[0], id: 'retired', retired: true }];
-  const strokes = Array.from({ length: 40 }, (_, i) => autoStroke(config, palette, i)!);
-  expect(strokes).toEqual(Array.from({ length: 40 }, (_, i) => autoStroke(config, palette, i)));
+  const strokes = Array.from({ length: 40 }, (_, i) => autoStroke(config, palette, i, PORTRAIT)!);
+  expect(strokes).toEqual(Array.from({ length: 40 }, (_, i) => autoStroke(config, palette, i, PORTRAIT)));
   expect(new Set(strokes.slice(0, 4).map(s => s.assetId)).size).toBe(4);
   for (const [i, stroke] of strokes.entries()) {
     expect(stroke.assetId).not.toBe('retired');
@@ -20,28 +23,38 @@ it('generates deterministic bounded paths, with a new source per gesture and no 
       expect(Math.abs(p.y)).toBeLessThanOrEqual(960);
     }
   }
-  expect(autoStroke({ ...config, seed: 2 }, assets, 0)).not.toEqual(strokes[0]);
+  expect(autoStroke({ ...config, seed: 2 }, assets, 0, PORTRAIT)).not.toEqual(strokes[0]);
+});
+it('scatters gestures across a landscape frame', () => {
+  const landscape = getCanvasSize('16:9');
+  const strokes = Array.from({ length: 60 }, (_, i) => autoStroke(config, assets, i, landscape)!);
+  const xs = strokes.flatMap(stroke => stroke.points.map(p => p.x));
+  expect(Math.max(...xs.map(Math.abs))).toBeGreaterThan(540);
+  for (const stroke of strokes) for (const p of stroke.points) {
+    expect(Math.abs(p.x)).toBeLessThanOrEqual(960);
+    expect(Math.abs(p.y)).toBeLessThanOrEqual(540);
+  }
 });
 it.each(['arcs', 'flicks', 'lines', 'angles'] as const)('preserves %s geometry and source timing across frame cadences and direct seeks', gesture => {
   const settings = { ...config, gesture };
-  const direct = [...autopaintStamps(settings, assets, -1e-9, 12)];
+  const direct = [...autopaintStamps(settings, assets, -1e-9, 12, PORTRAIT)];
   let from = -1e-9;
   const incremental = [0, 0.13, 0.5, 1, 2.7, 8.1, 12].flatMap(to => {
-    const stamps = [...autopaintStamps(settings, assets, from, to)]; from = to; return stamps;
+    const stamps = [...autopaintStamps(settings, assets, from, to, PORTRAIT)]; from = to; return stamps;
   });
   expect(incremental).toEqual(direct);
   expect(direct.length).toBeGreaterThan(10);
   expect(direct.every(s => s.pressure! > 0 && s.pressure! <= 1)).toBe(true);
-  const late = [...autopaintStamps(settings, assets, 3600, 3600.1)];
+  const late = [...autopaintStamps(settings, assets, 3600, 3600.1, PORTRAIT)];
   expect(late.length).toBeLessThan(100);
 });
 it('respects pauses, fading, single-source libraries and disabled or empty palettes', () => {
   const settings = { ...config, variation: 0, gesture: 'lines' as const, duration: 1, pause: 2 };
-  expect([...autopaintStamps(settings, assets, 1.01, 2.99)]).toEqual([]);
-  expect([...autopaintStamps({ ...settings, enabled: false }, assets, -1, 10)]).toEqual([]);
-  expect([...autopaintStamps(settings, [], -1, 10)]).toEqual([]);
-  expect(autoStroke(config, assets.slice(0, 1), 20)?.assetId).toBe('0');
-  const stamp = [...autopaintStamps({ ...settings, brush: { ...settings.brush, lifetime: 2 } }, assets, -1e-9, 0)][0];
+  expect([...autopaintStamps(settings, assets, 1.01, 2.99, PORTRAIT)]).toEqual([]);
+  expect([...autopaintStamps({ ...settings, enabled: false }, assets, -1, 10, PORTRAIT)]).toEqual([]);
+  expect([...autopaintStamps(settings, [], -1, 10, PORTRAIT)]).toEqual([]);
+  expect(autoStroke(config, assets.slice(0, 1), 20, PORTRAIT)?.assetId).toBe('0');
+  const stamp = [...autopaintStamps({ ...settings, brush: { ...settings.brush, lifetime: 2 } }, assets, -1e-9, 0, PORTRAIT)][0];
   expect(stampAlpha(stamp, 2)).toBe(0);
   expect(stampAlpha(stamp, 1)).toBeCloseTo(stampAlpha(stamp, 0) / 2);
 });
@@ -53,8 +66,8 @@ it('normalizes untrusted numeric controls and defaults', () => {
 
 it('retains the seeded palette and sampled current gesture across display updates', async () => {
   const { AutopaintSequence } = await import('./autopaint');
-  const sequence = new AutopaintSequence(config, assets);
+  const sequence = new AutopaintSequence(config, assets, PORTRAIT);
   const stamps = [0, 0.1, 0.2, 0.3, 0.4].flatMap((time, i, times) => [...sequence.stamps(i ? times[i - 1] : -1e-9, time)]);
-  expect(stamps).toEqual([...autopaintStamps(config, assets, -1e-9, 0.4)]);
+  expect(stamps).toEqual([...autopaintStamps(config, assets, -1e-9, 0.4, PORTRAIT)]);
   expect(sequence.stats.gestureBuilds).toBe(1);
 });

@@ -4,7 +4,9 @@ import {
   getVisibleHandleBounds,
   isPointOutsideCanvas
 } from './canvasViewport';
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../renderer/render2d';
+import { getCanvasSize } from './canvasSize';
+
+const { width: CANVAS_WIDTH, height: CANVAS_HEIGHT } = getCanvasSize('9:16');
 
 const NO_INSETS = { top: 0, right: 0, bottom: 0, left: 0 };
 

@@ -79,6 +79,7 @@ function state(appMode: RenderState['appMode'], layers: Layer[] = []): RenderSta
     landscapeSkySources: [],
     landscape: DEFAULT_LANDSCAPE,
     canvasBg: '#000000',
+    canvasAspect: '9:16',
     masterFx: DEFAULT_MASTER_FX
   };
 }

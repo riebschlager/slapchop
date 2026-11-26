@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { useStore } from '../../store';
+import { getCanvasSize } from '../../lib/canvasSize';
 import { getPlaybackTime } from '../../renderer/loop';
 import { MAX_PAINT_DISTANCE, MAX_PAINT_DURATION, MAX_PAINT_POINTS, type PaintStroke } from './model';
 
 export default function PaintStage() {
   const autopaint = useStore(s => s.paint.autopaint?.enabled);
+  const frame = getCanvasSize(useStore(s => s.canvasAspect));
+  const halfW = frame.width / 2, halfH = frame.height / 2;
   const assets = useStore(s => s.paint.assets);
   const selectedStroke = useStore(s => s.paint.strokes.find(stroke => stroke.id === s.selectedPaintStrokeId));
   const strokeCount = useStore(s => s.paint.strokes.length);
@@ -38,8 +41,8 @@ export default function PaintStage() {
   };
   const point = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    return { x: Math.max(-540, Math.min(540, (event.clientX - rect.left) / rect.width * 1080 - 540)),
-      y: Math.max(-960, Math.min(960, (event.clientY - rect.top) / rect.height * 1920 - 960)) };
+    return { x: Math.max(-halfW, Math.min(halfW, (event.clientX - rect.left) / rect.width * frame.width - halfW)),
+      y: Math.max(-halfH, Math.min(halfH, (event.clientY - rect.top) / rect.height * frame.height - halfH)) };
   };
   useEffect(() => {
     const cancel = (e: KeyboardEvent) => {
@@ -85,7 +88,7 @@ export default function PaintStage() {
     onPointerUp={e => { if (gesture.current?.pointer === e.pointerId) { const p = point(e); gesture.current.x = p.x; gesture.current.y = p.y; append(); finish(true); } }}
     onPointerCancel={() => finish(false)} onLostPointerCapture={() => { if (gesture.current) finish(false); }}
   >
-    {selectedStroke && <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="-540 -960 1080 1920" aria-label="Selected saved brush path">
+    {selectedStroke && <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`${-halfW} ${-halfH} ${frame.width} ${frame.height}`} aria-label="Selected saved brush path">
       <polyline points={selectedStroke.points.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#28c76f" strokeWidth="2" strokeDasharray="8 6" vectorEffect="non-scaling-stroke" />
       <circle cx={selectedStroke.points[0].x} cy={selectedStroke.points[0].y} r="12" fill="#28c76f" />
     </svg>}

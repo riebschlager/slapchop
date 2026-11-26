@@ -1,9 +1,9 @@
 # slapchop
 
 A local-first generative motion studio made of independent creative modes. Each
-mode can use the tools and concepts that fit its workflow while sharing a
-1080×1920 output surface and still-image, frame-sequence, video, and live-output
-pipelines.
+mode can use the tools and concepts that fit its workflow while sharing an
+output surface (9:16, 16:9, or 1:1) and still-image, frame-sequence, video, and
+live-output pipelines.
 
 ## Editions
 
@@ -273,7 +273,12 @@ than silently render without them.
 
 Format version 14 adds GIF Rings Position Noise. It is otherwise identical to
 V13; older builds refuse V14 files rather than silently render without it.
-V12–V14 files restore the polygon underpainting and texture folder.
+V12–V15 files restore the polygon underpainting and texture folder.
+
+Format version 15 adds the canvas aspect. It is otherwise identical to V14;
+files from V1–V14 open in the original 9:16 portrait frame, and older builds
+refuse V15 files rather than render a landscape or square document into the
+portrait frame.
 
 Modes may opt into shared output effects. The current **Master FX & Shader
 pipeline** includes chromatic aberration (RGB split), duotone/gradient mapping,
@@ -300,7 +305,23 @@ sessions of the selected backend. The default remains the reference compositor;
 [prototype measurements and compatibility limits](docs/architecture/paint-performance.md#october-26-2026-recommendation-3-retained-gpu-prototype).
 
 
+## Canvas aspect
+
+Choose **9:16** (1080×1920, the default), **16:9** (1920×1080), or **1:1**
+(1080×1080) from the Output section of the Inspector. The aspect is saved with
+the project and is part of undo history. Switching keeps every mode's content at
+the same scale around the center of the frame: the frame widens, narrows, or
+crops, and switching back restores the original framing exactly. Modes that fill
+the frame (GIF Grid, autopaint, GIF Voronoi) re-lay out to the new frame; 3D
+Space keeps world units at design-pixel scale; scene cameras (GIF Flythrough,
+GIF Tunnel, GIF Landscape) keep their vertical field of view and show more or
+less to the sides. The aspect is locked while an export or live-output stream is
+running.
+
 ## Exports
+
+Export resolutions are Full, HD (2/3), and Compact (1/2) of the canvas aspect's
+design size, for example 1920×1080, 1280×720, and 960×540 for 16:9.
 
 Animation exports are frame-exact and deterministic: every frame is rendered at its
 exact timestamp and encoded with WebCodecs in the browser or streamed through ffmpeg
@@ -333,7 +354,7 @@ back to a real-time MediaRecorder WebM capture, named and typed as WebM.
 
 ## TouchDesigner live output (WebRTC)
 
-Slapchop can stream its live 1080×1920 canvas directly to TouchDesigner without
+Slapchop can stream its live canvas (at its full design resolution) directly to TouchDesigner without
 rendering a second export frame. The sender uses the browser's WebRTC stack and
 TouchDesigner's built-in Signaling API; no cloud service or Slapchop backend is
 required.
@@ -368,7 +389,7 @@ alpha channel. Stopping or disconnecting Live Output closes the peer connection,
 media tracks, and signaling socket; closing the modal alone leaves the stream
 running.
 
-Slapchop asks the WebRTC encoder to preserve the native 1080×1920 resolution,
+Slapchop asks the WebRTC encoder to preserve the native design resolution,
 using a 12 Mbps ceiling at 30 fps and 24 Mbps at 60 fps. The Live Output panel
 shows the actual encoded resolution, frame rate, send rate, and any bandwidth or
 CPU quality limit reported by the browser. These settings favor resolution over

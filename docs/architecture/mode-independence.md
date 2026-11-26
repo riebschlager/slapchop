@@ -46,7 +46,8 @@ future Symmetry-canvas design independently justifies a distinct version of it.
 The shared platform remains responsible for capabilities that are genuinely
 common:
 
-- the 1080 x 1920 design surface and resolution-aware viewport;
+- the fixed-preset design surface (9:16, 16:9, or 1:1; see `src/lib/canvasSize.ts`)
+  and resolution-aware viewport;
 - deterministic frame time and the live/offline rendering contract;
 - image, video, GIF, frame-sequence, ProRes, and live-output delivery;
 - asset loading and the browser/Tauri boundary;
